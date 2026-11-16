@@ -1,6 +1,8 @@
 # Abilities, entities and change sets: proof of concept
 
-> **Status:** Experiment. Not a product, not shipped, not wired into the monorepo build. It exists to
+> **Status:** Experiment. Not a product, not shipped. It started in the
+> [Umbraco.AI](https://github.com/umbraco/Umbraco.AI/tree/claude/pensive-hawking-ft8z3f) repo and moved here because it is not
+> AI specific. It exists to
 > test the design in the "Abilities, entities and change sets" doc before anything is built for real.
 
 It tests one claim: if packages declare **abilities** and **entity definitions**, and Write calls are
@@ -8,18 +10,16 @@ recorded into **change sets**, then "create an entity from a description" needs 
 covers a discount with a rule tree, a page with nested blocks, or a workflow whose steps form a graph.
 
 **Reviewing it?** Start with [REVIEWING.md](REVIEWING.md): what to read, in what order, and how the pieces connect. The
-design is in [docs/plans/abilities-entities-change-sets/ARCHITECTURE.md](../../docs/plans/abilities-entities-change-sets/ARCHITECTURE.md).
+design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Run it
 
 ```bash
-cd experiments/abilities-poc
 dotnet test
 ```
 
-The folder has its own `Directory.Build.props`, `Directory.Packages.props` and `NuGet.config`, so the
-monorepo's central packages and versioning don't apply. Only nuget.org is needed. The CMS tests start a real
-Umbraco 18 on SQLite through `Umbraco.Cms.Tests.Integration`, and take about 15 seconds.
+Packages come from nuget.org only, with versions set in `Directory.Packages.props`. The CMS tests start a real
+Umbraco 18 on SQLite through `Umbraco.Cms.Tests.Integration`, and take about 30 seconds.
 
 ## What is here
 

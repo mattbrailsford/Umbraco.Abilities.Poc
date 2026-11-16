@@ -1,5 +1,5 @@
 <Project>
-  <!-- Stops the monorepo's root build settings (central packages, versioning) from applying to this experiment. -->
+  <!-- Shared build settings for every project. Package versions live in Directory.Packages.props. -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>

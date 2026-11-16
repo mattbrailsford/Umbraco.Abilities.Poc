@@ -2,7 +2,7 @@
 
 > **Status:** Experiment. This guide is for reviewing the design through its code: what to read, in what order, and
 > what to question. The design itself is in
-> [docs/plans/abilities-entities-change-sets/ARCHITECTURE.md](../../docs/plans/abilities-entities-change-sets/ARCHITECTURE.md).
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 > [README.md](README.md) has the findings.
 
 ## What you are reviewing
@@ -11,14 +11,13 @@ It tests one claim. If packages declare **abilities** (operations) and **entity 
 like), and write calls are recorded into **change sets**, then "create or edit an entity from a description" needs no
 per-product code. The same pieces then serve the copilot, Automate and MCP.
 
-The code is about 6,600 lines of source and 2,100 lines of tests in seven projects. The source splits into the framework
-(about 4,100), the in-memory samples (about 1,000), the real CMS definition (about 1,000) and the draft sets stand-in
-(about 500). A full review takes two to three hours.
+The code is about 7,400 lines of source and 2,500 lines of tests in seven projects. The source splits into the framework
+(about 4,200), the in-memory samples (about 1,600), the real CMS definition (about 1,000), the draft sets stand-in
+(about 500) and the AI adapter (about 100). A full review takes two to three hours.
 A first pass over the story and the contracts (passes 1 to 3 below) takes about 45 minutes.
 
 ```bash
-cd experiments/abilities-poc
-dotnet test   # 43 in-memory tests (seconds) and 14 against a real Umbraco 18 on SQLite (about 40 seconds)
+dotnet test   # 54 in-memory tests (seconds) and 17 against a real Umbraco 18 on SQLite (about 30 seconds)
 ```
 
 ## The map
@@ -254,6 +253,6 @@ These are the judgments the PoC makes that a reviewer is best placed to challeng
 ## Where the decisions are written down
 
 - [README.md](README.md): findings, numbers, and the sections referred to above.
-- [ARCHITECTURE.md](../../docs/plans/abilities-entities-change-sets/ARCHITECTURE.md): the design, with the same findings
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md): the design, with the same findings
   folded in.
 - Commit messages on this branch: each records what changed and why, in order.
