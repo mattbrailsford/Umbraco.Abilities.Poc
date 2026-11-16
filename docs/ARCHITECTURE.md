@@ -501,7 +501,7 @@ Each idea below uses the same three layers with no new contract.
 
 ## Proof of concept findings
 
-A standalone [proof of concept](../) implements all three layers, with stand-ins for a CMS page with nested blocks, a Commerce discount, a third-party rule type and an Automate workflow. Its 54 in-memory tests drive everything through the generated AI tools with scripted calls; no real model and no real product code are involved. It surfaced four changes to this design:
+A standalone [proof of concept](../) implements all three layers, with stand-ins for a CMS page with nested blocks, a Commerce discount, a third-party rule type and an Automate workflow. Its 57 in-memory tests drive everything through the generated AI tools with scripted calls; no real model and no real product code are involved. It surfaced four changes to this design:
 
 | Finding | What it showed | Change to the design |
 | --- | --- | --- |

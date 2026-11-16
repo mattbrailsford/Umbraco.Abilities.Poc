@@ -255,7 +255,7 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
                 Key = model.Key,
                 ContentTypeKey = model.ContentTypeKey,
                 ParentKey = model.ParentKey,
-                Names = model.Variants.ToDictionary(v => v.Culture ?? string.Empty, v => v.Name),
+                Names = model.Variants.Where(v => v.Segment is null).ToDictionary(v => v.Culture ?? string.Empty, v => v.Name),
                 Values = model.Values,
             });
             return;
@@ -281,7 +281,7 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
         }
 
         var values = touched.Select(t => t.Alias == DraftSetService.NameAlias
-            ? new DraftValue(t.Alias, t.Culture, null, model.Variants.FirstOrDefault(v => v.Culture == t.Culture)?.Name is { } name ? JsonValue.Create(name) : null)
+            ? new DraftValue(t.Alias, t.Culture, null, model.Variants.FirstOrDefault(v => v.Culture == t.Culture && v.Segment is null)?.Name is { } name ? JsonValue.Create(name) : null)
             : model.Values.FirstOrDefault(v => v.Alias == t.Alias && v.Culture == t.Culture && v.Segment == t.Segment) ?? new DraftValue(t.Alias, t.Culture, t.Segment, null));
         await _draftSets.StageChangesAsync(draftId, EntityUdis.For(Type, after.Key), values);
     }
@@ -456,6 +456,23 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
         else
         {
             variants.Add(new VariantModel { Name = EntityValues.Get(root, nameField, VariantId.Invariant)?.GetValue<string>() ?? string.Empty });
+        }
+
+        // Umbraco has no managed segments: it validates the segments the model's variants name, in each culture with
+        // document values in that segment. So name every segment the document's own values are in, as the backoffice does.
+        if (type.VariesBySegment())
+        {
+            // A value that varies by segment only has no culture, but a culture-variant document's variants all need one
+            // (ContentEditingServiceBase refuses a variant without): name its segment in each of the document's cultures.
+            var segments = EntityValues.OwnVariants(root, map.Shape)
+                .Where(v => v.Segment is not null)
+                .SelectMany(v => v.Culture is null && type.VariesByCulture() ? cultures.Select(c => CmsVariants.Of(c, v.Segment)) : [CmsVariants.Of(v.Culture, v.Segment)])
+                .Distinct();
+            foreach (var segmented in segments)
+            {
+                var name = variants.FirstOrDefault(v => v.Culture == segmented.Culture)?.Name ?? variants.FirstOrDefault()?.Name ?? string.Empty;
+                variants.Add(new VariantModel { Culture = segmented.Culture, Segment = segmented.Segment, Name = name });
+            }
         }
 
         var values = new List<DraftValue>();

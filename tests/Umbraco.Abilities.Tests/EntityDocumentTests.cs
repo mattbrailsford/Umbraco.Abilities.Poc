@@ -57,6 +57,82 @@ public class EntityDocumentTests
         Assert.Throws<AbilityInputException>(() => EntityEditor.SetValue(In("USD"), $"{reward}/amount", JsonValue.Create(5)));
     }
 
+    // A page whose heading varies by culture and segment at once, as a CMS property can. Cultures are listed; segments are open.
+    private static readonly EntityStructure SegmentedPage = new("page", "Page", "A page.", ElementShape.Of(
+        new FieldDefinition("heading", "Heading.", FieldType.String, Required: true) { VariesBy = ["culture", "segment"] },
+        new FieldDefinition("subtitle", "Subtitle.", FieldType.String) { VariesBy = ["culture", "segment"] }))
+    {
+        Dimensions =
+        [
+            new VariationDimension("culture", "The site's languages.", ["en-US", "da-DK"]),
+            new VariationDimension("segment", "A segment of the audience. Leave it out for the default."),
+        ],
+    };
+
+    private static EditTarget In(EntityDocument document, string? culture, string? segment)
+        => new(document, SegmentedPage, new ItemTypeRegistry(), VariantId.Of("culture", culture).With("segment", segment));
+
+    [Fact]
+    public void A_value_can_vary_by_two_dimensions_and_each_segment_keeps_its_own_value()
+    {
+        var document = new EntityDocument { EntityType = "page", Key = Guid.NewGuid() };
+
+        EntityEditor.SetValue(In(document, "en-US", null), "heading", JsonValue.Create("Welcome"));
+        EntityEditor.SetValue(In(document, "en-US", "vip"), "heading", JsonValue.Create("Welcome back, VIP"));
+        EntityEditor.SetValue(In(document, "en-US", "new"), "heading", JsonValue.Create("Welcome, new visitor"));
+        EntityEditor.SetValue(In(document, "da-DK", "vip"), "heading", JsonValue.Create("Velkommen tilbage, VIP"));
+
+        // Stored under one key per variant: culture, then segment, in the field's order. The default segment adds nothing.
+        var stored = document.Root["heading"]!.AsObject();
+        Assert.Equal(["en-US", "en-US|vip", "en-US|new", "da-DK|vip"], stored.Select(v => v.Key));
+
+        // Each segment reads back its own value, and the default segment is its own value, not a fallback.
+        string? Read(string culture, string? segment) => EntityEditor.Find(In(document, culture, segment), "heading", create: false).Value?.GetValue<string>();
+        Assert.Equal("Welcome", Read("en-US", null));
+        Assert.Equal("Welcome back, VIP", Read("en-US", "vip"));
+        Assert.Equal("Welcome, new visitor", Read("en-US", "new"));
+        Assert.Equal("Velkommen tilbage, VIP", Read("da-DK", "vip"));
+        Assert.Null(Read("da-DK", null));
+        Assert.Null(Read("da-DK", "new"));
+
+        // Walking the values gives each one back with both dimensions.
+        var variants = EntityValues.Values(document.Root, SegmentedPage.Shape.Fields[0]).Select(v => v.Variant.Key);
+        Assert.Equal(["culture=en-US", "culture=en-US;segment=vip", "culture=en-US;segment=new", "culture=da-DK;segment=vip"], variants);
+
+        // Removing one segment's value leaves the others.
+        EntityEditor.SetValue(In(document, "en-US", "vip"), "heading", null);
+        Assert.Null(Read("en-US", "vip"));
+        Assert.Equal("Welcome, new visitor", Read("en-US", "new"));
+    }
+
+    [Fact]
+    public void A_segment_still_needs_a_known_culture()
+    {
+        var document = new EntityDocument { EntityType = "page", Key = Guid.NewGuid() };
+
+        var noCulture = Assert.Throws<AbilityInputException>(() => EntityEditor.SetValue(In(document, null, "vip"), "heading", JsonValue.Create("Hi")));
+        Assert.Equal("This varies by culture. Give a culture in the variant: en-US, da-DK.", noCulture.Message);
+        Assert.Throws<AbilityInputException>(() => EntityEditor.SetValue(In(document, "fr-FR", "vip"), "heading", JsonValue.Create("Salut")));
+        Assert.Null(document.Root["heading"]);
+    }
+
+    [Fact]
+    public async Task Problems_in_a_segment_say_which_culture_and_segment()
+    {
+        var document = new EntityDocument { EntityType = "page", Key = Guid.NewGuid() };
+        EntityEditor.SetValue(In(document, "en-US", null), "heading", JsonValue.Create("Welcome"));
+        EntityEditor.SetValue(In(document, "en-US", "vip"), "heading", JsonValue.Create("Welcome back, VIP"));
+
+        // The Danish VIP variant exists (it has a subtitle) but has no heading.
+        EntityEditor.SetValue(In(document, "da-DK", "vip"), "subtitle", JsonValue.Create("Kun for VIP"));
+
+        var problems = await StructureValidator.ValidateAsync(document, SegmentedPage, new ItemTypeRegistry(), (_, _) => Task.FromResult(true));
+
+        var problem = Assert.Single(problems);
+        Assert.Equal("heading", problem.Path);
+        Assert.Equal(new Dictionary<string, string> { ["culture"] = "da-DK", ["segment"] = "vip" }, problem.Variant);
+    }
+
     [Fact]
     public void A_JSON_value_shaped_like_items_is_a_value_because_the_structure_says_so()
     {

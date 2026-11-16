@@ -706,6 +706,172 @@ public sealed class CmsDocumentDefinitionTests : UmbracoIntegrationTest
         Assert.That(ContentService.GetById(page)!.GetValue<string>("accent"), Is.EqualTo("#336699"));
     }
 
+    [Test]
+    public async Task Values_that_vary_by_culture_and_segment_are_saved_per_segment_and_load_back()
+    {
+        await CreateSegmentedPageTypeAsync();
+        await _agent.StartChangeSetAsync("Segments");
+        var page = await CreateSegmentedPageAsync();
+        await SetInAsync(page, "heading", "\"Summer\"", "en-US", null);
+        await SetInAsync(page, "heading", "\"Summer, for our VIPs\"", "en-US", "vip");
+        await SetInAsync(page, "heading", "\"Summer, for new visitors\"", "en-US", "new");
+
+        var validation = await _agent.OkAsync("changeSet_validate", SetJson());
+        Assert.That(validation.GetProperty("valid").GetBoolean(), Is.True, validation.ToString());
+        await _agent.OkAsync("changeSet_apply", SetJson());
+
+        var content = ContentService.GetById(page)!;
+        Assert.Multiple(() =>
+        {
+            Assert.That(content.GetValue<string>("heading", "en-US"), Is.EqualTo("Summer"));
+            Assert.That(content.GetValue<string>("heading", "en-US", "vip"), Is.EqualTo("Summer, for our VIPs"));
+            Assert.That(content.GetValue<string>("heading", "en-US", "new"), Is.EqualTo("Summer, for new visitors"));
+        });
+
+        var loaded = (await _documents.LoadAsync(page))!;
+        Assert.That(loaded.Root["heading"]!.AsObject().Select(v => $"{v.Key}:{v.Value}"),
+            Is.EquivalentTo(new[] { "en-US:Summer", "en-US|vip:Summer, for our VIPs", "en-US|new:Summer, for new visitors" }));
+    }
+
+    [Test]
+    public async Task Block_values_that_vary_by_segment_are_saved_in_the_block_and_load_back()
+    {
+        await CreateSegmentedPageTypeAsync();
+        await _agent.StartChangeSetAsync("Segmented blocks");
+        var page = await CreateSegmentedPageAsync();
+        await SetInAsync(page, "heading", "\"Summer\"", "en-US", null);
+        var promo = await AddItemAsync(page, "promos", "promo", """{ "text": "Sale" }""", "en-US");
+        await SetInAsync(page, $"{promo}/text", "\"Early access for VIPs\"", "en-US", "vip");
+
+        var validation = await _agent.OkAsync("changeSet_validate", SetJson());
+        Assert.That(validation.GetProperty("valid").GetBoolean(), Is.True, validation.ToString());
+        await _agent.OkAsync("changeSet_apply", SetJson());
+
+        var promos = JsonNode.Parse(ContentService.GetById(page)!.GetValue<string>("promos")!)!;
+        Assert.That(promos["contentData"]![0]!["values"]!.AsArray().Select(v => $"{v!["culture"]}|{v["segment"]}:{v["value"]}"),
+            Is.EquivalentTo(new[] { "en-US|:Sale", "en-US|vip:Early access for VIPs" }));
+
+        var loaded = (await _documents.LoadAsync(page))!;
+        Assert.That(loaded.Root["promos"]![0]!["text"]!.AsObject().Select(v => $"{v.Key}:{v.Value}"),
+            Is.EquivalentTo(new[] { "en-US:Sale", "en-US|vip:Early access for VIPs" }));
+    }
+
+    [Test]
+    public async Task A_required_value_missing_in_a_segment_is_a_problem_in_that_segment_as_Umbraco_reports_it()
+    {
+        // Umbraco validates a culture-and-segment property in each segment the culture has values in
+        // (release-18.0.0: ContentValidationServiceBase.HandlePropertiesValidationAsync). An empty segment value
+        // doesn't fall back to the default segment's.
+        await CreateSegmentedPageTypeAsync();
+        await _agent.StartChangeSetAsync("Missing VIP heading");
+        var page = await CreateSegmentedPageAsync();
+        await SetInAsync(page, "heading", "\"Summer\"", "en-US", null);
+        await SetInAsync(page, "teaser", "\"Only for VIPs\"", "en-US", "vip");
+
+        var working = (await _changeSets.GetWorkingStateAsync(_changeSets.Get(_agent.ChangeSetId!.Value), "document", page))!;
+        var umbraco = (await _documents.ValidateAsync(working)).Select(p => $"{p.Path}|{p.Variant?.GetValueOrDefault("culture")}|{p.Variant?.GetValueOrDefault("segment")}").ToList();
+        Assert.That(umbraco, Is.EquivalentTo(new[] { "heading|en-US|vip" }), string.Join(", ", umbraco));
+
+        var generic = await _agent.OkAsync("changeSet_validate", SetJson());
+        var problems = generic.GetProperty("entities")[0].GetProperty("problems").EnumerateArray()
+            .Select(p => $"{p.GetProperty("path").GetString()}|{p.GetProperty("variant").GetProperty("culture").GetString()}|{p.GetProperty("variant").GetProperty("segment").GetString()}");
+        Assert.That(problems, Is.EquivalentTo(new[] { "heading|en-US|vip" }));
+    }
+
+    [Test]
+    public async Task A_value_that_varies_by_segment_only_is_shared_by_every_culture_and_saved_per_segment()
+    {
+        await CreateSegmentedPageTypeAsync(withBanner: true);
+        await _agent.StartChangeSetAsync("Segment-only banner");
+        var page = await CreateSegmentedPageAsync();
+        await SetAsync(page, "", "name", "\"Sommer\"", "da-DK");
+        await SetInAsync(page, "heading", "\"Summer\"", "en-US", null);
+        await SetInAsync(page, "heading", "\"Sommer\"", "da-DK", null);
+        await _agent.OkAsync("entity_setValue", $$"""{ "entityType": "document", "key": "{{page}}", "path": "banner", "value": "Free shipping" }""");
+        await _agent.OkAsync("entity_setValue", $$"""{ "entityType": "document", "key": "{{page}}", "path": "banner", "value": "Free shipping and gifts", "variant": { "segment": "vip" } }""");
+
+        var validation = await _agent.OkAsync("changeSet_validate", SetJson());
+        Assert.That(validation.GetProperty("valid").GetBoolean(), Is.True, validation.ToString());
+        await _agent.OkAsync("changeSet_apply", SetJson());
+
+        var content = ContentService.GetById(page)!;
+        Assert.Multiple(() =>
+        {
+            Assert.That(content.GetValue<string>("banner"), Is.EqualTo("Free shipping"));
+            Assert.That(content.GetValue<string>("banner", segment: "vip"), Is.EqualTo("Free shipping and gifts"));
+        });
+
+        var loaded = (await _documents.LoadAsync(page))!;
+        Assert.That(loaded.Root["banner"]!.AsObject().Select(v => $"{v.Key}:{v.Value}"),
+            Is.EquivalentTo(new[] { ":Free shipping", "vip:Free shipping and gifts" }));
+    }
+
+    [Test]
+    public async Task A_required_segment_only_value_missing_in_a_segment_is_a_problem_with_no_culture()
+    {
+        await CreateSegmentedPageTypeAsync(withBanner: true);
+        await _agent.StartChangeSetAsync("Missing VIP banner");
+        var page = await CreateSegmentedPageAsync();
+        await SetInAsync(page, "heading", "\"Summer\"", "en-US", null);
+        await SetInAsync(page, "heading", "\"Summer, for our VIPs\"", "en-US", "vip");
+        await _agent.OkAsync("entity_setValue", $$"""{ "entityType": "document", "key": "{{page}}", "path": "banner", "value": "Free shipping" }""");
+
+        var working = (await _changeSets.GetWorkingStateAsync(_changeSets.Get(_agent.ChangeSetId!.Value), "document", page))!;
+        var umbraco = (await _documents.ValidateAsync(working)).Select(p => $"{p.Path}|{p.Variant?.GetValueOrDefault("culture")}|{p.Variant?.GetValueOrDefault("segment")}").ToList();
+        Assert.That(umbraco, Is.EquivalentTo(new[] { "banner||vip" }), string.Join(", ", umbraco));
+
+        var generic = await _agent.OkAsync("changeSet_validate", SetJson());
+        var problems = generic.GetProperty("entities")[0].GetProperty("problems").EnumerateArray()
+            .Select(p => $"{p.GetProperty("path").GetString()}|{(p.GetProperty("variant").TryGetProperty("culture", out var c) ? c.GetString() : null)}|{p.GetProperty("variant").GetProperty("segment").GetString()}");
+        Assert.That(problems, Is.EquivalentTo(new[] { "banner||vip" }));
+    }
+
+    /// <summary>
+    /// A page type that varies by culture and segment, with a block list of promos whose text does too. With a banner, it
+    /// also has a required value that varies by segment only: one per segment, shared by every culture.
+    /// </summary>
+    private async Task CreateSegmentedPageTypeAsync(bool withBanner = false)
+    {
+        var promo = await CreateElementTypeAsync("promo", ContentVariation.CultureAndSegment, ("text", ContentVariation.CultureAndSegment, false));
+        var promos = await CreateDataTypeAsync(Constants.PropertyEditors.Aliases.BlockList, "Promos", new BlockListConfiguration.BlockConfiguration[] { new() { ContentElementTypeKey = promo.Key } });
+
+        var type = new ContentTypeBuilder()
+            .WithAlias("segmentedPage").WithName("Segmented page")
+            .WithContentVariation(ContentVariation.CultureAndSegment)
+            .AddPropertyType()
+                .WithAlias("heading").WithName("Heading")
+                .WithDataTypeId(Constants.DataTypes.Textbox).WithPropertyEditorAlias(Constants.PropertyEditors.Aliases.TextBox)
+                .WithValueStorageType(ValueStorageType.Nvarchar).WithVariations(ContentVariation.CultureAndSegment).WithMandatory(true)
+                .Done()
+            .AddPropertyType()
+                .WithAlias("teaser").WithName("Teaser")
+                .WithDataTypeId(Constants.DataTypes.Textbox).WithPropertyEditorAlias(Constants.PropertyEditors.Aliases.TextBox)
+                .WithValueStorageType(ValueStorageType.Nvarchar).WithVariations(ContentVariation.CultureAndSegment)
+                .Done()
+            .AddPropertyType()
+                .WithAlias("promos").WithName("Promos").WithDataTypeId(promos.Id).WithVariations(ContentVariation.Nothing)
+                .Done()
+            .Build();
+        if (withBanner)
+        {
+            type.AddPropertyType(new PropertyTypeBuilder()
+                .WithAlias("banner").WithName("Banner")
+                .WithDataTypeId(Constants.DataTypes.Textbox).WithPropertyEditorAlias(Constants.PropertyEditors.Aliases.TextBox)
+                .WithValueStorageType(ValueStorageType.Nvarchar).WithVariations(ContentVariation.Segment).WithMandatory(true)
+                .Build());
+        }
+
+        type.AllowedAsRoot = true;
+        await ContentTypeService.CreateAsync(type, Constants.Security.SuperUserKey);
+    }
+
+    private async Task<Guid> CreateSegmentedPageAsync()
+        => (await _agent.OkAsync("entity_create", """{ "entityType": "document", "subtype": "segmentedPage", "variant": { "culture": "en-US" }, "fields": { "name": "Summer" } }"""))
+            .GetProperty("key").GetGuid();
+
+    private Task<JsonElement> SetInAsync(Guid page, string path, string valueJson, string culture, string? segment)
+        => _agent.OkAsync("entity_setValue", $$"""{ "entityType": "document", "key": "{{page}}", "path": "{{path}}", "value": {{valueJson}}, "variant": { "culture": "{{culture}}"{{(segment is null ? "" : $", \"segment\": \"{segment}\"")}} } }""");
+
     private sealed record SummerPage(Guid Key, Guid Hero, Guid AreaText);
 
     private async Task<SummerPage> BuildSummerPageAsync()

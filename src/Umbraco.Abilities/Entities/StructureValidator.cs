@@ -45,10 +45,11 @@ public static class StructureValidator
     /// <param name="variants">The variants the object exists in. Below a value that varies, only that value's variant.</param>
     private static async Task ValidateObjectAsync(Context context, JsonObject owner, ElementShape shape, string path, IReadOnlyList<VariantId> variants)
     {
+        var existsIn = InOpenValuesOfItsOwn(context.Structure, owner, shape, variants);
         foreach (var field in shape.Fields)
         {
             var fieldPath = EntityValues.Join(path, field.Alias);
-            var targets = Targets(context.Structure, field.VariesBy, variants).ToList();
+            var targets = Targets(context.Structure, field.VariesBy, existsIn).ToList();
             if (field.Required && field.Varies && targets.Count == 0)
             {
                 // A required value that varies, with no value in any variant yet: the entity has no culture (or currency…) yet.
@@ -74,6 +75,27 @@ public static class StructureValidator
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// The variants an object's own values are checked in. A value of an open dimension (a CMS segment) counts only
+    /// where the object has values of its own in it, in that variant's other dimensions: a VIP value inside a block
+    /// doesn't make the page need a VIP heading, and a Danish VIP value doesn't make English need one. This is how
+    /// Umbraco validates segments (release-18.0.0: ContentValidationServiceBase.GetPopulatedSegmentCultures).
+    /// Values below still see every variant, so each value stored is checked.
+    /// </summary>
+    private static IReadOnlyList<VariantId> InOpenValuesOfItsOwn(EntityStructure structure, JsonObject owner, ElementShape shape, IReadOnlyList<VariantId> variants)
+    {
+        var open = structure.Dimensions.Where(d => d.Values is null).Select(d => d.Name).ToList();
+        if (open.Count == 0 || variants.All(v => open.All(d => v[d] is null)))
+        {
+            return variants;
+        }
+
+        var own = EntityValues.OwnVariants(owner, shape);
+        return variants
+            .Where(v => open.All(d => v[d] is null) || own.Any(o => o.Within(v) && open.All(d => v[d] is null || o[d] == v[d])))
+            .ToList();
     }
 
     private static async Task ValidateItemsAsync(Context context, FieldDefinition field, JsonArray items, string fieldPath, VariantId scope, IReadOnlyList<VariantId> variants)

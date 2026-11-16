@@ -546,6 +546,10 @@ Each claim is followed by the tests that show it. `(all)` means every test in th
   - `CmsContentTests.A_value_that_varies_by_culture_needs_a_known_culture`
 - Each culture is validated separately, and problems say which culture
   - `CmsContentTests.Each_culture_is_validated_separately_and_problems_say_which`
+- A value can vary by two dimensions at once (culture and segment). Each segment keeps its own value, a segment still needs a known culture, and problems name both
+  - `EntityDocumentTests.A_value_can_vary_by_two_dimensions_and_each_segment_keeps_its_own_value`
+  - `EntityDocumentTests.A_segment_still_needs_a_known_culture`
+  - `EntityDocumentTests.Problems_in_a_segment_say_which_culture_and_segment`
 - Blocks in an invariant Block List hold per-culture values, and a block's settings are an object edited and validated at `{item}/settings/…`
   - `CmsContentTests.Block_values_vary_per_culture_inside_an_invariant_block_list_and_settings_are_an_object`
 - Block Grid: column span is in a layout object at `{item}/layout/…`, areas are items fields with limits, and a type can be allowed at the root and in areas
@@ -692,6 +696,14 @@ Shown against Umbraco 18 (SQLite):
   - `CmsDocumentDefinitionTests.Changes_saved_in_the_backoffice_meanwhile_are_rebased_onto_when_they_do_not_overlap`
 - A value changed in both the set and the backoffice is a conflict, with its culture, until one is kept
   - `CmsDocumentDefinitionTests.A_value_changed_in_both_the_set_and_the_backoffice_is_a_conflict_to_resolve`
+- Values that vary by culture and segment are saved per segment, in the page and inside a block, and load back the same
+  - `CmsDocumentDefinitionTests.Values_that_vary_by_culture_and_segment_are_saved_per_segment_and_load_back`
+  - `CmsDocumentDefinitionTests.Block_values_that_vary_by_segment_are_saved_in_the_block_and_load_back`
+- A required value left empty in a segment is a problem in that segment, from Umbraco and from the generic check alike
+  - `CmsDocumentDefinitionTests.A_required_value_missing_in_a_segment_is_a_problem_in_that_segment_as_Umbraco_reports_it`
+- A value that varies by segment only is shared by every culture, saved per segment, and a missing one is a problem with no culture
+  - `CmsDocumentDefinitionTests.A_value_that_varies_by_segment_only_is_shared_by_every_culture_and_saved_per_segment`
+  - `CmsDocumentDefinitionTests.A_required_segment_only_value_missing_in_a_segment_is_a_problem_with_no_culture`
 
 What running against Umbraco taught us:
 
@@ -710,10 +722,17 @@ What running against Umbraco taught us:
    as a failed save, so the scope rolls back and nothing half-valid is applied.
 5. **`UpdateDate` works to notice a change.** Umbraco has no check of its own on update; comparing `UpdateDate` tells a
    change set when to rebase.
+6. **A segment exists where it has values.** Umbraco has no list of segments. It checks the segments the save names,
+   in each culture with page values in that segment, and an empty segment value does not fall back to the default
+   (`release-18.0.0`: `ContentValidationServiceBase`). The definition first named no segments, so Umbraco checked
+   none. It now names each segment the page's own values are in. The generic validator first treated a VIP value
+   inside a block as making the whole page VIP, so it asked for a VIP heading. It now counts an open dimension, such
+   as a segment, only where an object has values of its own. A value that varies by segment only has no culture,
+   but Umbraco wants a culture on every variant of a culture-variant page, so the definition names that segment in
+   each of the page's cultures.
 
-Not covered yet: templates (an update would clear one), publishing, rich text with blocks, segments inside
-blocks, culture-variant block properties against real Umbraco, error paths inside blocks nested in blocks,
-a parent created in the same set, permissions (it runs as the super user), and editors other than text,
+Not covered yet: templates (an update would clear one), publishing, rich text with blocks, culture-variant block
+properties against real Umbraco, a parent created in the same set, and editors other than text,
 numbers, booleans, tags, content picker and blocks (they pass through as JSON, untested).
 
 ## Checked against the real models

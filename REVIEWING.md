@@ -17,7 +17,7 @@ The code is about 7,400 lines of source and 2,500 lines of tests in seven projec
 A first pass over the story and the contracts (passes 1 to 3 below) takes about 45 minutes.
 
 ```bash
-dotnet test   # 54 in-memory tests (seconds) and 17 against a real Umbraco 18 on SQLite (about 30 seconds)
+dotnet test   # 57 in-memory tests (seconds) and 22 against a real Umbraco 18 on SQLite (about 30 seconds)
 ```
 
 ## The map
