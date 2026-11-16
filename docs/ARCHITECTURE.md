@@ -19,28 +19,7 @@ To create and edit complex entities from text, such as a Commerce discount or an
 
 "Create from text" then needs no per-product code: an agent works on a change set using the generic entity operations, the adapter checks the result, and a person reviews and applies it. The same pieces serve copilot editing, content validators, extraction and bulk changes.
 
-```mermaid
-flowchart TB
-    subgraph surfaces["Surfaces"]
-        direction LR
-        action["Create action"]
-        copilot["Copilot"]
-        automate["Automate"]
-        mcp["MCP"]
-    end
-    prompts["<b>Creation prompts (Umbraco.AI)</b><br/>Agent loop: build in steps, check, fix, show for review"]
-    abilities["<b>1 · Abilities</b><br/>Operations and events, plus the generic entity abilities"]
-    entities["<b>2 · Entity adapters (new)</b><br/>Fields (values or typed items), references · item type registry"]
-    changesets["<b>3 · Change sets (generalised)</b><br/>Recorded Write ability calls, applied product by product"]
-    packages["<b>Packages</b><br/>CMS content · Commerce · Automate · Third parties<br/><i>Declare abilities, entity adapters and item types</i>"]
-
-    surfaces --> prompts
-    prompts -- calls --> abilities
-    abilities -- derived from --> entities
-    entities -- edits recorded in --> changesets
-    packages --> abilities
-    packages --> entities
-```
+![Surfaces call abilities; packages declare abilities and entity adapters](images/architecture-layers.svg)
 
 *The three layers: what packages declare and what surfaces use.*
 

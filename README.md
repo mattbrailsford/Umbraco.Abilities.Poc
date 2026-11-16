@@ -41,28 +41,7 @@ Three pieces, each owned by a contract that never names a product:
 | **Entity adapters** | What a package's entities look like (fields, lists of typed items, references) and how to load, check and save one. From this the framework gives every entity the same tools: get the schema, find, get, create, set a value, add, remove and move an item | An editing contract class, plus a mapping to and from the product's own model |
 | **Change sets** | Write calls recorded instead of run. The caller sees its own changes, the live site doesn't. A person reviews the set, then applies it, product by product. Changes saved elsewhere meanwhile are rebased onto | Nothing. A product with its own drafts (CMS content) can plug them in |
 
-```mermaid
-flowchart TB
-    subgraph surfaces["Surfaces"]
-        direction LR
-        backoffice["Backoffice"]
-        ai["Umbraco.AI copilot"]
-        mcp["MCP clients"]
-        automate["Automate"]
-    end
-    tools["<b>One set of tools</b><br/>entity_* · changeSet_* · each product's own abilities"]
-    abilities["<b>Abilities</b><br/>operations"]
-    entities["<b>Entity adapters</b><br/>what an entity looks like, load and save"]
-    changesets["<b>Change sets</b><br/>held back, reviewed, applied"]
-    packages["<b>Packages</b><br/>CMS · Commerce · Automate · third parties"]
-
-    surfaces --> tools
-    tools --> abilities
-    abilities -- derived from --> entities
-    entities -- edits recorded in --> changesets
-    packages -- declare --> abilities
-    packages -- declare --> entities
-```
+![Every surface uses one set of tools, built on three layers](docs/images/layers.svg)
 
 Every value is reached by a **path** (`rules/{key}/percent`), and every problem comes back on the same path. So any
 caller, a model or a person's editor, can fix its own work without a translation step.
