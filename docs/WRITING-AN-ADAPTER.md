@@ -50,6 +50,12 @@ public sealed class CmsPage : EntityModel
 An items field of classes needs no group name and no registration. Its item types are every `[ItemType]` class that
 extends the list's element type, found when the adapter is created. Name classes only to narrow the list.
 
+This rule is for models written in code, where the class hierarchy is the package's own choice. The sample page is a
+code-defined stand-in, not how CMS content works. In the CMS, a Block List or Block Grid allows the blocks its data
+type's configuration lists, and two properties on the same document type can allow different blocks. The real
+`CmsDocumentAdapter` reads that list per data type (`CmsSchemaMapper`), with one item type group per data type. The
+code-defined equivalent of a data type's list is naming the classes: `[Items(typeof(Hero), typeof(CardGrid))]`.
+
 **Fluent configuration**, for a class the package doesn't own or won't annotate, such as a Management API request
 model in another assembly. It needs no base class either: items name their own key property
 (`Samples/Cms/CmsPage.cs`). It goes in the adapter, like EF Core's `OnModelCreating`, not in global state.
