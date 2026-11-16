@@ -6,7 +6,7 @@ using Umbraco.Abilities.ChangeSets;
 
 namespace Umbraco.Abilities.Entities;
 
-// The generic entity abilities. They work for every registered entity definition, so no package writes
+// The generic entity abilities. They work for every registered entity adapter, so no package writes
 // create_discount, add_discount_rule and so on. Edits only run inside a change set.
 
 public interface IEntityEditInput
@@ -38,14 +38,14 @@ public abstract class EntityEditAbilityBase<TInput> : AbilityBase<TInput, object
         return new EntityEditTarget(typed.EntityType, key, Creates, (typed as CreateEntityInput)?.Subtype);
     }
 
-    public object? Apply(EntityDocument document, JsonObject input, EntityEditContext context) => Apply(document, Read(input), context);
+    public object? Apply(Entity entity, JsonObject input, EntityEditContext context) => Apply(entity, Read(input), context);
 
     /// <summary>Writes new keys into the recorded input so replay always produces the same result.</summary>
     protected virtual void FillKeys(JsonObject input)
     {
     }
 
-    protected abstract object? Apply(EntityDocument document, TInput input, EntityEditContext context);
+    protected abstract object? Apply(Entity entity, TInput input, EntityEditContext context);
 
     protected override Task<AbilityResult> ExecuteAsync(TInput input, AbilityContext context, CancellationToken cancellationToken)
         => Task.FromResult(AbilityResult.Fail(
@@ -55,8 +55,8 @@ public abstract class EntityEditAbilityBase<TInput> : AbilityBase<TInput, object
     private static TInput Read(JsonObject input)
         => input.Deserialize<TInput>(AbilityJson.Options) ?? throw new AbilityInputException("Input is required.");
 
-    protected static EditTarget Target(EntityDocument document, TInput input, EntityEditContext context)
-        => new(document, context.Structure, context.ItemTypes, new VariantId(input.Variant?.Select(v => KeyValuePair.Create(v.Key, (string?)v.Value))));
+    protected static EditTarget Target(Entity entity, TInput input, EntityEditContext context)
+        => new(entity, context.Schema, context.ItemTypes, new VariantId(input.Variant?.Select(v => KeyValuePair.Create(v.Key, (string?)v.Value))));
 
     protected static void EnsureKey(JsonObject input, string property)
     {
@@ -75,13 +75,13 @@ public sealed record GetEntitySchemaInput(
 [Ability("entity.getSchema", "Get entity schema", Kind = AbilityKind.Read,
     Description = "Returns an entity type's fields as JSON Schema. An items field lists its item types (x-item-types). " +
                   "Call it first. Call again with itemTypes to get the fields of the item types you will add.")]
-public sealed class GetEntitySchemaAbility(EntityDefinitionRegistry definitions, ItemTypeRegistry itemTypes)
+public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemTypeRegistry itemTypes)
     : AbilityBase<GetEntitySchemaInput, JsonObject>
 {
     protected override async Task<AbilityResult> ExecuteAsync(GetEntitySchemaInput input, AbilityContext context, CancellationToken cancellationToken)
     {
-        var definition = definitions.Get(input.EntityType);
-        var subtypes = await definition.GetSubtypesAsync(cancellationToken);
+        var adapter = adapters.Get(input.EntityType);
+        var subtypes = await adapter.GetSubtypesAsync(cancellationToken);
         if (subtypes.Count > 0 && input.Subtype is null)
         {
             return Success(new JsonObject
@@ -92,19 +92,19 @@ public sealed class GetEntitySchemaAbility(EntityDefinitionRegistry definitions,
             });
         }
 
-        var structure = await definition.DescribeAsync(input.Subtype, cancellationToken);
+        var schema = await adapter.GetSchemaAsync(input.Subtype, cancellationToken);
         var output = new JsonObject
         {
-            ["entityType"] = structure.EntityType,
-            ["name"] = structure.Name,
-            ["description"] = structure.Description,
-            ["dimensions"] = new JsonArray(structure.Dimensions.Select(d => (JsonNode?)new JsonObject
+            ["entityType"] = schema.EntityType,
+            ["name"] = schema.Name,
+            ["description"] = schema.Description,
+            ["dimensions"] = new JsonArray(schema.Dimensions.Select(d => (JsonNode?)new JsonObject
             {
                 ["name"] = d.Name,
                 ["description"] = d.Description,
                 ["values"] = d.Values is { } values ? new JsonArray(values.Select(v => (JsonNode?)v).ToArray()) : null,
             }).ToArray()),
-            ["fields"] = SchemaWriter.Fields(structure.Shape, itemTypes, context.UserKey),
+            ["fields"] = SchemaWriter.Fields(schema.Root, itemTypes, context.UserKey),
         };
 
         if (input.ItemTypes is { Length: > 0 })
@@ -117,7 +117,7 @@ public sealed class GetEntitySchemaAbility(EntityDefinitionRegistry definitions,
                 details[alias] = new JsonObject
                 {
                     ["name"] = itemType.Name,
-                    ["fields"] = SchemaWriter.Fields(itemType.Shape, itemTypes, context.UserKey),
+                    ["fields"] = SchemaWriter.Fields(itemType.Schema, itemTypes, context.UserKey),
                 };
             }
 
@@ -134,13 +134,13 @@ public sealed record FindEntityInput(
 
 [Ability("entity.find", "Find entities", Kind = AbilityKind.Read,
     Description = "Finds entities by name, live and in the active change set. Use it to turn a name the person used into a key.")]
-public sealed class FindEntityAbility(EntityDefinitionRegistry definitions, ChangeSetService changeSets)
-    : AbilityBase<FindEntityInput, IReadOnlyList<EntityRef>>
+public sealed class FindEntityAbility(EntityAdapterRegistry adapters, ChangeSetService changeSets)
+    : AbilityBase<FindEntityInput, IReadOnlyList<EntitySummary>>
 {
     protected override async Task<AbilityResult> ExecuteAsync(FindEntityInput input, AbilityContext context, CancellationToken cancellationToken)
     {
-        var definition = definitions.Get(input.EntityType);
-        var found = (await definition.FindAsync(input.Query, cancellationToken)).ToList();
+        var adapter = adapters.Get(input.EntityType);
+        var found = (await adapter.FindAsync(input.Query, cancellationToken)).ToList();
 
         if (context.ChangeSetId is { } setId)
         {
@@ -151,8 +151,8 @@ public sealed class FindEntityAbility(EntityDefinitionRegistry definitions, Chan
 
             foreach (var key in touched)
             {
-                var document = await changeSets.GetWorkingStateAsync(set, input.EntityType, key, cancellationToken);
-                var reference = definition.ToRef(document!);
+                var entity = await changeSets.GetWorkingStateAsync(set, input.EntityType, key, cancellationToken);
+                var reference = adapter.ToSummary(entity!);
                 if (reference.Name.Contains(input.Query, StringComparison.OrdinalIgnoreCase))
                 {
                     found.Add(reference);
@@ -161,12 +161,12 @@ public sealed class FindEntityAbility(EntityDefinitionRegistry definitions, Chan
         }
 
         // Only what the user may read. (What the set itself touches was checked when it was recorded.)
-        var readable = new List<EntityRef>();
+        var readable = new List<EntitySummary>();
         var inSet = context.ChangeSetId is { } id ? changeSets.Get(id).Changes.Where(c => c.EntityType == input.EntityType).Select(c => c.EntityKey).ToHashSet() : [];
         foreach (var reference in found)
         {
             if (inSet.Contains(reference.Key)
-                || await EntityAccess.CheckAsync(definition, new EntityAccessRequest(context.UserKey, EntityPermission.Read, reference.Key, null, new HashSet<VariantId>()), cancellationToken) is null)
+                || await EntityAccess.CheckAsync(adapter, new EntityAccessRequest(context.UserKey, EntityPermission.Read, reference.Key, null, new HashSet<VariantId>()), cancellationToken) is null)
             {
                 readable.Add(reference);
             }
@@ -182,24 +182,24 @@ public sealed record GetEntityInput(
 
 [Ability("entity.get", "Get entity", Kind = AbilityKind.Read,
     Description = "Returns an entity's fields, items included. Inside a change set this includes the set's edits.")]
-public sealed class GetEntityAbility(EntityDefinitionRegistry definitions, ChangeSetService changeSets)
+public sealed class GetEntityAbility(EntityAdapterRegistry adapters, ChangeSetService changeSets)
     : AbilityBase<GetEntityInput, JsonObject>
 {
     protected override async Task<AbilityResult> ExecuteAsync(GetEntityInput input, AbilityContext context, CancellationToken cancellationToken)
     {
-        var definition = definitions.Get(input.EntityType);
-        if (await EntityAccess.CheckAsync(definition, new EntityAccessRequest(context.UserKey, EntityPermission.Read, input.Key, null, new HashSet<VariantId>()), cancellationToken) is { } denied)
+        var adapter = adapters.Get(input.EntityType);
+        if (await EntityAccess.CheckAsync(adapter, new EntityAccessRequest(context.UserKey, EntityPermission.Read, input.Key, null, new HashSet<VariantId>()), cancellationToken) is { } denied)
         {
             return EntityAccess.Denied(denied, "key");
         }
 
-        var document = context.ChangeSetId is { } setId
+        var entity = context.ChangeSetId is { } setId
             ? await changeSets.GetWorkingStateAsync(changeSets.Get(setId), input.EntityType, input.Key, cancellationToken)
-            : await definitions.Get(input.EntityType).LoadAsync(input.Key, cancellationToken);
+            : await adapters.Get(input.EntityType).LoadAsync(input.Key, cancellationToken);
 
-        return document is null
+        return entity is null
             ? AbilityResult.Fail(AbilityOperationStatus.InvalidInput, $"No {input.EntityType} with key {input.Key}.", [new Problem("key", "Not found.")])
-            : Success(document.ToJson());
+            : Success(entity.ToJson());
     }
 }
 
@@ -219,10 +219,10 @@ public sealed class CreateEntityAbility : EntityEditAbilityBase<CreateEntityInpu
 
     protected override void FillKeys(JsonObject input) => EnsureKey(input, "key");
 
-    protected override object? Apply(EntityDocument document, CreateEntityInput input, EntityEditContext context)
+    protected override object? Apply(Entity entity, CreateEntityInput input, EntityEditContext context)
     {
-        EntityEditor.SetFields(Target(document, input, context), document.Root, context.Structure.Shape, string.Empty, input.Fields);
-        return context.Definition.ToRef(document);
+        EntityEditor.SetFields(Target(entity, input, context), entity.Fields, context.Schema.Root, string.Empty, input.Fields);
+        return context.Adapter.ToSummary(entity);
     }
 }
 
@@ -238,9 +238,9 @@ public sealed record SetEntityValueInput(
                   "field. Give a culture for values that vary by culture. Problem paths from changeSet.validate have the same form.")]
 public sealed class SetEntityValueAbility : EntityEditAbilityBase<SetEntityValueInput>
 {
-    protected override object? Apply(EntityDocument document, SetEntityValueInput input, EntityEditContext context)
+    protected override object? Apply(Entity entity, SetEntityValueInput input, EntityEditContext context)
     {
-        return new { path = EntityEditor.SetValue(Target(document, input, context), input.Path, input.Value) };
+        return new { path = EntityEditor.SetValue(Target(entity, input, context), input.Path, input.Value) };
     }
 }
 
@@ -261,9 +261,9 @@ public sealed class AddEntityItemAbility : EntityEditAbilityBase<AddEntityItemIn
 {
     protected override void FillKeys(JsonObject input) => EnsureKey(input, "itemKey");
 
-    protected override object? Apply(EntityDocument document, AddEntityItemInput input, EntityEditContext context)
+    protected override object? Apply(Entity entity, AddEntityItemInput input, EntityEditContext context)
     {
-        var path = EntityEditor.AddItem(Target(document, input, context), input.FieldPath, input.ItemType, input.ItemKey!.Value, input.Fields, input.Position);
+        var path = EntityEditor.AddItem(Target(entity, input, context), input.FieldPath, input.ItemType, input.ItemKey!.Value, input.Fields, input.Position);
         return new { itemKey = input.ItemKey, path };
     }
 }
@@ -279,9 +279,9 @@ public sealed record RemoveEntityItemInput(
     Description = "Removes an item from an items field, in the active change set.")]
 public sealed class RemoveEntityItemAbility : EntityEditAbilityBase<RemoveEntityItemInput>
 {
-    protected override object? Apply(EntityDocument document, RemoveEntityItemInput input, EntityEditContext context)
+    protected override object? Apply(Entity entity, RemoveEntityItemInput input, EntityEditContext context)
     {
-        EntityEditor.RemoveItem(Target(document, input, context), input.FieldPath, input.ItemKey);
+        EntityEditor.RemoveItem(Target(entity, input, context), input.FieldPath, input.ItemKey);
         return new { removed = input.ItemKey };
     }
 }
@@ -298,9 +298,9 @@ public sealed record MoveEntityItemInput(
     Description = "Moves an item within its items field, in the active change set.")]
 public sealed class MoveEntityItemAbility : EntityEditAbilityBase<MoveEntityItemInput>
 {
-    protected override object? Apply(EntityDocument document, MoveEntityItemInput input, EntityEditContext context)
+    protected override object? Apply(Entity entity, MoveEntityItemInput input, EntityEditContext context)
     {
-        EntityEditor.MoveItem(Target(document, input, context), input.FieldPath, input.ItemKey, input.Position);
+        EntityEditor.MoveItem(Target(entity, input, context), input.FieldPath, input.ItemKey, input.Position);
         return new { moved = input.ItemKey, position = input.Position };
     }
 }

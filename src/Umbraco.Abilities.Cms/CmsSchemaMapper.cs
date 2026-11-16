@@ -25,15 +25,15 @@ internal sealed record PropertyMap(string Alias, string EditorAlias, PropertyKin
     public BlockMap? BlockFor(string elementAlias) => Blocks.FirstOrDefault(b => b.ContentAlias == elementAlias);
 }
 
-/// <summary>The shape of a document or element type, plus how each of its properties maps.</summary>
-internal sealed record ShapeMap(ElementShape Shape, ContentVariation Variations, IReadOnlyDictionary<string, PropertyMap> Properties);
+/// <summary>The schema of a document or element type, plus how each of its properties maps.</summary>
+internal sealed record SchemaMap(ObjectSchema Schema, ContentVariation Variations, IReadOnlyDictionary<string, PropertyMap> Properties);
 
 /// <summary>
-/// Builds the structure language from Umbraco document types, element types and data types. Block editors
+/// Builds the schema language from Umbraco document types, element types and data types. Block editors
 /// become items fields whose item types are registered per data type, because the same element type can be used by
 /// several block editors with different settings types and areas.
 /// </summary>
-internal sealed class CmsStructureMapper(
+internal sealed class CmsSchemaMapper(
     IContentTypeService contentTypes,
     IDataTypeService dataTypes,
     ItemTypeRegistry itemTypes,
@@ -49,7 +49,7 @@ internal sealed class CmsStructureMapper(
     public IContentType RequireType(Guid key)
         => contentTypes.Get(key) ?? throw new InvalidOperationException($"No content type with key {key}.");
 
-    public async Task<ShapeMap> MapAsync(IContentTypeComposition type, bool isDocument)
+    public async Task<SchemaMap> MapAsync(IContentTypeComposition type, bool isDocument)
     {
         var fields = new List<FieldDefinition>();
         var properties = new Dictionary<string, PropertyMap>(StringComparer.Ordinal);
@@ -62,7 +62,7 @@ internal sealed class CmsStructureMapper(
             });
             fields.Add(new FieldDefinition(ParentField, "The parent document. Only used when creating; moving is a separate operation.", FieldType.EntityReference)
             {
-                ReferencesEntityType = CmsDocumentDefinition.Type,
+                ReferencesEntityType = CmsDocumentAdapter.Type,
             });
         }
 
@@ -73,7 +73,7 @@ internal sealed class CmsStructureMapper(
             fields.Add(map.Field);
         }
 
-        return new ShapeMap(new ElementShape(fields), type.Variations, properties);
+        return new SchemaMap(new ObjectSchema(fields), type.Variations, properties);
     }
 
     private async Task<PropertyMap> MapPropertyAsync(IPropertyType propertyType)
@@ -105,7 +105,7 @@ internal sealed class CmsStructureMapper(
             case Constants.PropertyEditors.Aliases.Tags:
                 return AsField(FieldType.String, many: true);
             case Constants.PropertyEditors.Aliases.ContentPicker:
-                return AsField(FieldType.EntityReference, references: CmsDocumentDefinition.Type);
+                return AsField(FieldType.EntityReference, references: CmsDocumentAdapter.Type);
             case Constants.PropertyEditors.Aliases.BlockList:
             case Constants.PropertyEditors.Aliases.BlockGrid:
                 return await MapBlockEditorAsync(propertyType, description, varies);
@@ -140,7 +140,7 @@ internal sealed class CmsStructureMapper(
         return new PropertyMap(propertyType.Alias, editor, PropertyKind.Field, new FieldDefinition(propertyType.Alias, description, FieldType.Json, propertyType.Mandatory)
         {
             VariesBy = CmsVariants.DimensionsOf(varies),
-            Schema = schema,
+            JsonSchema = schema,
         }, []);
     }
 
@@ -159,7 +159,7 @@ internal sealed class CmsStructureMapper(
             var config = dataType.ConfigurationObject as BlockGridConfiguration ?? new BlockGridConfiguration();
             var columns = config.GridColumns ?? 12;
             // Every grid block, at the root or in an area, has a layout: where it sits.
-            var layout = FieldDefinition.ObjectOf(LayoutField, "Where the block sits in the grid.", ElementShape.Of(
+            var layout = FieldDefinition.ObjectOf(LayoutField, "Where the block sits in the grid.", ObjectSchema.Of(
                 new FieldDefinition("columnSpan", $"Columns the block spans, 1 to {columns}.", FieldType.Integer, Required: true),
                 new FieldDefinition("rowSpan", "Rows the block spans.", FieldType.Integer))) with
             { Required = true };
@@ -228,14 +228,14 @@ internal sealed class CmsStructureMapper(
 
         try
         {
-            var shape = (await MapAsync(content, isDocument: false)).Shape;
+            var schema = (await MapAsync(content, isDocument: false)).Schema;
             // A block's settings element is an object field of the block, beside its own fields.
             FieldDefinition[] settings = settingsKey is { } key
-                ? [FieldDefinition.ObjectOf(SettingsField, "The block's settings.", (await MapAsync(RequireType(key), isDocument: false)).Shape)]
+                ? [FieldDefinition.ObjectOf(SettingsField, "The block's settings.", (await MapAsync(RequireType(key), isDocument: false)).Schema)]
                 : [];
 
             itemTypes.AddIfMissing(new ItemTypeDefinition(group, content.Alias, content.Name ?? content.Alias, content.Description ?? string.Empty,
-                shape with { Fields = [.. shape.Fields, .. settings, .. extraFields] })
+                schema with { Fields = [.. schema.Fields, .. settings, .. extraFields] })
             {
                 AlsoIn = alsoIn,
             });

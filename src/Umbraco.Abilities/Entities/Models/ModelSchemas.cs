@@ -16,7 +16,7 @@ namespace Umbraco.Abilities.Entities.Models;
 internal sealed record FieldMember(PropertyInfo Property, FieldDefinition Field, bool Varying, Type ValueType, IReadOnlyList<ValidationAttribute> Rules);
 
 internal sealed record ModelInfo(
-    ElementShape Shape,
+    ObjectSchema Schema,
     IReadOnlyList<FieldMember> Fields,
     PropertyInfo? Key,
     PropertyInfo? Name,
@@ -26,25 +26,25 @@ internal sealed record ModelInfo(
     (string Alias, string Name, string Description)? ItemType);
 
 /// <summary>
-/// Everything the framework works out from a model class, so package developers don't write it: the structure
-/// (fields, items fields, references, variations, schemas) from the properties and their attributes, the mapping between
-/// the class and an entity document, and DataAnnotations validation reported on entity paths.
+/// Everything the framework works out from a model class, so package developers don't write it: the schema
+/// (fields, items fields, references, variations, JSON Schemas) from the properties and their attributes, the mapping between
+/// the class and an entity, and DataAnnotations validation reported on entity paths.
 /// </summary>
-public static class ModelShapes
+public static class ModelSchemas
 {
     private static readonly ConcurrentDictionary<Type, ModelInfo> Cache = new();
 
-    // Where each item read from a document sits, for problem paths on items that don't derive from EntityItemModel.
+    // Where each item read from an entity sits, for problem paths on items that don't derive from EntityItemModel.
     private static readonly ConditionalWeakTable<object, string> Paths = [];
 
-    /// <summary>The structure of a model class.</summary>
-    public static ElementShape ShapeOf(Type type) => Info(type).Shape;
+    /// <summary>The schema of a model class.</summary>
+    public static ObjectSchema SchemaOf(Type type) => Info(type).Schema;
 
     internal static ModelInfo Info(Type type) => Cache.GetOrAdd(type, Build);
 
     internal static void Forget(Type type) => Cache.TryRemove(type, out _);
 
-    /// <summary>Where an item read from a document sits, e.g. <c>"rewards/{key}"</c>; empty for an item not read from one.</summary>
+    /// <summary>Where an item read from an entity sits, e.g. <c>"rewards/{key}"</c>; empty for an item not read from one.</summary>
     public static string PathOf(object item) => Paths.TryGetValue(item, out var path) ? path : string.Empty;
 
     /// <summary>The key of an item model, by its configured key property.</summary>
@@ -85,7 +85,7 @@ public static class ModelShapes
             var field = config.Role == PropertyRole.Items
                 ? FieldDefinition.ItemsOf(alias, description, config.ItemTypeGroup!) with { Min = config.Min, Max = config.Max }
                 : IsObject(valueType)
-                    ? FieldDefinition.ObjectOf(alias, description, ShapeOf(valueType)) with { Required = config.Required ?? false }
+                    ? FieldDefinition.ObjectOf(alias, description, SchemaOf(valueType)) with { Required = config.Required ?? false }
                     : FieldFor(config, alias, description, valueType);
             field = field with { VariesBy = varying ? property.GetCustomAttribute<VariesByAttribute>()?.Dimensions ?? [VariationDimensions.Culture] : [] };
 
@@ -106,7 +106,7 @@ public static class ModelShapes
         var dimensions = fields.SelectMany(f => f.Field.VariesBy).Distinct().ToList();
         var entity = typeConfig?.Entity ?? (type.GetCustomAttribute<EntityAttribute>() is { } e ? (e.EntityType, e.Name, e.Description) : null);
         var itemType = typeConfig?.ItemType ?? (type.GetCustomAttribute<ItemTypeAttribute>() is { } i ? (i.Alias, i.Name, i.Description) : null);
-        return new ModelInfo(new ElementShape(fields.Select(f => f.Field).ToList()), fields, key, name, version, dimensions, entity, itemType);
+        return new ModelInfo(new ObjectSchema(fields.Select(f => f.Field).ToList()), fields, key, name, version, dimensions, entity, itemType);
     }
 
     /// <summary>
@@ -147,7 +147,7 @@ public static class ModelShapes
             config.Max = items.Max >= 0 ? items.Max : null;
         }
 
-        // [Required] and [AllowedValues] are part of the structure, which the generic validator checks per variant.
+        // [Required] and [AllowedValues] are part of the schema, which the generic validator checks per variant.
         config.Rules.AddRange(property.GetCustomAttributes<ValidationAttribute>().Where(a => a is not RequiredAttribute and not AllowedValuesAttribute));
         return config;
     }
@@ -212,7 +212,7 @@ public static class ModelShapes
             // Anything else is a structured value: described by its own JSON Schema, generated from the type.
             return new FieldDefinition(alias, description, FieldType.Json, required)
             {
-                Schema = JsonSchemaExporter.GetJsonSchemaAsNode(AbilityJson.Options, valueType) as JsonObject,
+                JsonSchema = JsonSchemaExporter.GetJsonSchemaAsNode(AbilityJson.Options, valueType) as JsonObject,
             };
         }
 
@@ -227,7 +227,7 @@ public static class ModelShapes
 
     // ── Mapping ──────────────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>A model's values as the JSON object an entity document holds: items as keyed, typed objects, varying values per variant.</summary>
+    /// <summary>A model's values as the JSON object an entity holds: items as keyed, typed objects, varying values per variant.</summary>
     public static JsonObject Write(object model)
     {
         var json = new JsonObject();
@@ -263,7 +263,7 @@ public static class ModelShapes
         return json;
     }
 
-    /// <summary>Reads a model of <paramref name="type"/> from an object in an entity document. Items are created as their registered item type classes.</summary>
+    /// <summary>Reads a model of <paramref name="type"/> from an object in an entity. Items are created as their registered item type classes.</summary>
     public static object Read(Type type, JsonObject json, ItemTypeRegistry itemTypes, string path)
     {
         var model = Activator.CreateInstance(type)!;
@@ -421,7 +421,7 @@ public static class ModelShapes
                         ValidateObject(single, fieldPath, problems);
                         break;
 
-                    // Dynamic items have no class to carry rules: their fields' rules are checked from the structure.
+                    // Dynamic items have no class to carry rules: their fields' rules are checked from the schema.
                     case FieldType.Items:
                         foreach (var item in ((IEnumerable)single).Cast<object>().Where(i => i is not DynamicItem))
                         {

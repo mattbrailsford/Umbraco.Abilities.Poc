@@ -5,7 +5,7 @@ namespace Umbraco.Abilities.Samples.Commerce.Domain;
 
 // A stand-in for Commerce's own discount model, shaped like the real one: an immutable read-only entity with internal
 // constructors, a writable copy from AsWritable, UTC dates, and rules and rewards stored as a provider alias plus
-// string settings, with no ids of their own. Nothing here knows about abilities; the definition maps to it.
+// string settings, with no ids of their own. Nothing here knows about abilities; the adapter maps to it.
 
 /// <summary>A rule: its provider, its settings as strings, and for a group rule, its child rules.</summary>
 public sealed record DiscountRuleConfig(string RuleProviderAlias, IReadOnlyDictionary<string, string> Settings, IReadOnlyList<DiscountRuleConfig>? Children = null);

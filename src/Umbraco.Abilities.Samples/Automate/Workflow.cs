@@ -5,10 +5,10 @@ namespace Umbraco.Abilities.Samples.Automate;
 
 /// <summary>
 /// An Automate workflow as an entity: one trigger, and steps whose item types are abilities and Automate's actions.
-/// Edges between steps are item references, so a graph fits the same structure language as a tree.
+/// Edges between steps are item references, so a graph fits the same schema language as a tree.
 /// </summary>
-public sealed class WorkflowDefinition(InMemoryDatabase database)
-    : InMemoryEntityDefinition(database, "umbraco-automate-workflow", "name", "/umbraco/section/automate/workflow")
+public sealed class WorkflowAdapter(InMemoryDatabase database)
+    : InMemoryEntityAdapter(database, "umbraco-automate-workflow", "name", "/umbraco/section/automate/workflow")
 {
     public const string TriggerGroup = "automate.trigger";
     public const string StepGroup = "automate.step";
@@ -38,8 +38,8 @@ public sealed class WorkflowDefinition(InMemoryDatabase database)
         }
     }
 
-    public override Task<EntityStructure> DescribeAsync(string? subtype, CancellationToken cancellationToken = default)
-        => Task.FromResult(new EntityStructure(EntityType, "Workflow", "An automation: a trigger, then steps.", ElementShape
+    public override Task<EntitySchema> GetSchemaAsync(string? subtype, CancellationToken cancellationToken = default)
+        => Task.FromResult(new EntitySchema(EntityType, "Workflow", "An automation: a trigger, then steps.", ObjectSchema
             .Of(
                 new FieldDefinition("name", "Workflow name.", FieldType.String, Required: true),
                 new FieldDefinition("enabled", "Whether the workflow runs.", FieldType.Boolean),
@@ -64,7 +64,7 @@ public sealed class AutomatePluginItemTypes(string group, AutomatePluginCollecti
             .Select(f => ItemTypeFields.For(new SettingDescriptor(f.Key, f.Field.Label, f.Field.Description, f.PropertyType, f.Rules, f.Field.EditorUiAlias, f.Field.SortOrder, f.Field.SupportsBindings), Editors))
             .Concat(extraFields)
             .ToList();
-        return new ItemTypeDefinition(group, plugin.Alias, plugin.Name, plugin.Description ?? plugin.Name, new ElementShape(fields))
+        return new ItemTypeDefinition(group, plugin.Alias, plugin.Name, plugin.Description ?? plugin.Name, new ObjectSchema(fields))
         {
             AvailableTo = user => plugin.RequiredSections.All(section => hasSection(user, section)),
         };

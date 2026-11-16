@@ -13,7 +13,7 @@ namespace Umbraco.Abilities.ChangeSets;
 /// <summary>
 /// Records Write ability calls instead of running them, works out an entity's state inside a set, and applies
 /// the set. Unlike the CMS Draft Sets PoC, the working state is computed in memory from
-/// <see cref="IEntityDefinition.LoadAsync"/> plus the recorded edits, so it works for any entity type.
+/// <see cref="IEntityAdapter.LoadAsync"/> plus the recorded edits, so it works for any entity type.
 /// <para>
 /// Applying is atomic per product, not across products: each product's changes save in that product's own
 /// transaction, one product after another, and side effects (such as sending an email) run last.
@@ -24,7 +24,7 @@ namespace Umbraco.Abilities.ChangeSets;
 public sealed class ChangeSetService(
     IChangeSetStore store,
     AbilityRegistry abilities,
-    EntityDefinitionRegistry definitions,
+    EntityAdapterRegistry adapters,
     ItemTypeRegistry itemTypes,
     IEventAggregator? events = null,
     IBackgroundTaskQueue? background = null,
@@ -76,11 +76,11 @@ public sealed class ChangeSetService(
             }
 
             var target = edit.Prepare(recorded);
-            var definition = definitions.Get(target.EntityType);
-            if (set.AppliedSteps.Contains(definition.UnitOfWork.Name))
+            var adapter = adapters.Get(target.EntityType);
+            if (set.AppliedSteps.Contains(adapter.UnitOfWork.Name))
             {
                 throw new AbilityInputException(
-                    $"{definition.UnitOfWork.Name} changes in this set are already applied. Start a new change set to change them again.",
+                    $"{adapter.UnitOfWork.Name} changes in this set are already applied. Start a new change set to change them again.",
                     [new Problem("entityType", "Already applied.")]);
             }
 
@@ -89,7 +89,7 @@ public sealed class ChangeSetService(
 
             if (target.Creates)
             {
-                if (!definition.CanCreate)
+                if (!adapter.CanCreate)
                 {
                     throw new AbilityInputException($"{target.EntityType} cannot be created here.", [new Problem("entityType", "Not creatable.")]);
                 }
@@ -99,7 +99,7 @@ public sealed class ChangeSetService(
                     throw new AbilityInputException($"{target.EntityType} {target.EntityKey} already exists.", [new Problem("key", "Already exists.")]);
                 }
 
-                var subtypes = await definition.GetSubtypesAsync(cancellationToken);
+                var subtypes = await adapter.GetSubtypesAsync(cancellationToken);
                 if (subtypes.Count > 0 && !subtypes.Any(s => s.Alias == target.Subtype))
                 {
                     throw new AbilityInputException(
@@ -107,7 +107,7 @@ public sealed class ChangeSetService(
                         [new Problem("subtype", "Required, and must be one of the listed subtypes.")]);
                 }
 
-                working = definition.New(target.EntityKey, target.Subtype);
+                working = adapter.New(target.EntityKey, target.Subtype);
             }
             else if (working is null)
             {
@@ -117,9 +117,9 @@ public sealed class ChangeSetService(
             // Remember the version the set starts editing from, to rebase onto newer live versions later.
             // (Only for entities that exist live: one the set creates has nothing to rebase onto.)
             // (Products with their own drafts keep their own base.)
-            if (definition is not IDraftingEntityDefinition && !target.Creates && working.LiveVersion is { } version && !set.Bases.ContainsKey(ChangeSet.EntityKey(target.EntityType, target.EntityKey)))
+            if (adapter is not IDraftingEntityAdapter && !target.Creates && working.Version is { } version && !set.Bases.ContainsKey(ChangeSet.EntityKey(target.EntityType, target.EntityKey)))
             {
-                if (definition is IVersionedEntityDefinition)
+                if (adapter is IVersionedEntityAdapter)
                 {
                     set.BaseVersions.TryAdd(ChangeSet.EntityKey(target.EntityType, target.EntityKey), version);
                 }
@@ -129,22 +129,22 @@ public sealed class ChangeSetService(
                 }
             }
 
-            var structure = await definition.DescribeAsync(working.Subtype, cancellationToken);
-            var output = edit.Apply(working, recorded, new EntityEditContext(definition, structure, itemTypes));
+            var schema = await adapter.GetSchemaAsync(working.Subtype, cancellationToken);
+            var output = edit.Apply(working, recorded, new EntityEditContext(adapter, schema, itemTypes));
 
             // The user the edit is made for must be allowed to make it, in the cultures it touches.
-            var permission = working.LiveVersion is null ? EntityPermission.Create : EntityPermission.Update;
-            if (await EntityAccess.CheckAsync(definition, new EntityAccessRequest(context.UserKey, permission, target.EntityKey, working, EntityAccess.VariantsChanged(before, working, structure.Shape, itemTypes)), cancellationToken) is { } denied)
+            var permission = working.Version is null ? EntityPermission.Create : EntityPermission.Update;
+            if (await EntityAccess.CheckAsync(adapter, new EntityAccessRequest(context.UserKey, permission, target.EntityKey, working, EntityAccess.VariantsChanged(before, working, schema.Root, itemTypes)), cancellationToken) is { } denied)
             {
                 return EntityAccess.Denied(denied);
             }
 
             // And to use every item type it adds: a plugin's type can need access the entity doesn't.
-            if (EntityAccess.NewItemTypesNotAvailable(before, working, structure.Shape, itemTypes, context.UserKey) is { Count: > 0 } unavailable)
+            if (EntityAccess.NewItemTypesNotAvailable(before, working, schema.Root, itemTypes, context.UserKey) is { Count: > 0 } unavailable)
             {
                 return EntityAccess.Denied($"You may not use {string.Join(", ", unavailable)}.");
             }
-            if (definition is IDraftingEntityDefinition drafting)
+            if (adapter is IDraftingEntityAdapter drafting)
             {
                 // The product's draft records the change; the set only remembers that it touched the entity.
                 await drafting.StageAsync(await EnsureDraftAsync(set, drafting, cancellationToken), target.Creates ? null : before, working, cancellationToken);
@@ -170,7 +170,7 @@ public sealed class ChangeSetService(
     /// An edit to something they removed is skipped (it shows as a conflict), and conflicts resolved as "theirs" take
     /// the live value.
     /// </summary>
-    public async Task<EntityDocument?> GetWorkingStateAsync(ChangeSet set, string entityType, Guid key, CancellationToken cancellationToken = default)
+    public async Task<Entity?> GetWorkingStateAsync(ChangeSet set, string entityType, Guid key, CancellationToken cancellationToken = default)
         => (await ComputeAsync(set, entityType, key, cancellationToken)).Working;
 
     /// <summary>
@@ -181,9 +181,9 @@ public sealed class ChangeSetService(
         => (await ComputeAllAsync(set, cancellationToken)).Rebased;
 
     /// <summary>One entity's state in a set, worked out once: what's live, the set's result, and how it rebased.</summary>
-    private sealed record EntityState(string EntityType, Guid Key, IEntityDefinition Definition, EntityDocument? Live, EntityDocument? Working, RebasedEntity? Rebased)
+    private sealed record EntityState(string EntityType, Guid Key, IEntityAdapter Adapter, Entity? Live, Entity? Working, RebasedEntity? Rebased)
     {
-        public EntityRef Ref => (Working ?? Live) is { } document ? Definition.ToRef(document) : Rebased?.Entity ?? new EntityRef(EntityType, Key, "(deleted)");
+        public EntitySummary Summary => (Working ?? Live) is { } entity ? Adapter.ToSummary(entity) : Rebased?.Entity ?? new EntitySummary(EntityType, Key, "(deleted)");
     }
 
     private sealed record SetState(IReadOnlyList<EntityState> Entities, IReadOnlyList<RebasedEntity> Rebased);
@@ -213,14 +213,14 @@ public sealed class ChangeSetService(
 
     private async Task<EntityState> ComputeAsync(ChangeSet set, string entityType, Guid key, CancellationToken cancellationToken)
     {
-        var definition = definitions.Get(entityType);
-        var live = await definition.LoadAsync(key, cancellationToken);
-        EntityState State(EntityDocument? working, RebasedEntity? rebased = null) => new(entityType, key, definition, live, working, rebased);
+        var adapter = adapters.Get(entityType);
+        var live = await adapter.LoadAsync(key, cancellationToken);
+        EntityState State(Entity? working, RebasedEntity? rebased = null) => new(entityType, key, adapter, live, working, rebased);
 
-        if (definition is IDraftingEntityDefinition drafting)
+        if (adapter is IDraftingEntityAdapter drafting)
         {
             // The product's draft holds the working state and reports its own rebase.
-            return State(set.Drafts.TryGetValue(definition.UnitOfWork.Name, out var draftId)
+            return State(set.Drafts.TryGetValue(adapter.UnitOfWork.Name, out var draftId)
                 ? await drafting.LoadDraftAsync(draftId, key, cancellationToken)
                 : live?.Clone());
         }
@@ -228,7 +228,7 @@ public sealed class ChangeSetService(
         var calls = set.Changes.Where(c => c.EntityType == entityType && c.EntityKey == key).ToList();
         if (calls.FirstOrDefault() is { Creates: true } create)
         {
-            return State(await ReplayAsync(definition, definition.New(key, create.Subtype), calls, skipUnder: [], cancellationToken));
+            return State(await ReplayAsync(adapter, adapter.New(key, create.Subtype), calls, skipUnder: [], cancellationToken));
         }
 
         if (calls.Count == 0)
@@ -236,27 +236,27 @@ public sealed class ChangeSetService(
             return State(live?.Clone());
         }
 
-        var start = await GetStartAsync(set, definition, key, cancellationToken);
+        var start = await GetStartAsync(set, adapter, key, cancellationToken);
         if (live is null)
         {
-            return State(null, start is null ? null : CantRebase(definition.ToRef(start), "(deleted)"));
+            return State(null, start is null ? null : CantRebase(adapter.ToSummary(start), "(deleted)"));
         }
 
-        if (start is null || start.LiveVersion == live.LiveVersion)
+        if (start is null || start.Version == live.Version)
         {
             // Nothing changed underneath, or the version the set started from is gone from the product's history.
-            var lost = start is null && set.BaseVersions.TryGetValue(ChangeSet.EntityKey(entityType, key), out var version) && live.LiveVersion != version;
+            var lost = start is null && set.BaseVersions.TryGetValue(ChangeSet.EntityKey(entityType, key), out var version) && live.Version != version;
             return State(
-                await ReplayAsync(definition, live.Clone(), calls, skipUnder: [], cancellationToken),
-                lost ? CantRebase(definition.ToRef(live), "(unknown: the starting version is no longer in the history)") : null);
+                await ReplayAsync(adapter, live.Clone(), calls, skipUnder: [], cancellationToken),
+                lost ? CantRebase(adapter.ToSummary(live), "(unknown: the starting version is no longer in the history)") : null);
         }
 
         // Someone else saved since: replay the set's edits onto theirs, skipping edits to what they removed.
-        var shape = (await definition.DescribeAsync(live.Subtype, cancellationToken)).Shape;
-        var theirs = EntityDiff.Compare(start.Root, live.Root, shape, itemTypes);
-        var working = await ReplayAsync(definition, live.Clone(), calls, theirs.Where(t => t.Structural).ToList(), cancellationToken);
-        var yoursDocument = await ReplayAsync(definition, start.Clone(), calls, skipUnder: [], cancellationToken);
-        var yours = EntityDiff.Compare(start.Root, yoursDocument.Root, shape, itemTypes);
+        var schema = (await adapter.GetSchemaAsync(live.Subtype, cancellationToken)).Root;
+        var theirs = EntityDiff.Compare(start.Fields, live.Fields, schema, itemTypes);
+        var working = await ReplayAsync(adapter, live.Clone(), calls, theirs.Where(t => t.Structural).ToList(), cancellationToken);
+        var yoursEntity = await ReplayAsync(adapter, start.Clone(), calls, skipUnder: [], cancellationToken);
+        var yours = EntityDiff.Compare(start.Fields, yoursEntity.Fields, schema, itemTypes);
         var entity = ChangeSet.EntityKey(entityType, key);
 
         var conflicts = new List<ChangeSetConflict>();
@@ -264,8 +264,8 @@ public sealed class ChangeSetService(
         {
             // Report at the item someone else added or removed, else at the value itself.
             var at = other.Structural ? other : mine;
-            var yourValue = EntityDiff.ValueAt(yoursDocument.Root, shape, itemTypes, at);
-            var theirValue = EntityDiff.ValueAt(live.Root, shape, itemTypes, at);
+            var yourValue = EntityDiff.ValueAt(yoursEntity.Fields, schema, itemTypes, at);
+            var theirValue = EntityDiff.ValueAt(live.Fields, schema, itemTypes, at);
             if (JsonNode.DeepEquals(yourValue, theirValue) || conflicts.Any(c => c.Path == at.Path && VariantId.From(c.Variant).Equals(at.Variant)))
             {
                 continue; // Both made the same change, or it's already listed.
@@ -274,24 +274,24 @@ public sealed class ChangeSetService(
             var resolution = set.Resolutions.TryGetValue(new ConflictKey(entity, at.Path, at.VariantKey), out var side) ? side : (ConflictSide?)null;
             if (resolution == ConflictSide.Theirs)
             {
-                EntityDiff.CopyPath(live.Root, working.Root, shape, itemTypes, at);
+                EntityDiff.CopyPath(live.Fields, working.Fields, schema, itemTypes, at);
             }
 
-            conflicts.Add(new ChangeSetConflict(definition.ToRef(live), at.Path, at.Variant.ToJson(), EntityDiff.ValueAt(start.Root, shape, itemTypes, at), yourValue, theirValue, resolution));
+            conflicts.Add(new ChangeSetConflict(adapter.ToSummary(live), at.Path, at.Variant.ToJson(), EntityDiff.ValueAt(start.Fields, schema, itemTypes, at), yourValue, theirValue, resolution));
         }
 
-        return State(working, new RebasedEntity(definition.ToRef(live), theirs.Select(Describe).Distinct().ToList(), conflicts));
+        return State(working, new RebasedEntity(adapter.ToSummary(live), theirs.Select(Describe).Distinct().ToList(), conflicts));
     }
 
     /// <summary>An entity that can't be rebased: one conflict at the empty path, resolved only by redoing the changes.</summary>
-    private static RebasedEntity CantRebase(EntityRef entity, string changedSince)
+    private static RebasedEntity CantRebase(EntitySummary entity, string changedSince)
         => new(entity, [changedSince], [new ChangeSetConflict(entity, string.Empty, null, null, null, null, null)]);
 
     /// <summary>Keeps the set's value or the live one for one conflict.</summary>
     public async Task ResolveConflictAsync(Guid setId, string entityType, Guid key, string path, VariantId variant, ConflictSide keep, CancellationToken cancellationToken = default)
     {
         var set = Get(setId);
-        if (definitions.Get(entityType) is IDraftingEntityDefinition drafting
+        if (adapters.Get(entityType) is IDraftingEntityAdapter drafting
             && set.Drafts.TryGetValue(drafting.UnitOfWork.Name, out var draftId))
         {
             await drafting.ResolveConflictAsync(draftId, key, path, variant, keep, cancellationToken);
@@ -322,15 +322,15 @@ public sealed class ChangeSetService(
     /// The version the set started editing an entity from: its own snapshot, or, when the product keeps version
     /// history, that version loaded from the history.
     /// </summary>
-    private static async Task<EntityDocument?> GetStartAsync(ChangeSet set, IEntityDefinition definition, Guid key, CancellationToken cancellationToken)
+    private static async Task<Entity?> GetStartAsync(ChangeSet set, IEntityAdapter adapter, Guid key, CancellationToken cancellationToken)
     {
-        var entityKey = ChangeSet.EntityKey(definition.EntityType, key);
+        var entityKey = ChangeSet.EntityKey(adapter.EntityType, key);
         if (set.Bases.TryGetValue(entityKey, out var snapshot))
         {
             return snapshot;
         }
 
-        if (set.BaseVersions.TryGetValue(entityKey, out var version) && definition is IVersionedEntityDefinition versioned)
+        if (set.BaseVersions.TryGetValue(entityKey, out var version) && adapter is IVersionedEntityAdapter versioned)
         {
             return await versioned.LoadVersionAsync(key, version, cancellationToken);
         }
@@ -338,19 +338,19 @@ public sealed class ChangeSetService(
         return null;
     }
 
-    private async Task<EntityDocument> ReplayAsync(IEntityDefinition definition, EntityDocument document, IReadOnlyList<RecordedCall> calls, IReadOnlyList<ChangedPath> skipUnder, CancellationToken cancellationToken)
+    private async Task<Entity> ReplayAsync(IEntityAdapter adapter, Entity entity, IReadOnlyList<RecordedCall> calls, IReadOnlyList<ChangedPath> skipUnder, CancellationToken cancellationToken)
     {
         if (calls.Count == 0)
         {
-            return document;
+            return entity;
         }
 
-        var context = new EntityEditContext(definition, await definition.DescribeAsync(document.Subtype, cancellationToken), itemTypes);
+        var context = new EntityEditContext(adapter, await adapter.GetSchemaAsync(entity.Subtype, cancellationToken), itemTypes);
         foreach (var call in calls)
         {
             try
             {
-                ((IEntityEditAbility)abilities.Find(call.AbilityId)!).Apply(document, call.Input, context);
+                ((IEntityEditAbility)abilities.Find(call.AbilityId)!).Apply(entity, call.Input, context);
             }
             catch (AbilityInputException ex) when (ex.Problems.Any(p => skipUnder.Any(t => p.Path == t.Path || p.Path.StartsWith(t.Path + "/", StringComparison.Ordinal))))
             {
@@ -358,7 +358,7 @@ public sealed class ChangeSetService(
             }
         }
 
-        return document;
+        return entity;
     }
 
     private static string Describe(ChangedPath change) => change.Variant.IsInvariant ? change.Path : $"{change.Path} ({change.Variant})";
@@ -374,9 +374,9 @@ public sealed class ChangeSetService(
         var result = new List<EntityProblems>();
         foreach (var entity in state.Entities)
         {
-            if (entity.Working is not { } document)
+            if (entity.Working is not { } working)
             {
-                result.Add(new EntityProblems(entity.Ref, [new Problem(string.Empty, "Someone else deleted this since the set started editing it.")]));
+                result.Add(new EntityProblems(entity.Summary, [new Problem(string.Empty, "Someone else deleted this since the set started editing it.")]));
                 continue;
             }
 
@@ -394,15 +394,15 @@ public sealed class ChangeSetService(
             {
                 Variant = c.Variant,
             }));
-            var structure = await entity.Definition.DescribeAsync(document.Subtype, cancellationToken);
-            problems.AddRange(await StructureValidator.ValidateAsync(document, structure, itemTypes, (type, k) => ExistsAsync(set, type, k, cancellationToken)));
-            problems.AddRange(await entity.Definition.ValidateAsync(document, cancellationToken));
+            var schema = await entity.Adapter.GetSchemaAsync(working.Subtype, cancellationToken);
+            problems.AddRange(await SchemaValidator.ValidateAsync(working, schema, itemTypes, (type, k) => ExistsAsync(set, type, k, cancellationToken)));
+            problems.AddRange(await entity.Adapter.ValidateAsync(working, cancellationToken));
 
-            // The generic structure check and the product's own validation often find the same problem.
+            // The generic schema check and the product's own validation often find the same problem.
             var distinct = problems.DistinctBy(p => (p.Path, VariantId.From(p.Variant).Key)).ToList();
             if (distinct.Count > 0)
             {
-                result.Add(new EntityProblems(entity.Ref, distinct));
+                result.Add(new EntityProblems(entity.Summary, distinct));
             }
         }
 
@@ -419,7 +419,7 @@ public sealed class ChangeSetService(
             // Entities whose product is already applied aren't pending, so aren't in the set's state.
             var entity = state.Entities.FirstOrDefault(e => e.EntityType == entityType && e.Key == key) ?? await ComputeAsync(set, entityType, key, cancellationToken);
             var calls = set.Changes.Where(c => c.EntityType == entityType && c.EntityKey == key).ToList();
-            changes.Add(new ChangeSetChange(entity.Ref, calls[0].Creates ? "created" : "updated", calls.Count));
+            changes.Add(new ChangeSetChange(entity.Summary, calls[0].Creates ? "created" : "updated", calls.Count));
         }
 
         var afterApply = set.AfterApply.Select(c => c.AbilityId).ToList();
@@ -451,9 +451,9 @@ public sealed class ChangeSetService(
         foreach (var entity in state.Entities.Where(e => e.Working is not null))
         {
             var permission = entity.Live is null ? EntityPermission.Create : EntityPermission.Update;
-            var shape = (await entity.Definition.DescribeAsync(entity.Working!.Subtype, cancellationToken)).Shape;
-            var request = new EntityAccessRequest(context.UserKey, permission, entity.Key, entity.Working, EntityAccess.VariantsChanged(entity.Live, entity.Working, shape, itemTypes));
-            if (await EntityAccess.CheckAsync(entity.Definition, request, cancellationToken) is { } denied)
+            var schema = (await entity.Adapter.GetSchemaAsync(entity.Working!.Subtype, cancellationToken)).Root;
+            var request = new EntityAccessRequest(context.UserKey, permission, entity.Key, entity.Working, EntityAccess.VariantsChanged(entity.Live, entity.Working, schema, itemTypes));
+            if (await EntityAccess.CheckAsync(entity.Adapter, request, cancellationToken) is { } denied)
             {
                 denials.Add(new Problem($"{entity.EntityType}:{entity.Key}", denied));
             }
@@ -479,7 +479,7 @@ public sealed class ChangeSetService(
             return AbilityResult.Fail(AbilityOperationStatus.Failed, $"Applying was refused. {reasons}".Trim());
         }
 
-        var saved = new List<EntityRef>();
+        var saved = new List<EntitySummary>();
         var steps = new List<Problem>();
         string? failure = null;
         var runContext = context with { ChangeSetId = null };
@@ -508,14 +508,14 @@ public sealed class ChangeSetService(
                     if (set.Drafts.TryGetValue(step.Key, out var draftId))
                     {
                         // The product applies its own draft, all or nothing.
-                        saved.AddRange(entities.Select(e => e.Ref));
+                        saved.AddRange(entities.Select(e => e.Summary));
                         await DraftingFor(step.Key).ApplyDraftAsync(draftId, cancellationToken);
                     }
                     else
                     {
                         foreach (var entity in entities)
                         {
-                            saved.Add(await entity.Definition.SaveAsync(entity.Working!, cancellationToken));
+                            saved.Add(await entity.Adapter.SaveAsync(entity.Working!, cancellationToken));
                         }
                     }
 
@@ -575,12 +575,12 @@ public sealed class ChangeSetService(
     private IReadOnlyList<PlannedStep> Plan(ChangeSet set)
     {
         var steps = TouchedEntities(set)
-            .GroupBy(e => definitions.Get(e.EntityType).UnitOfWork.Name)
+            .GroupBy(e => adapters.Get(e.EntityType).UnitOfWork.Name)
             .Select(g => new PlannedStep(
                 g.Key,
                 g.Key,
                 $"{g.Count()} {(g.Count() == 1 ? "entity" : "entities")}, saved together: all or nothing.",
-                definitions.Get(g.First().EntityType).UnitOfWork,
+                adapters.Get(g.First().EntityType).UnitOfWork,
                 g.ToList(),
                 null))
             .ToList();
@@ -600,10 +600,10 @@ public sealed class ChangeSetService(
 
     /// <summary>Entities whose product's changes are not applied yet.</summary>
     private IEnumerable<(string EntityType, Guid Key)> PendingEntities(ChangeSet set)
-        => TouchedEntities(set).Where(e => !set.AppliedSteps.Contains(definitions.Get(e.EntityType).UnitOfWork.Name));
+        => TouchedEntities(set).Where(e => !set.AppliedSteps.Contains(adapters.Get(e.EntityType).UnitOfWork.Name));
 
     private async Task<bool> ExistsAsync(ChangeSet set, string entityType, Guid key, CancellationToken cancellationToken)
-        => definitions.Find(entityType) is not null && await GetWorkingStateAsync(set, entityType, key, cancellationToken) is not null;
+        => adapters.Find(entityType) is not null && await GetWorkingStateAsync(set, entityType, key, cancellationToken) is not null;
 
     private static IEnumerable<(string EntityType, Guid Key)> TouchedEntities(ChangeSet set)
         => set.Changes.Select(c => (c.EntityType!, c.EntityKey!.Value)).Distinct();
@@ -646,7 +646,7 @@ public sealed class ChangeSetService(
         });
     }
 
-    private async Task<Guid> EnsureDraftAsync(ChangeSet set, IDraftingEntityDefinition drafting, CancellationToken cancellationToken)
+    private async Task<Guid> EnsureDraftAsync(ChangeSet set, IDraftingEntityAdapter drafting, CancellationToken cancellationToken)
     {
         if (!set.Drafts.TryGetValue(drafting.UnitOfWork.Name, out var draftId))
         {
@@ -657,8 +657,8 @@ public sealed class ChangeSetService(
         return draftId;
     }
 
-    private IDraftingEntityDefinition DraftingFor(string step)
-        => definitions.All.OfType<IDraftingEntityDefinition>().First(d => d.UnitOfWork.Name == step);
+    private IDraftingEntityAdapter DraftingFor(string step)
+        => adapters.All.OfType<IDraftingEntityAdapter>().First(d => d.UnitOfWork.Name == step);
 }
 
 /// <summary>

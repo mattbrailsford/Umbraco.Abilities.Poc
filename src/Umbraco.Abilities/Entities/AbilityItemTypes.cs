@@ -14,7 +14,7 @@ public static class AbilityItemTypes
     public static ItemTypeDefinition FromAbility(IAbility ability, string group, params FieldDefinition[] extraFields)
     {
         var fields = InputFields(ability.Descriptor.InputType).Concat(extraFields).ToList();
-        return new ItemTypeDefinition(group, ability.Descriptor.Id, ability.Descriptor.Name, ability.Descriptor.Description, new ElementShape(fields));
+        return new ItemTypeDefinition(group, ability.Descriptor.Id, ability.Descriptor.Name, ability.Descriptor.Description, new ObjectSchema(fields));
     }
 
     // The input's properties as fields, mapped like a model class's (enums as allowed values, other types as JSON).
@@ -27,7 +27,7 @@ public static class AbilityItemTypes
             var entityKey = property.GetCustomAttribute<EntityKeyAttribute>() ?? parameter?.GetCustomAttribute<EntityKeyAttribute>();
             var description = property.GetCustomAttribute<DescriptionAttribute>()?.Description ?? string.Empty;
             var required = parameter is { HasDefaultValue: false } && Nullable.GetUnderlyingType(property.PropertyType) is null;
-            yield return ModelShapes.FieldFor(ModelShapes.AliasOf(property), description, property.PropertyType, required, entityKey?.EntityTypes);
+            yield return ModelSchemas.FieldFor(ModelSchemas.AliasOf(property), description, property.PropertyType, required, entityKey?.EntityTypes);
         }
     }
 }

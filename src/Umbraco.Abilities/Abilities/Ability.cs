@@ -128,7 +128,7 @@ public sealed record AbilityResult(AbilityOperationStatus Status, object? Result
 }
 
 /// <summary>The standard way an ability points at an entity it created, changed or found.</summary>
-public sealed record EntityRef(string EntityType, Guid Key, string Name, string? EditUrl = null);
+public sealed record EntitySummary(string EntityType, Guid Key, string Name, string? EditUrl = null);
 
 public interface IAbility
 {

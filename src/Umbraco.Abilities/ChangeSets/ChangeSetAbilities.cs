@@ -35,7 +35,7 @@ public sealed class SummarizeChangeSetAbility(ChangeSetService changeSets) : Abi
 
 [Ability("changeSet.apply", "Apply change set", Kind = AbilityKind.Write,
     Description = "Saves every entity in the set and runs its recorded operations, all or nothing. This is the only step that changes live data.")]
-public sealed class ApplyChangeSetAbility(ChangeSetService changeSets) : AbilityBase<ChangeSetIdInput, IReadOnlyList<EntityRef>>, IChangeSetLifecycleAbility
+public sealed class ApplyChangeSetAbility(ChangeSetService changeSets) : AbilityBase<ChangeSetIdInput, IReadOnlyList<EntitySummary>>, IChangeSetLifecycleAbility
 {
     protected override Task<AbilityResult> ExecuteAsync(ChangeSetIdInput input, AbilityContext context, CancellationToken cancellationToken)
         => changeSets.ApplyAsync(input.ChangeSetId, context, cancellationToken);

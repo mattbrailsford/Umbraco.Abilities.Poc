@@ -71,6 +71,6 @@ public class ValueHandlerTests
     private async Task<System.Text.Json.Nodes.JsonObject> IntroAsync(Guid page)
     {
         var set = _site.ChangeSets.Get(_agent.ChangeSetId!.Value);
-        return (System.Text.Json.Nodes.JsonObject)(await _site.ChangeSets.GetWorkingStateAsync(set, "document", page))!.Root["intro"]!;
+        return (System.Text.Json.Nodes.JsonObject)(await _site.ChangeSets.GetWorkingStateAsync(set, "document", page))!.Fields["intro"]!;
     }
 }

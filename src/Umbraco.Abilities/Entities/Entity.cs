@@ -6,9 +6,9 @@ namespace Umbraco.Abilities.Entities;
 /// A working copy of an entity: its identity and its fields' values, as one JSON tree. A value can be anything its field
 /// describes: a scalar, an object with fields of its own, or an array of items (<c>{ "key", "type", …fields }</c>). A
 /// value that varies is stored per variant where the field is: <c>{ "en-US": "Summer", "da-DK": "Sommer" }</c>. The
-/// structure says which fields vary, so nothing is guessed from the data.
+/// schema says which fields vary, so nothing is guessed from the data.
 /// </summary>
-public sealed class EntityDocument
+public sealed class Entity
 {
     public required string EntityType { get; init; }
 
@@ -18,18 +18,18 @@ public sealed class EntityDocument
     public string? Subtype { get; init; }
 
     /// <summary>The stored version this copy was loaded from; null when the entity is new.</summary>
-    public long? LiveVersion { get; init; }
+    public long? Version { get; init; }
 
     /// <summary>The fields' values, by alias.</summary>
-    public JsonObject Root { get; set; } = [];
+    public JsonObject Fields { get; set; } = [];
 
-    public EntityDocument Clone() => new()
+    public Entity Clone() => new()
     {
         EntityType = EntityType,
         Key = Key,
         Subtype = Subtype,
-        LiveVersion = LiveVersion,
-        Root = (JsonObject)Root.DeepClone(),
+        Version = Version,
+        Fields = (JsonObject)Fields.DeepClone(),
     };
 
     /// <summary>The form tools show.</summary>
@@ -38,8 +38,8 @@ public sealed class EntityDocument
         ["entityType"] = EntityType,
         ["key"] = Key.ToString(),
         ["subtype"] = Subtype,
-        ["version"] = LiveVersion,
-        ["fields"] = Root.DeepClone(),
+        ["version"] = Version,
+        ["fields"] = Fields.DeepClone(),
     };
 }
 
@@ -140,12 +140,12 @@ public static class EntityValues
     /// variant of the value holding it, with what it varies by itself on top (a heading that varies inside an invariant
     /// block list).
     /// </summary>
-    public static IEnumerable<EntityValue> Walk(JsonObject root, ElementShape shape, ItemTypeRegistry itemTypes)
-        => Walk(root, shape, itemTypes, string.Empty, VariantId.Invariant);
+    public static IEnumerable<EntityValue> Walk(JsonObject root, ObjectSchema schema, ItemTypeRegistry itemTypes)
+        => Walk(root, schema, itemTypes, string.Empty, VariantId.Invariant);
 
-    private static IEnumerable<EntityValue> Walk(JsonObject owner, ElementShape shape, ItemTypeRegistry itemTypes, string path, VariantId context)
+    private static IEnumerable<EntityValue> Walk(JsonObject owner, ObjectSchema schema, ItemTypeRegistry itemTypes, string path, VariantId context)
     {
-        foreach (var field in shape.Fields)
+        foreach (var field in schema.Fields)
         {
             var fieldPath = Join(path, field.Alias);
             foreach (var (own, value) in Values(owner, field))
@@ -157,9 +157,9 @@ public static class EntityValues
                 {
                     FieldType.Items => (value as JsonArray ?? []).OfType<JsonObject>().SelectMany(item =>
                         itemTypes.Find(field.ItemTypeGroup!, TypeOf(item)) is { } itemType
-                            ? Walk(item, itemType.Shape, itemTypes, Join(fieldPath, KeyOf(item).ToString()), variant)
+                            ? Walk(item, itemType.Schema, itemTypes, Join(fieldPath, KeyOf(item).ToString()), variant)
                             : []),
-                    FieldType.Object when field.Shape is { } objectShape && value is JsonObject obj => Walk(obj, objectShape, itemTypes, fieldPath, variant),
+                    FieldType.Object when field.Schema is { } objectSchema && value is JsonObject obj => Walk(obj, objectSchema, itemTypes, fieldPath, variant),
                     _ => [],
                 };
 
@@ -172,12 +172,12 @@ public static class EntityValues
     }
 
     /// <summary>The variants an entity has values in: every one that appears anywhere in it.</summary>
-    public static IReadOnlyList<VariantId> VariantsIn(JsonObject root, ElementShape shape, ItemTypeRegistry itemTypes)
-        => Walk(root, shape, itemTypes).Select(v => v.Variant).Where(v => !v.IsInvariant).Distinct().ToList();
+    public static IReadOnlyList<VariantId> VariantsIn(JsonObject root, ObjectSchema schema, ItemTypeRegistry itemTypes)
+        => Walk(root, schema, itemTypes).Select(v => v.Variant).Where(v => !v.IsInvariant).Distinct().ToList();
 
     /// <summary>The variants values directly on this object are in, not counting objects and items inside it.</summary>
-    public static IReadOnlySet<VariantId> OwnVariants(JsonObject owner, ElementShape shape)
-        => shape.Fields.SelectMany(f => Values(owner, f)).Select(v => v.Variant).Where(v => !v.IsInvariant).ToHashSet();
+    public static IReadOnlySet<VariantId> OwnVariants(JsonObject owner, ObjectSchema schema)
+        => schema.Fields.SelectMany(f => Values(owner, f)).Select(v => v.Variant).Where(v => !v.IsInvariant).ToHashSet();
 
     /// <summary>
     /// Finds what a path points at: a field (with the object holding it), an item in an items field
@@ -186,7 +186,7 @@ public static class EntityValues
     /// <paramref name="create"/> creates missing objects and item arrays, for writing. Throws
     /// <see cref="AbilityInputException"/> with a problem on the path when it doesn't resolve.
     /// </summary>
-    public static PathTarget Find(JsonObject root, ElementShape shape, ItemTypeRegistry itemTypes, string path, Func<FieldDefinition, string, VariantId> variantFor, bool create)
+    public static PathTarget Find(JsonObject root, ObjectSchema schema, ItemTypeRegistry itemTypes, string path, Func<FieldDefinition, string, VariantId> variantFor, bool create)
     {
         var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (segments.Length == 0)
@@ -200,8 +200,8 @@ public static class EntityValues
         for (var i = 0; ;)
         {
             var fieldPath = Join(prefix, segments[i]);
-            var field = shape.Find(segments[i])
-                ?? throw Invalid(fieldPath, $"No field '{segments[i]}' here. Fields: {Names(shape.Fields.Select(f => f.Alias))}.");
+            var field = schema.Find(segments[i])
+                ?? throw Invalid(fieldPath, $"No field '{segments[i]}' here. Fields: {Names(schema.Fields.Select(f => f.Alias))}.");
             var variant = variantFor(field, fieldPath);
             var target = new PathTarget(owner, field, fieldPath, variant, null, false, handled);
 
@@ -237,13 +237,13 @@ public static class EntityValues
                     }
 
                     owner = item ?? throw Invalid(Join(fieldPath, next), "No item with this key in the field.");
-                    shape = itemTypes.Find(field.ItemTypeGroup!, TypeOf(owner))?.Shape
+                    schema = itemTypes.Find(field.ItemTypeGroup!, TypeOf(owner))?.Schema
                         ?? throw Invalid(Join(fieldPath, next), $"Item type '{TypeOf(owner)}' is not registered.");
                     prefix = Join(fieldPath, next);
                     i += 2;
                     break;
 
-                case FieldType.Object when field.Shape is { } objectShape:
+                case FieldType.Object when field.Schema is { } objectSchema:
                     if (Get(owner, field, variant) is not JsonObject obj)
                     {
                         if (!create)
@@ -256,7 +256,7 @@ public static class EntityValues
                     }
 
                     owner = obj;
-                    shape = objectShape;
+                    schema = objectSchema;
                     prefix = fieldPath;
                     i++;
                     break;

@@ -13,11 +13,11 @@ public sealed class ChangeSetApplyingNotification(ChangeSet changeSet, EventMess
 }
 
 /// <summary>Every step of a change set is applied: its changes are saved and its side effects have run.</summary>
-public sealed class ChangeSetAppliedNotification(ChangeSet changeSet, IReadOnlyList<EntityRef> saved) : INotification
+public sealed class ChangeSetAppliedNotification(ChangeSet changeSet, IReadOnlyList<EntitySummary> saved) : INotification
 {
     public ChangeSet ChangeSet { get; } = changeSet;
 
-    public IReadOnlyList<EntityRef> Saved { get; } = saved;
+    public IReadOnlyList<EntitySummary> Saved { get; } = saved;
 }
 
 /// <summary>

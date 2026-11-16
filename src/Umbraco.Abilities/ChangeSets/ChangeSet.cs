@@ -9,7 +9,7 @@ namespace Umbraco.Abilities.ChangeSets;
 /// <c>DraftSetOperation { Kind, ContentKey, ParentKey, PayloadJson }</c>.
 /// </summary>
 /// <param name="EntityType">Set for a change to an entity; null for a side effect that runs after the set is applied.</param>
-/// <param name="Creates">The call creates the entity, so its working state starts from <see cref="IEntityDefinition.New"/>.</param>
+/// <param name="Creates">The call creates the entity, so its working state starts from <see cref="IEntityAdapter.New"/>.</param>
 public sealed record RecordedCall(
     string AbilityId,
     JsonObject Input,
@@ -40,7 +40,7 @@ public sealed class ChangeSet
     /// The version of each existing entity the set started editing from. Comparing it with the live version shows what
     /// someone else changed since, so the set can rebase onto the live version instead of being refused.
     /// </summary>
-    public Dictionary<string, EntityDocument> Bases { get; } = [];
+    public Dictionary<string, Entity> Bases { get; } = [];
 
     /// <summary>
     /// For entities whose product keeps version history, only the version the set started from: the version itself
@@ -75,7 +75,7 @@ public enum ConflictSide
 
 /// <summary>A path both the set and someone else changed, differently, since the set started editing the entity.</summary>
 public sealed record ChangeSetConflict(
-    EntityRef Entity,
+    EntitySummary Entity,
     string Path,
     IReadOnlyDictionary<string, string>? Variant,
     JsonNode? Base,
@@ -84,7 +84,7 @@ public sealed record ChangeSetConflict(
     ConflictSide? Resolution);
 
 /// <summary>An entity someone else changed since the set started editing it: what they changed, and where that conflicts.</summary>
-public sealed record RebasedEntity(EntityRef Entity, IReadOnlyList<string> ChangedSince, IReadOnlyList<ChangeSetConflict> Conflicts);
+public sealed record RebasedEntity(EntitySummary Entity, IReadOnlyList<string> ChangedSince, IReadOnlyList<ChangeSetConflict> Conflicts);
 
 public interface IChangeSetStore
 {
@@ -134,32 +134,32 @@ public interface IEntityEditAbility : IAbility
     EntityEditTarget Prepare(JsonObject input);
 
     /// <summary>Applies a recorded input to a working copy. Throws <see cref="AbilityInputException"/> when invalid.</summary>
-    object? Apply(EntityDocument document, JsonObject input, EntityEditContext context);
+    object? Apply(Entity entity, JsonObject input, EntityEditContext context);
 }
 
 public sealed record EntityEditTarget(string EntityType, Guid EntityKey, bool Creates, string? Subtype = null);
 
-public sealed record EntityEditContext(IEntityDefinition Definition, EntityStructure Structure, ItemTypeRegistry ItemTypes);
+public sealed record EntityEditContext(IEntityAdapter Adapter, EntitySchema Schema, ItemTypeRegistry ItemTypes);
 
 /// <summary>
-/// An entity definition whose product keeps its own drafts, such as CMS Draft Sets. A change set then holds one of the
+/// An entity adapter whose product keeps its own drafts, such as CMS Draft Sets. A change set then holds one of the
 /// product's drafts and hands it the product's changes, instead of keeping and replaying them itself: the product's
 /// draft is the source of truth for its changes, so its own review, preview and rebasing work for changes an AI made.
 /// The product's drafts know nothing about abilities or change sets; this interface is the adapter.
 /// </summary>
-public interface IDraftingEntityDefinition : IEntityDefinition
+public interface IDraftingEntityAdapter : IEntityAdapter
 {
     /// <summary>Starts a draft in the product, e.g. a CMS draft set. Called once per change set, on its first change to the product.</summary>
     Task<Guid> CreateDraftAsync(string name, CancellationToken cancellationToken = default);
 
     /// <summary>The entity as the draft would leave it: live plus the draft's changes, the draft's new entity, or null.</summary>
-    Task<EntityDocument?> LoadDraftAsync(Guid draftId, Guid key, CancellationToken cancellationToken = default);
+    Task<Entity?> LoadDraftAsync(Guid draftId, Guid key, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Records an edit into the draft. <paramref name="before"/> is the entity as the draft had it (null when the edit
     /// creates it), so the product can record only what changed.
     /// </summary>
-    Task StageAsync(Guid draftId, EntityDocument? before, EntityDocument after, CancellationToken cancellationToken = default);
+    Task StageAsync(Guid draftId, Entity? before, Entity after, CancellationToken cancellationToken = default);
 
     /// <summary>Entities someone else changed since the draft started editing them, and where that conflicts.</summary>
     Task<IReadOnlyList<RebasedEntity>> GetRebasedAsync(Guid draftId, CancellationToken cancellationToken = default);
@@ -177,9 +177,9 @@ public interface IChangeSetLifecycleAbility : IAbility
 {
 }
 
-public sealed record EntityProblems(EntityRef Entity, IReadOnlyList<Problem> Problems);
+public sealed record EntityProblems(EntitySummary Entity, IReadOnlyList<Problem> Problems);
 
-public sealed record ChangeSetChange(EntityRef Entity, string Change, int Edits);
+public sealed record ChangeSetChange(EntitySummary Entity, string Change, int Edits);
 
 /// <summary>One step of applying a set: a product's changes in its own transaction, or one side effect after them.</summary>
 public sealed record ApplyStep(string Name, string Description, bool Applied);

@@ -22,10 +22,10 @@ public enum FieldType
     /// <summary>The key of an item in an items field of the same entity (<see cref="FieldDefinition.ReferencesItemIn"/>).</summary>
     ItemReference,
 
-    /// <summary>Any JSON value matching <see cref="FieldDefinition.Schema"/>, set whole: for editor values the framework doesn't describe.</summary>
+    /// <summary>Any JSON value matching <see cref="FieldDefinition.JsonSchema"/>, set whole: for editor values the framework doesn't describe.</summary>
     Json,
 
-    /// <summary>An object whose fields are described (<see cref="FieldDefinition.Shape"/>), so paths go into it: <c>seo/title</c>, a block's <c>settings/theme</c>.</summary>
+    /// <summary>An object whose fields are described (<see cref="FieldDefinition.Schema"/>), so paths go into it: <c>seo/title</c>, a block's <c>settings/theme</c>.</summary>
     Object,
 
     /// <summary>
@@ -45,7 +45,7 @@ public static class VariationDimensions
 
 /// <summary>
 /// Something values can vary by: the CMS's culture and segment, or a product's own (a price per currency, a setting per
-/// store). The structure lists the dimensions an entity has; each field says which of them it varies by.
+/// store). The schema lists the dimensions an entity has; each field says which of them it varies by.
 /// </summary>
 /// <param name="Values">The values allowed, such as the site's languages; null when any value is allowed (the CMS's segments).</param>
 public sealed record VariationDimension(string Name, string Description, IReadOnlyList<string>? Values = null);
@@ -137,7 +137,7 @@ public sealed record FieldDefinition(string Alias, string Description, FieldType
     public string? ReferencesItemIn { get; init; }
 
     /// <summary>The JSON Schema of a <see cref="FieldType.Json"/> value, e.g. a property editor's value schema.</summary>
-    public JsonObject? Schema { get; init; }
+    public JsonObject? JsonSchema { get; init; }
 
     /// <summary>
     /// DataAnnotations rules beyond required and allowed values (a range, a pattern), checked on the field's path. For
@@ -168,7 +168,7 @@ public sealed record FieldDefinition(string Alias, string Description, FieldType
     // ── For FieldType.Object ─────────────────────────────────────────────────────────────────────
 
     /// <summary>The object's fields.</summary>
-    public ElementShape? Shape { get; init; }
+    public ObjectSchema? Schema { get; init; }
 
     public bool IsItems => Type == FieldType.Items;
 
@@ -177,14 +177,14 @@ public sealed record FieldDefinition(string Alias, string Description, FieldType
         => new(alias, description, FieldType.Items) { ItemTypeGroup = itemTypeGroup };
 
     /// <summary>An object field with its own fields.</summary>
-    public static FieldDefinition ObjectOf(string alias, string description, ElementShape shape)
-        => new(alias, description, FieldType.Object) { Shape = shape };
+    public static FieldDefinition ObjectOf(string alias, string description, ObjectSchema schema)
+        => new(alias, description, FieldType.Object) { Schema = schema };
 }
 
-/// <summary>The fields of an object: the entity, an item, or an object value. Items and objects have fields of their own, so shapes nest.</summary>
-public sealed record ElementShape(IReadOnlyList<FieldDefinition> Fields)
+/// <summary>The fields of an object: the entity, an item, or an object value. Items and objects have fields of their own, so schemas nest.</summary>
+public sealed record ObjectSchema(IReadOnlyList<FieldDefinition> Fields)
 {
-    public static ElementShape Of(params FieldDefinition[] fields) => new(fields);
+    public static ObjectSchema Of(params FieldDefinition[] fields) => new(fields);
 
     public FieldDefinition? Find(string alias) => Fields.FirstOrDefault(f => f.Alias == alias);
 
@@ -192,7 +192,7 @@ public sealed record ElementShape(IReadOnlyList<FieldDefinition> Fields)
     public IEnumerable<FieldDefinition> ItemFields => Fields.Where(f => f.IsItems);
 }
 
-public sealed record EntityStructure(string EntityType, string Name, string Description, ElementShape Shape)
+public sealed record EntitySchema(string EntityType, string Name, string Description, ObjectSchema Root)
 {
     /// <summary>What the entity's values can vary by, e.g. culture with the site's languages. Empty when nothing varies.</summary>
     public IReadOnlyList<VariationDimension> Dimensions { get; init; } = [];
@@ -200,7 +200,7 @@ public sealed record EntityStructure(string EntityType, string Name, string Desc
     public VariationDimension? Dimension(string name) => Dimensions.FirstOrDefault(d => d.Name == name);
 }
 
-public sealed record ItemTypeDefinition(string Group, string Alias, string Name, string Description, ElementShape Shape)
+public sealed record ItemTypeDefinition(string Group, string Alias, string Name, string Description, ObjectSchema Schema)
 {
     /// <summary>Further groups the type belongs to, e.g. a grid block allowed both at the root and in areas.</summary>
     public IReadOnlyList<string> AlsoIn { get; init; } = [];
@@ -257,7 +257,7 @@ public sealed class ItemTypeRegistry
     public ItemTypeRegistry Add<T>(string group, params string[] alsoIn)
         where T : class
     {
-        var info = Models.ModelShapes.Info(typeof(T));
+        var info = Models.ModelSchemas.Info(typeof(T));
         var (alias, name, description) = info.ItemType
             ?? throw new InvalidOperationException($"{typeof(T).Name} is not an item type: add [ItemType] or configure it with IsItemType.");
         if (info.Key is null)
@@ -265,7 +265,7 @@ public sealed class ItemTypeRegistry
             throw new InvalidOperationException($"{typeof(T).Name} has no key: derive from EntityItemModel, add [Key] or configure HasKey.");
         }
 
-        return Add(new ItemTypeDefinition(group, alias, name, description, info.Shape)
+        return Add(new ItemTypeDefinition(group, alias, name, description, info.Schema)
         {
             AlsoIn = alsoIn,
             ClrType = typeof(T),
