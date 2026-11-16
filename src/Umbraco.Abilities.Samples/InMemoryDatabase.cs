@@ -100,8 +100,7 @@ public abstract class InMemoryModelAdapter<TModel>(InMemoryDatabase database, It
     /// <summary>Every stored model, for checks across entities such as unique codes.</summary>
     protected IEnumerable<TModel> All() => Database.All(EntityType).Select(r => ToModel(FromRow(r.Key, r.Row)));
 
-    protected override Task<IReadOnlyList<TModel>> FindModelsAsync(string query, CancellationToken cancellationToken)
-        => Task.FromResult<IReadOnlyList<TModel>>(All().Where(m => ToSummary(ToEntity(m)).Name.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList());
+    protected override IEnumerable<TModel> ListModels() => All();
 
     protected override string? GetEditUrl(Guid key) => $"{editUrlPrefix}/{key}";
 

@@ -153,26 +153,19 @@ public sealed class DiscountAdapter(
         return Task.CompletedTask;
     }
 
-    protected override Task<IReadOnlyList<DiscountEditModel>> FindModelsAsync(string query, CancellationToken cancellationToken)
-        => Task.FromResult<IReadOnlyList<DiscountEditModel>>(discounts.GetDiscounts()
-            .Where(d => d.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
-            .Select(ToEditModel)
-            .ToList());
+    protected override IEnumerable<DiscountEditModel> ListModels() => discounts.GetDiscounts().Select(ToEditModel);
 
-    protected override Task<IReadOnlyList<Problem>> ValidateModelAsync(DiscountEditModel discount, CancellationToken cancellationToken)
+    protected override void Validate(DiscountEditModel discount, ModelProblems<DiscountEditModel> problems)
     {
-        var problems = new List<Problem>();
         if (discount.StartDate is { } start && discount.EndDate is { } end && end < start)
         {
-            problems.Add(ProblemAt(d => d.EndDate, "Must be on or after startDate."));
+            problems.At(d => d.EndDate, "Must be on or after startDate.");
         }
 
         if (discount.Code is { Length: > 0 } code && discounts.GetDiscounts().Any(d => d.Id != discount.Key && d.Code == code))
         {
-            problems.Add(ProblemAt(d => d.Code, $"Another discount already uses '{code}'."));
+            problems.At(d => d.Code, $"Another discount already uses '{code}'.");
         }
-
-        return Task.FromResult<IReadOnlyList<Problem>>(problems);
     }
 
     protected override string? GetEditUrl(Guid key) => $"/umbraco/section/commerce/discount/{key}";
@@ -256,7 +249,5 @@ public sealed record ActivateDiscountInput(
     Description = "Switches a discount on so customers get it.")]
 public sealed class ActivateDiscountAbility(DiscountAdapter discounts) : ModelEditAbilityBase<ActivateDiscountInput, DiscountEditModel>(discounts)
 {
-    protected override Guid KeyOf(ActivateDiscountInput input) => input.Discount;
-
     protected override void Edit(DiscountEditModel discount, ActivateDiscountInput input) => discount.Active = true;
 }

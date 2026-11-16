@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json.Nodes;
@@ -76,30 +77,35 @@ public abstract class EntityAdapterBase<TModel> : IAuthorizingEntityAdapter
     /// </summary>
     public abstract Task<string?> AuthorizeAsync(EntityAccessRequest request, CancellationToken cancellationToken = default);
 
-    /// <summary>Finds models by name. Optional.</summary>
-    protected virtual Task<IReadOnlyList<TModel>> FindModelsAsync(string query, CancellationToken cancellationToken)
-        => Task.FromResult<IReadOnlyList<TModel>>([]);
+    /// <summary>
+    /// Every model, for finding by name. Optional: return them here and finding works, or override
+    /// <see cref="FindModelsAsync"/> when the product can search itself.
+    /// </summary>
+    protected virtual IEnumerable<TModel> ListModels() => [];
 
-    /// <summary>Domain rules the attributes can't express, e.g. dates in order or unique codes. Optional.</summary>
-    protected virtual Task<IReadOnlyList<Problem>> ValidateModelAsync(TModel model, CancellationToken cancellationToken)
-        => Task.FromResult<IReadOnlyList<Problem>>([]);
+    /// <summary>Finds models by name. By default, the models from <see cref="ListModels"/> whose name contains the query.</summary>
+    protected virtual Task<IReadOnlyList<TModel>> FindModelsAsync(string query, CancellationToken cancellationToken)
+        => Task.FromResult<IReadOnlyList<TModel>>(ListModels()
+            .Where(m => ToSummary(ToEntity(m)).Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .ToList());
+
+    /// <summary>
+    /// Domain rules the attributes can't express, e.g. dates in order or unique codes. Optional. Add each problem on
+    /// the property it's about: <c>problems.At(d => d.EndDate, "Must be on or after startDate.")</c>.
+    /// </summary>
+    protected virtual void Validate(TModel model, ModelProblems<TModel> problems)
+    {
+    }
+
+    /// <summary>Domain rules that need to wait for something, such as a remote check. Optional; most adapters use <see cref="Validate"/>.</summary>
+    protected virtual Task ValidateModelAsync(TModel model, ModelProblems<TModel> problems, CancellationToken cancellationToken)
+        => Task.CompletedTask;
 
     /// <summary>The values a dimension the model varies by can have, e.g. the site's languages for culture. Null: any value.</summary>
     protected virtual Task<IReadOnlyList<string>?> GetDimensionValuesAsync(string dimension, CancellationToken cancellationToken)
         => Task.FromResult<IReadOnlyList<string>?>(null);
 
     protected virtual string? GetEditUrl(Guid key) => null;
-
-    // ── Helpers for problems ───────────────────────────────────────────────────────────────────────
-
-    /// <summary>A problem on a property of the model, e.g. <c>ProblemAt(d => d.EndDate, "...")</c>.</summary>
-    protected static Problem ProblemAt<TValue>(Expression<Func<TModel, TValue>> property, string message)
-        => new(AliasOf(property), message);
-
-    /// <summary>A problem on a property of an item in the model, e.g. <c>ProblemAt(reward, r => r.Percent, "...")</c>.</summary>
-    protected static Problem ProblemAt<TItem, TValue>(TItem item, Expression<Func<TItem, TValue>> property, string message)
-        where TItem : class
-        => new(EntityEditor.Join(ModelSchemas.PathOf(item), AliasOf(property)), message);
 
     // ── IEntityAdapter, done by the framework ───────────────────────────────────────────────────
 
@@ -125,7 +131,10 @@ public abstract class EntityAdapterBase<TModel> : IAuthorizingEntityAdapter
     public async Task<IReadOnlyList<Problem>> ValidateAsync(Entity entity, CancellationToken cancellationToken = default)
     {
         var model = ToModel(entity);
-        return [.. ModelSchemas.Validate(model), .. await ValidateModelAsync(model, cancellationToken)];
+        var problems = new ModelProblems<TModel>();
+        Validate(model, problems);
+        await ValidateModelAsync(model, problems, cancellationToken);
+        return [.. ModelSchemas.Validate(model), .. problems];
     }
 
     public async Task<EntitySummary> SaveAsync(Entity entity, CancellationToken cancellationToken = default)
@@ -164,6 +173,32 @@ public abstract class EntityAdapterBase<TModel> : IAuthorizingEntityAdapter
         entity.Fields = ModelSchemas.Write(model);
         return entity;
     }
+}
+
+/// <summary>
+/// The problems an adapter's domain rules find, each on the path of the property it's about, so a model or a form can
+/// put it next to the value to fix.
+/// </summary>
+public sealed class ModelProblems<TModel> : IEnumerable<Problem>
+    where TModel : class
+{
+    private readonly List<Problem> _problems = [];
+
+    /// <summary>A problem on a property of the model, e.g. <c>problems.At(d => d.EndDate, "...")</c>.</summary>
+    public void At<TValue>(Expression<Func<TModel, TValue>> property, string message)
+        => _problems.Add(new Problem(AliasOf(property), message));
+
+    /// <summary>A problem on a property of an item in the model, e.g. <c>problems.At(reward, r => r.Percent, "...")</c>.</summary>
+    public void At<TItem, TValue>(TItem item, Expression<Func<TItem, TValue>> property, string message)
+        where TItem : class
+        => _problems.Add(new Problem(EntityEditor.Join(ModelSchemas.PathOf(item), AliasOf(property)), message));
+
+    /// <summary>A problem with its own path.</summary>
+    public void Add(Problem problem) => _problems.Add(problem);
+
+    public IEnumerator<Problem> GetEnumerator() => _problems.GetEnumerator();
+
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
 
     private static string AliasOf(LambdaExpression property) => ModelSchemas.AliasOf(ModelBuilder<TModel>.PropertyOf(property));
 }
@@ -177,8 +212,20 @@ public abstract class ModelEditAbilityBase<TInput, TModel>(EntityAdapterBase<TMo
     : AbilityBase<TInput, EntitySummary>, IEntityEditAbility
     where TModel : class
 {
-    /// <summary>The key of the entity the input edits.</summary>
-    protected abstract Guid KeyOf(TInput input);
+    private static readonly ConcurrentDictionary<string, PropertyInfo?> KeyProperties = new();
+
+    /// <summary>
+    /// The key of the entity the input edits. By default, the input's Guid property marked
+    /// <c>[EntityKey]</c> for the adapter's entity type. Override it when the key comes from somewhere else.
+    /// </summary>
+    protected virtual Guid KeyOf(TInput input)
+    {
+        var property = KeyProperties.GetOrAdd(adapter.EntityType, entityType => typeof(TInput).GetProperties()
+            .SingleOrDefault(p => p.PropertyType == typeof(Guid) && p.GetCustomAttribute<EntityKeyAttribute>()?.EntityTypes.Contains(entityType) == true))
+            ?? throw new InvalidOperationException(
+                $"{typeof(TInput).Name} has no Guid property marked [EntityKey(\"{adapter.EntityType}\")]. Mark the one that names the entity to edit, or override KeyOf.");
+        return (Guid)property.GetValue(input)!;
+    }
 
     /// <summary>Changes the model. Throw <see cref="AbilityInputException"/> for a correctable problem.</summary>
     protected abstract void Edit(TModel model, TInput input);
