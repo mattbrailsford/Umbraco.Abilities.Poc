@@ -93,6 +93,51 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
    outcomes has `outcomes` and no `next`: one way to route per step, so a model can't send every result to a step it
    meant for one. The adapter converts to Automate's connections on save and back on load. Building it found a gap:
    an object set whole wasn't checked for names it doesn't have, while fields set one by one were. Now both are.
+14. **Most of the CMS adapter is about a kind of model, not about the CMS.** The CMS document adapter and its schema
+   mapper are about 1,000 lines. Only about a tenth deals with how the CMS itself behaves (an update replaces every
+   value, invalid values are saved and reported afterwards, every culture is validated). The rest belongs to any model
+   whose **types are defined by editors at run time** and whose **values are shaped by their property editors**: media
+   and member types, element types, and likely Umbraco Forms. A document type is a plugin seam like discount rules:
+   properties are the slots, and property editors are the plugins. The typed layer only helps models that are C#
+   classes, so the CMS adapter had to do all of it alone. See
+   [Runtime-defined models](#runtime-defined-models) below.
+
+## Developer experience of adapters
+
+Making things easy for a model is one side. The other is what a package developer writes. Reading the samples as
+package code found these costs:
+
+| Cost today | Fix |
+| --- | --- |
+| An items field needs a group string, a constant and a separate `RegisterItemTypes` call per item class | Work out the item types from the list's element type: every `[ItemType]` class that extends it. Name types only to narrow the list |
+| Every product with a provider registry writes the same item type source and the same "alias plus string settings" mapper (about 90 lines for Commerce) | Ship both in the framework. A product only says where its providers are |
+| An adapter with no access check silently allows everything | Require one when the adapter is registered, as Abilities requires an access rule on every ability |
+| Fluent configuration lives in a static constructor, as global state | An overridable `Configure(builder)` on the adapter, like EF Core's `OnModelCreating` |
+| Wiring an adapter takes three separate calls | One registration call that also registers its item types and entity type |
+| The workflow adapter digs through raw JSON, although only its steps vary | A typed model with `List<DynamicItem>` steps, as discounts do |
+| Optional methods need `Task.FromResult<IReadOnlyList<…>>` wrapping | Simpler overloads, and a problem collector: `problems.At(d => d.EndDate, "…")` |
+| `ModelEditAbilityBase` asks for `KeyOf(input)` | Find the input property marked `[EntityKey]` for the adapter's entity type |
+| Every save starts with "load it, or create it if missing" | Split into create and update in the base class |
+| Entities repeat `[Key]` and `[EntityVersion]`, while items have `EntityItemModel` | An optional `EntityModel` base class |
+| Descriptions are written as `[Description]`, next to doc comments | Fall back to `/// <summary>` |
+| A missing `[Key]` or an unsupported property type fails at start-up | Build-time checks from a source generator, which could also replace the reflection in `ModelSchemas` |
+| Testing an adapter needs the framework's own test harness | Ship `ScriptedAgent` and a "load, change, save and compare" check |
+
+### Runtime-defined models
+
+How the CMS document adapter's code splits, and who else has each part:
+
+| Part | Lines (rough) | Who else has it | Generic fix |
+| --- | --- | --- | --- |
+| Building the schema from document types and data types | ~270 | Anything editors define: media types, member types, likely Forms | A base class for "types are data": the product lists its type definitions, and the framework builds the schema |
+| Reading and writing block values (layout, contentData, settingsData, expose) | ~260 | Any product storing property editor values: element types, UI Builder | Value handlers per editor, so the knowledge lives with the editor. Umbraco.AI's `IAIPropertyValueHandler` is the starting point |
+| Turning Umbraco's error paths back into entity paths | ~90 | Any product that validates in its own path format | The same handler translates its editor's errors |
+| Plugging into CMS draft sets | ~90 | Any product with its own drafts | Already generic: `IDraftingEntityAdapter` |
+| Permissions | ~50 | Any product with its own permission model | Already generic: `IAuthorizingEntityAdapter` |
+| CMS behaviour: update replaces every value, invalid values saved then reported, every culture validated | ~100 | Only the CMS | Belongs in CMS core: see the Draft Sets checklist in ARCHITECTURE |
+
+Automate shows a smaller form of the same thing: it stores steps and connections as separate lists joined by keys,
+and its adapter converts them on load and save.
 
 ## What running against Umbraco taught us
 

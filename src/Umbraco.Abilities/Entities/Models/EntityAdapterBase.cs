@@ -29,6 +29,8 @@ public abstract class EntityAdapterBase<TModel> : IEntityAdapter
         {
             throw new InvalidOperationException($"{typeof(TModel).Name} needs a Guid key: add [Key] or configure HasKey.");
         }
+
+        itemTypes.AddModel(typeof(TModel));
     }
 
     public string EntityType => _entity.EntityType;

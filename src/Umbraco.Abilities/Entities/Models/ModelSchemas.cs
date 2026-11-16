@@ -12,8 +12,12 @@ using System.Text.Json.Serialization;
 using Umbraco.Extensions;
 namespace Umbraco.Abilities.Entities.Models;
 
-/// <summary>A property that is a field. <see cref="ValueType"/> is the property's type, or a <see cref="Varying{T}"/>'s value type.</summary>
-internal sealed record FieldMember(PropertyInfo Property, FieldDefinition Field, bool Varying, Type ValueType, IReadOnlyList<ValidationAttribute> Rules);
+/// <summary>A property that is a field. <see cref="ValueType"/> is the property's type, or a <see cref="Varying{T}"/>'s value type.
+/// <see cref="ItemClasses"/> are the item classes of an items field whose types come from classes, not a group's source.</summary>
+internal sealed record FieldMember(PropertyInfo Property, FieldDefinition Field, bool Varying, Type ValueType, IReadOnlyList<ValidationAttribute> Rules)
+{
+    public IReadOnlyList<Type> ItemClasses { get; init; } = [];
+}
 
 internal sealed record ModelInfo(
     ObjectSchema Schema,
@@ -82,6 +86,14 @@ public static class ModelSchemas
             var alias = AliasOf(property);
             var description = config.Description ?? string.Empty;
             var (varying, valueType) = Unwrap(property.PropertyType);
+            IReadOnlyList<Type> itemClasses = [];
+            if (config.Role == PropertyRole.Items && config.ItemTypeGroup is null)
+            {
+                // No group named: the item types are classes, found from the list's element type or named.
+                itemClasses = ItemClassesFor(type, property, valueType, config.ItemClasses);
+                config.ItemTypeGroup = $"{type.Name}.{alias}";
+            }
+
             var field = config.Role == PropertyRole.Items
                 ? FieldDefinition.ItemsOf(alias, description, config.ItemTypeGroup!) with { Min = config.Min, Max = config.Max }
                 : IsObject(valueType)
@@ -96,7 +108,7 @@ public static class ModelSchemas
                     : throw new InvalidOperationException($"{type.Name}.{property.Name}: a value handler goes on an object property, whose fields it adds behaviour to.");
             }
 
-            fields.Add(new FieldMember(property, field, varying, valueType, config.Rules));
+            fields.Add(new FieldMember(property, field, varying, valueType, config.Rules) { ItemClasses = itemClasses });
             if (config.IsName)
             {
                 name = property;
@@ -143,6 +155,7 @@ public static class ModelSchemas
         if (property.GetCustomAttribute<ItemsAttribute>() is { } items)
         {
             config.ItemTypeGroup = items.ItemTypeGroup;
+            config.ItemClasses = items.ItemTypes;
             config.Min = items.Min >= 0 ? items.Min : null;
             config.Max = items.Max >= 0 ? items.Max : null;
         }
@@ -169,6 +182,7 @@ public static class ModelSchemas
             Allowed = fluent.Allowed ?? attributes.Allowed,
             References = fluent.References ?? attributes.References,
             ItemTypeGroup = fluent.ItemTypeGroup ?? attributes.ItemTypeGroup,
+            ItemClasses = fluent.ItemClasses ?? attributes.ItemClasses,
             Min = fluent.Min ?? attributes.Min,
             Max = fluent.Max ?? attributes.Max,
         };
@@ -429,6 +443,67 @@ public static class ModelSchemas
                         }
 
                         break;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// The item classes of an items field with no group: those named, or every item class that extends the list's
+    /// element type, in the element type's assembly and the model's.
+    /// </summary>
+    private static IReadOnlyList<Type> ItemClassesFor(Type model, PropertyInfo property, Type listType, IReadOnlyList<Type>? named)
+    {
+        var element = ElementTypeOf(listType)
+            ?? throw new InvalidOperationException($"{model.Name}.{property.Name}: an items field is a list of items.");
+        if (typeof(DynamicItem).IsAssignableFrom(element))
+        {
+            throw new InvalidOperationException($"{model.Name}.{property.Name}: a list of DynamicItem has no classes to find. Name the group whose source describes its item types: [Items(\"group\")].");
+        }
+
+        if (named is { Count: > 0 })
+        {
+            return named.FirstOrDefault(t => !element.IsAssignableFrom(t)) is { } wrong
+                ? throw new InvalidOperationException($"{model.Name}.{property.Name}: {wrong.Name} is not a {element.Name}.")
+                : named;
+        }
+
+        var found = new[] { element.Assembly, model.Assembly }.Distinct()
+            .SelectMany(a => a.GetTypes())
+            .Where(t => t is { IsClass: true, IsAbstract: false } && element.IsAssignableFrom(t) && IsItemType(t))
+            .OrderBy(t => t.FullName, StringComparer.Ordinal)
+            .ToList();
+        return found.Count > 0
+            ? found
+            : throw new InvalidOperationException($"{model.Name}.{property.Name}: no [ItemType] class extends {element.Name}.");
+    }
+
+    private static bool IsItemType(Type type)
+        => type.IsDefined(typeof(ItemTypeAttribute), inherit: false) || ModelConfiguration.Find(type)?.ItemType is not null;
+
+    /// <summary>The item types a model's items fields hold, as classes, with the group each field uses. Nested models included.</summary>
+    internal static IEnumerable<(string Group, Type ItemClass)> ItemClassesIn(Type type)
+    {
+        var seen = new HashSet<Type>();
+        var pending = new Stack<Type>([type]);
+        while (pending.TryPop(out var current))
+        {
+            if (!seen.Add(current))
+            {
+                continue;
+            }
+
+            foreach (var member in Info(current).Fields)
+            {
+                if (member.Field.Type == FieldType.Object)
+                {
+                    pending.Push(member.ValueType);
+                }
+
+                foreach (var itemClass in member.ItemClasses)
+                {
+                    yield return (member.Field.ItemTypeGroup!, itemClass);
+                    pending.Push(itemClass);
                 }
             }
         }

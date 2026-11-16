@@ -32,6 +32,9 @@ internal sealed class PropertyConfig
 
     public string? ItemTypeGroup { get; set; }
 
+    /// <summary>The item classes named for an items field; empty to find them from the list's element type.</summary>
+    public IReadOnlyList<Type>? ItemClasses { get; set; }
+
     public int? Min { get; set; }
 
     public int? Max { get; set; }
@@ -97,7 +100,7 @@ public sealed class ModelBuilder<T>
         return this;
     }
 
-    /// <summary>The class is an item type. Register it with <see cref="ItemTypeRegistry.Add{T}"/> under a group.</summary>
+    /// <summary>The class is an item type. An items field of a class it extends picks it up.</summary>
     public ModelBuilder<T> IsItemType(string alias, string name, string description = "")
     {
         _config.ItemType = (alias, name, description);
@@ -121,7 +124,16 @@ public sealed class ModelBuilder<T>
         return new FieldBuilder<T>(this, config);
     }
 
-    /// <summary>An items field: a list property holding items of the types registered for <paramref name="itemTypeGroup"/>.</summary>
+    /// <summary>An items field whose item types are the item classes that extend the list's element type, or those named.</summary>
+    public ItemsBuilder<T> Items<TValue>(Expression<Func<T, TValue>> property, params Type[] itemTypes)
+    {
+        var config = _config.For(PropertyOf(property));
+        config.Role = PropertyRole.Items;
+        config.ItemClasses = itemTypes;
+        return new ItemsBuilder<T>(this, config);
+    }
+
+    /// <summary>An items field holding items of the types in <paramref name="itemTypeGroup"/>: a plugin seam's source.</summary>
     public ItemsBuilder<T> Items<TValue>(Expression<Func<T, TValue>> property, string itemTypeGroup)
     {
         var config = _config.For(PropertyOf(property));
@@ -162,6 +174,8 @@ public sealed class FieldBuilder<T>
 
     public FieldBuilder<T> Field<TValue>(Expression<Func<T, TValue>> property) => _model.Field(property);
 
+    public ItemsBuilder<T> Items<TValue>(Expression<Func<T, TValue>> property, params Type[] itemTypes) => _model.Items(property, itemTypes);
+
     public ItemsBuilder<T> Items<TValue>(Expression<Func<T, TValue>> property, string itemTypeGroup) => _model.Items(property, itemTypeGroup);
 
     private FieldBuilder<T> Set(Action set)
@@ -183,6 +197,8 @@ public sealed class ItemsBuilder<T>
     public ItemsBuilder<T> Description(string description) => Set(() => _config.Description = description);
 
     public FieldBuilder<T> Field<TValue>(Expression<Func<T, TValue>> property) => _model.Field(property);
+
+    public ItemsBuilder<T> Items<TValue>(Expression<Func<T, TValue>> property, params Type[] itemTypes) => _model.Items(property, itemTypes);
 
     public ItemsBuilder<T> Items<TValue>(Expression<Func<T, TValue>> property, string itemTypeGroup) => _model.Items(property, itemTypeGroup);
 

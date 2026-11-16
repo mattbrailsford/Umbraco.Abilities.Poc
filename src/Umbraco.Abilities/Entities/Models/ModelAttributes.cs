@@ -26,7 +26,7 @@ public sealed class EntityVersionAttribute : Attribute
 {
 }
 
-/// <summary>Declares a class as an item type. Register it with <see cref="ItemTypeRegistry.Add{T}"/> under a group.</summary>
+/// <summary>Declares a class as an item type. An <c>[Items]</c> list of a class it extends picks it up.</summary>
 [AttributeUsage(AttributeTargets.Class, Inherited = false)]
 public sealed class ItemTypeAttribute(string alias, string name) : Attribute
 {
@@ -37,11 +37,29 @@ public sealed class ItemTypeAttribute(string alias, string name) : Attribute
     public string Description { get; set; } = string.Empty;
 }
 
-/// <summary>An items field: a list property holding items of the types registered for <paramref name="itemTypeGroup"/>.</summary>
+/// <summary>
+/// An items field: a list property holding keyed, typed items. With no arguments, its item types are every
+/// <c>[ItemType]</c> class that extends the list's element type (<c>List&lt;PageBlock&gt;</c>: every page block). Name
+/// classes to narrow that (<c>[Items(typeof(RichText))]</c>). Name a group instead for a plugin seam, whose item types
+/// come from an <see cref="IItemTypeSource"/> (<c>List&lt;DynamicItem&gt;</c>).
+/// </summary>
 [AttributeUsage(AttributeTargets.Property)]
-public sealed class ItemsAttribute(string itemTypeGroup) : Attribute
+public sealed class ItemsAttribute : Attribute
 {
-    public string ItemTypeGroup { get; } = itemTypeGroup;
+    /// <summary>Item types worked out from the list's element type, or the classes named.</summary>
+    public ItemsAttribute(params Type[] itemTypes) => ItemTypes = itemTypes;
+
+    /// <summary>Item types from a group: a plugin seam's <see cref="IItemTypeSource"/>, or types registered under it.</summary>
+    public ItemsAttribute(string itemTypeGroup)
+    {
+        ItemTypeGroup = itemTypeGroup;
+        ItemTypes = [];
+    }
+
+    public string? ItemTypeGroup { get; }
+
+    /// <summary>The item classes named, to narrow the ones found from the element type. Empty: all of them.</summary>
+    public IReadOnlyList<Type> ItemTypes { get; }
 
     /// <summary>Minimum number of items; -1 for none.</summary>
     public int Min { get; set; } = -1;

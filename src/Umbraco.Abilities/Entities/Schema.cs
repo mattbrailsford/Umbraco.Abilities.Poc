@@ -272,6 +272,28 @@ public sealed class ItemTypeRegistry
         });
     }
 
+    /// <summary>
+    /// Adds the item types a model class's items fields hold, when they are classes: every <c>[ItemType]</c> class that
+    /// extends a list's element type, or the classes named. Items inside items and objects are included. Entity adapters
+    /// built on a model class call this, so nothing is registered by hand.
+    /// </summary>
+    public ItemTypeRegistry AddModel(Type modelType)
+    {
+        foreach (var (group, itemClass) in Models.ModelSchemas.ItemClassesIn(modelType))
+        {
+            var info = Models.ModelSchemas.Info(itemClass);
+            var (alias, name, description) = info.ItemType!.Value;
+            if (info.Key is null)
+            {
+                throw new InvalidOperationException($"{itemClass.Name} has no key: derive from EntityItemModel, add [Key] or configure HasKey.");
+            }
+
+            AddIfMissing(new ItemTypeDefinition(group, alias, name, description, info.Schema) { ClrType = itemClass });
+        }
+
+        return this;
+    }
+
     /// <summary>Adds the type unless one is already registered for its group and alias.</summary>
     public ItemTypeRegistry AddIfMissing(ItemTypeDefinition itemType)
     {

@@ -42,16 +42,16 @@ public sealed class Page
     [EntityKey("document", "media"), Description("Related pages or media.")]
     public List<EntityReference>? Related { get; set; }
 
-    [Items(CmsPageAdapter.BlockGroup), Description("The page's content blocks.")]
+    [Items, Description("The page's content blocks.")]
     public List<PageBlock> Blocks { get; set; } = [];
 
-    [Items(CmsPageAdapter.GridRootGroup), Description("A layout grid.")]
+    [Items, Description("A layout grid.")]
     public List<GridBlock> Grid { get; set; } = [];
 
-    [Items(CmsPageAdapter.PromoGroup), Description("Promotions, chosen per language.")]
+    [Items, Description("Promotions, chosen per language.")]
     public Varying<List<Promo>> Promos { get; set; } = [];
 
-    [Items(CmsPageAdapter.MediaEntryGroup, Max = 1), Description("The page image.")]
+    [Items(Max = 1), Description("The page image.")]
     public List<MediaEntry> Image { get; set; } = [];
 }
 
@@ -89,7 +89,7 @@ public sealed class CardGrid : PageBlock
     [Description("Heading above the grid.")]
     public Varying<string> Heading { get; set; } = [];
 
-    [Items(CmsPageAdapter.CardGroup, Min = 1), Description("The cards in the grid.")]
+    [Items(Min = 1), Description("The cards in the grid.")]
     public List<Card> Cards { get; set; } = [];
 }
 
@@ -125,10 +125,10 @@ public sealed class GridPlacement
 [ItemType("twoColumn", "Two columns", Description = "A row with a left and a right area.")]
 public sealed class TwoColumn : GridBlock
 {
-    [Items(CmsPageAdapter.GridAreaGroup, Min = 1, Max = 2), Description("Left area.")]
+    [Items(typeof(RichText), Min = 1, Max = 2), Description("Left area. Only rich text.")]
     public List<GridBlock> Left { get; set; } = [];
 
-    [Items(CmsPageAdapter.GridAreaGroup, Max = 2), Description("Right area.")]
+    [Items(typeof(RichText), Max = 2), Description("Right area. Only rich text.")]
     public List<GridBlock> Right { get; set; } = [];
 }
 
@@ -199,24 +199,6 @@ public sealed class CmsPageAdapter(InMemoryDatabase database, ItemTypeRegistry i
 
     public const int GridColumns = 12;
 
-    public const string BlockGroup = "cms.block";
-    public const string CardGroup = "cms.card";
-    public const string GridRootGroup = "cms.grid.root";
-    public const string GridAreaGroup = "cms.grid.area";
-    public const string PromoGroup = "cms.promo";
-    public const string MediaEntryGroup = "cms.mediaEntry";
-
-    public static void RegisterItemTypes(ItemTypeRegistry itemTypes) => itemTypes
-        .Add<Hero>(BlockGroup)
-        .Add<CardGrid>(BlockGroup)
-        .Add<Card>(CardGroup)
-        .Add<TwoColumn>(GridRootGroup)
-        .Add<RichText>(GridRootGroup, GridAreaGroup) // allowed at the grid root and in areas
-        .Add<Promo>(PromoGroup)
-        .Add<MediaEntry>(MediaEntryGroup)
-        .Add<Callout>(RichTextValue.BlockGroup)
-        .Add<Quote>(RichTextValue.BlockGroup);
-
     protected override Task<IReadOnlyList<string>?> GetDimensionValuesAsync(string dimension, CancellationToken cancellationToken)
         => Task.FromResult(dimension == VariationDimensions.Culture ? Cultures : null);
 
@@ -232,8 +214,6 @@ public sealed class CmsPageAdapter(InMemoryDatabase database, ItemTypeRegistry i
 public sealed class CmsMediaAdapter(InMemoryDatabase database, ItemTypeRegistry itemTypes)
     : InMemoryModelAdapter<MediaRequestModel>(database, itemTypes, "/umbraco/section/media/workspace/media/edit")
 {
-    public const string CropGroup = "cms.media.crop";
-
     static CmsMediaAdapter()
     {
         ModelConfiguration.Configure<MediaRequestModel>(media => media
@@ -243,7 +223,7 @@ public sealed class CmsMediaAdapter(InMemoryDatabase database, ItemTypeRegistry 
             .Ignore(x => x.UpdateDate)
             .Field(x => x.Name).IsName().Required().Description("Media name.")
             .Field(x => x.AltText).Description("Alternative text.")
-            .Items(x => x.Crops, CropGroup).Description("Named crops of the image."));
+            .Items(x => x.Crops).Description("Named crops of the image."));
 
         ModelConfiguration.Configure<MediaCropRequestModel>(crop => crop
             .IsItemType("crop", "Crop", "A named crop.")
@@ -252,6 +232,4 @@ public sealed class CmsMediaAdapter(InMemoryDatabase database, ItemTypeRegistry 
             .Field(x => x.Width).Required().Rule(new RangeAttribute(1, 10000)).Description("Width in pixels.")
             .Field(x => x.Height).Required().Rule(new RangeAttribute(1, 10000)).Description("Height in pixels."));
     }
-
-    public static void RegisterItemTypes(ItemTypeRegistry itemTypes) => itemTypes.Add<MediaCropRequestModel>(CropGroup);
 }

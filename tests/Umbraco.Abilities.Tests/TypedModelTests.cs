@@ -47,12 +47,12 @@ public class TypedModelTests
         Assert.True(fields["tags"].Many);
         Assert.Equal(["document", "media"], fields["related"].ReferencesAnyOf);
         Assert.Equal(["culture"], page.Root.Fields.Single(f => f.Alias == "promos").VariesBy);
-        Assert.Equal("columnSpan", _site.ItemTypes.Find(CmsPageAdapter.GridRootGroup, "richText")!.Schema.Find("layout")!.Schema!.Fields[0].Alias);
+        Assert.Equal("columnSpan", _site.ItemTypes.Find(fields["grid"].ItemTypeGroup!, "richText")!.Schema.Find("layout")!.Schema!.Fields[0].Alias);
 
-        var hero = _site.ItemTypes.Find(CmsPageAdapter.BlockGroup, "hero")!;
+        var hero = _site.ItemTypes.Find(fields["blocks"].ItemTypeGroup!, "hero")!;
         Assert.Equal(["light", "dark"], hero.Schema.Find("settings")!.Schema!.Find("theme")!.Allowed);
 
-        var focalPoint = _site.ItemTypes.Find(CmsPageAdapter.MediaEntryGroup, "mediaEntry")!.Schema.Fields.Single(f => f.Alias == "focalPoint");
+        var focalPoint = _site.ItemTypes.Find(fields["image"].ItemTypeGroup!, "mediaEntry")!.Schema.Fields.Single(f => f.Alias == "focalPoint");
         Assert.Equal(FieldType.Json, focalPoint.Type);
         Assert.NotNull(focalPoint.JsonSchema!["properties"]!["left"]);
     }
@@ -109,6 +109,23 @@ public class TypedModelTests
     }
 
     [Fact]
+    public async Task Item_types_come_from_the_lists_element_type_and_can_be_narrowed_by_naming_classes()
+    {
+        var page = await _site.Pages.GetSchemaAsync(null);
+        var fields = page.Root.Fields.ToDictionary(f => f.Alias);
+        string[] Aliases(string group) => _site.ItemTypes.InGroup(group).Select(t => t.Alias).Order().ToArray();
+
+        // Nothing was registered by hand: every [ItemType] class that extends the list's element type is found.
+        Assert.Equal(["cardGrid", "hero"], Aliases(fields["blocks"].ItemTypeGroup!));
+        Assert.Equal(["richText", "twoColumn"], Aliases(fields["grid"].ItemTypeGroup!));
+
+        // Item types inside item types are found too, and a list can be narrowed to the classes it names.
+        var twoColumn = _site.ItemTypes.Find(fields["grid"].ItemTypeGroup!, "twoColumn")!;
+        Assert.Equal(["richText"], Aliases(twoColumn.Schema.Find("left")!.ItemTypeGroup!));
+        Assert.Equal(["card"], Aliases(_site.ItemTypes.Find(fields["blocks"].ItemTypeGroup!, "cardGrid")!.Schema.Find("cards")!.ItemTypeGroup!));
+    }
+
+    [Fact]
     public async Task A_class_with_no_attributes_or_base_class_is_described_fluently()
     {
         var media = await _site.Media.GetSchemaAsync(null);
@@ -117,9 +134,9 @@ public class TypedModelTests
         Assert.Equal("media", media.EntityType);
         Assert.True(fields["name"].Required);
         Assert.Equal(["name", "altText", "crops"], fields.Keys); // the key, version and server-side UpdateDate are not fields
-        Assert.Equal(CmsMediaAdapter.CropGroup, Assert.Single(media.Root.ItemFields).ItemTypeGroup);
+        var crops = Assert.Single(media.Root.ItemFields);
 
-        var crop = _site.ItemTypes.Find(CmsMediaAdapter.CropGroup, "crop")!;
+        var crop = _site.ItemTypes.Find(crops.ItemTypeGroup!, "crop")!;
         Assert.Equal(typeof(MediaCropRequestModel), crop.ClrType);
         Assert.All(crop.Schema.Fields, f => Assert.True(f.Required));
 

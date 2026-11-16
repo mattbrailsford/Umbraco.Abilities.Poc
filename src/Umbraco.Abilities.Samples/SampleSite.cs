@@ -44,8 +44,6 @@ public sealed class SampleSite
         Pages = new CmsPageAdapter(ContentDatabase, ItemTypes);
         Media = new CmsMediaAdapter(ContentDatabase, ItemTypes);
         Adapters.Add(Pages).Add(Media);
-        CmsPageAdapter.RegisterItemTypes(ItemTypes);
-        CmsMediaAdapter.RegisterItemTypes(ItemTypes);
 
         // Commerce.
         Collections = new CollectionAdapter(CommerceDatabase, ItemTypes);

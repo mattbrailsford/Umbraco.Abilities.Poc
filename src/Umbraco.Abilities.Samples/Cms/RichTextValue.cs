@@ -16,12 +16,10 @@ namespace Umbraco.Abilities.Samples.Cms;
 /// </summary>
 public sealed class RichTextValue
 {
-    public const string BlockGroup = "cms.richText.block";
-
     [Description("HTML. Blocks are placed with <umb-block data-key=\"…\"></umb-block>; adding or removing a block places or removes its tag.")]
     public string? Markup { get; set; }
 
-    [Items(BlockGroup), Description("The blocks placed in the markup.")]
+    [Items, Description("The blocks placed in the markup.")]
     public List<RichTextBlock> Blocks { get; set; } = [];
 }
 
