@@ -579,7 +579,7 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
         await SetAsync(page.Key, "", "subtitle", "\"Sun, sand and sea\"", "en-US");
 
         // The change set holds a CMS draft set for content, which the backoffice can read and preview.
-        var draftId = _changeSets.Get(_agent.ChangeSetId!.Value).Drafts["Content"];
+        var draftId = _changeSets.Get(_agent.ChangeSetId!.Value).Drafts[CmsDocumentAdapter.Type];
         var draft = _draftSets.Get(draftId)!;
         var inDraft = (await _draftSets.GetAsync(draftId, new GuidUdi(Constants.UdiEntityType.Document, page.Key)))!;
         Assert.Multiple(() =>

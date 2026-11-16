@@ -93,9 +93,9 @@ public sealed class ChangeSetService(
     public async Task DiscardAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var set = Get(id);
-        foreach (var (step, draftId) in set.Drafts.Where(d => !set.AppliedSteps.Contains(d.Key)))
+        foreach (var (drafting, draftId) in OpenDrafts(set))
         {
-            await DraftingFor(step).DiscardDraftAsync(draftId, cancellationToken);
+            await drafting.DiscardDraftAsync(draftId, cancellationToken);
         }
 
         store.Remove(set.Id);
@@ -243,9 +243,9 @@ public sealed class ChangeSetService(
     private async Task<SetState> ComputeAllAsync(ChangeSet set, CancellationToken cancellationToken)
     {
         var rebased = new List<RebasedEntity>();
-        foreach (var (step, draftId) in set.Drafts.Where(d => !set.AppliedSteps.Contains(d.Key)))
+        foreach (var (drafting, draftId) in OpenDrafts(set))
         {
-            rebased.AddRange(await DraftingFor(step).GetRebasedAsync(draftId, cancellationToken));
+            rebased.AddRange(await drafting.GetRebasedAsync(draftId, cancellationToken));
         }
 
         var entities = new List<EntityState>();
@@ -271,7 +271,7 @@ public sealed class ChangeSetService(
         if (adapter is IDraftingEntityAdapter drafting)
         {
             // The product's draft holds the working state and reports its own rebase.
-            return State(set.Drafts.TryGetValue(adapter.UnitOfWork.Name, out var draftId)
+            return State(set.Drafts.TryGetValue(adapter.EntityType, out var draftId)
                 ? await drafting.LoadDraftAsync(draftId, key, cancellationToken)
                 : live?.Clone());
         }
@@ -344,7 +344,7 @@ public sealed class ChangeSetService(
     {
         var set = Get(setId);
         if (adapters.Get(entityType) is IDraftingEntityAdapter drafting
-            && set.Drafts.TryGetValue(drafting.UnitOfWork.Name, out var draftId))
+            && set.Drafts.TryGetValue(drafting.EntityType, out var draftId))
         {
             await drafting.ResolveConflictAsync(draftId, key, path, variant, keep, cancellationToken);
             return;
@@ -563,16 +563,16 @@ public sealed class ChangeSetService(
                     var entities = state.Entities.Where(e => step.Entities.Contains((e.EntityType, e.Key))).ToList();
                     // Entities a product drafts are applied with its draft, all or nothing. Other adapters can share the
                     // transaction (CMS media shares documents' Umbraco scope): their entities are saved in it too.
-                    var drafting = set.Drafts.TryGetValue(step.Key, out var draftId) ? DraftingFor(step.Key) : null;
-                    foreach (var entity in entities.Where(e => e.Adapter != drafting))
+                    var drafted = entities.Where(e => e.Adapter is IDraftingEntityAdapter && set.Drafts.ContainsKey(e.EntityType)).ToList();
+                    foreach (var entity in entities.Except(drafted))
                     {
                         saved.Add(await entity.Adapter.SaveAsync(entity.Working!, cancellationToken));
                     }
 
-                    if (drafting is not null)
+                    foreach (var byAdapter in drafted.GroupBy(e => e.EntityType))
                     {
-                        saved.AddRange(entities.Where(e => e.Adapter == drafting).Select(e => e.Summary));
-                        await drafting.ApplyDraftAsync(draftId, cancellationToken);
+                        saved.AddRange(byAdapter.Select(e => e.Summary));
+                        await ((IDraftingEntityAdapter)byAdapter.First().Adapter).ApplyDraftAsync(set.Drafts[byAdapter.Key], cancellationToken);
                     }
 
                     await transaction.CompleteAsync(cancellationToken);
@@ -704,17 +704,21 @@ public sealed class ChangeSetService(
 
     private async Task<Guid> EnsureDraftAsync(ChangeSet set, IDraftingEntityAdapter drafting, CancellationToken cancellationToken)
     {
-        if (!set.Drafts.TryGetValue(drafting.UnitOfWork.Name, out var draftId))
+        if (!set.Drafts.TryGetValue(drafting.EntityType, out var draftId))
         {
             draftId = await drafting.CreateDraftAsync(set.Name, cancellationToken);
-            set.Drafts[drafting.UnitOfWork.Name] = draftId;
+            set.Drafts[drafting.EntityType] = draftId;
         }
 
         return draftId;
     }
 
-    private IDraftingEntityAdapter DraftingFor(string step)
-        => adapters.All.OfType<IDraftingEntityAdapter>().First(d => d.UnitOfWork.Name == step);
+    /// <summary>The set's drafts whose transaction isn't applied yet, with the adapter that keeps each.</summary>
+    private IEnumerable<(IDraftingEntityAdapter Drafting, Guid DraftId)> OpenDrafts(ChangeSet set)
+        => set.Drafts
+            .Select(d => (Drafting: (IDraftingEntityAdapter)adapters.Get(d.Key), DraftId: d.Value))
+            .Where(d => !set.AppliedSteps.Contains(d.Drafting.UnitOfWork.Name))
+            .ToList();
 }
 
 /// <summary>

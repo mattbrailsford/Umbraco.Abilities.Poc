@@ -49,8 +49,9 @@ public sealed class ChangeSet
     public Dictionary<string, long> BaseVersions { get; } = [];
 
     /// <summary>
-    /// The product drafts this set holds, keyed by the product's step name: for products that keep their own drafts
-    /// (CMS Draft Sets), recording, reading, rebasing and applying their changes is left to that draft.
+    /// The product drafts this set holds, keyed by the drafting adapter's entity type: for products that keep their own
+    /// drafts (CMS Draft Sets), recording, reading, rebasing and applying their changes is left to that draft. Keyed by
+    /// entity type, not by transaction, so two adapters with drafts can share one transaction and keep a draft each.
     /// </summary>
     public Dictionary<string, Guid> Drafts { get; } = [];
 

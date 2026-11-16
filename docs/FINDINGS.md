@@ -195,8 +195,9 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
      no drafts, so the change set keeps and replays its edits and calls `SaveAsync` on apply. Both use the same Umbraco
      scope. The first test applying both found a bug: a step with a draft applied only the draft, so media in the
      same step was skipped while being reported as saved. Now the step saves the other adapters' entities, then
-     applies the draft, all in one scope, so a refused document rolls the media back. Drafts are still keyed by the
-     transaction's name, so two adapters with drafts can't share one transaction yet.
+     applies the draft, all in one scope, so a refused document rolls the media back. Drafts were also keyed by the
+     transaction's name, so two adapters with drafts in one transaction would have shared one draft. They are now
+     keyed by entity type: each product keeps its own draft, and a transaction applies every draft in it.
    - **"Types are data" stops at Umbraco's content types.** The handler contract is written against a property type
      and a data type. Umbraco Forms has field types and their settings instead. Covering it means describing a
      property in neutral terms (alias, name, mandatory, editor, settings) and letting each product map its own. Not

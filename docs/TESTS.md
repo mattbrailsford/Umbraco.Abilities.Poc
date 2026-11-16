@@ -123,6 +123,8 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
   - `CmsDocumentAdapterTests.Editors_the_definition_has_no_rule_for_are_fields_described_by_Umbracos_value_schemas`
 - A third party's property editor with its own handler, found on its own, is the field its handler describes (a star rating as a number from 1 to 5), checked before Umbraco sees it, saved in the editor's own shape and read back
   - `CmsDocumentAdapterTests.A_third_party_editor_with_a_handler_is_a_field_shaped_by_that_handler`
+- Two products with drafts in one transaction each keep their own draft; both are applied, and discarding the set discards both
+  - `DraftingTests (all)`
 - Documents and media in one set are applied together in one Umbraco scope, and a refused document rolls back the media saved with it
   - `CmsDocumentAdapterTests.Documents_and_media_in_one_set_are_applied_together_in_one_Umbraco_scope`
   - `CmsDocumentAdapterTests.A_refused_document_rolls_back_the_media_saved_with_it`

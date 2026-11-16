@@ -108,7 +108,8 @@ drafts of their own (the in-memory samples) work as before. Both kinds mix in on
 
 Both kinds can also share one transaction. CMS media has no drafts, but saves in the same Umbraco scope as documents,
 so its adapter uses the same unit of work. A step is one transaction: the entities of adapters without drafts are
-saved first, then the drafting adapter's draft is applied. If the draft fails, the scope rolls the media back too.
+saved first, then each drafting adapter's draft is applied. If a draft fails, the scope rolls the media back too.
+The set keeps one draft per drafting adapter (by entity type), so two products with drafts can share a transaction.
 
 What the adapter (`CmsDocumentAdapter`) does:
 
