@@ -424,6 +424,57 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
     }
 
     [Test]
+    public async Task Documents_and_media_in_one_set_are_applied_together_in_one_Umbraco_scope()
+    {
+        await CreateBrochureTypeAsync();
+        await _agent.StartChangeSetAsync("Launch");
+        var page = await BuildSummerPageAsync();
+        var media = await CreateBrochureAsync("Summer brochure");
+
+        await _agent.OkAsync("changeSet_apply", SetJson());
+        Assert.Multiple(() =>
+        {
+            Assert.That(ContentService.GetById(page.Key), Is.Not.Null);
+            Assert.That(GetRequiredService<IMediaService>().GetById(media)?.Name, Is.EqualTo("Summer brochure"));
+        });
+    }
+
+    [Test]
+    public async Task A_refused_document_rolls_back_the_media_saved_with_it()
+    {
+        await CreateBrochureTypeAsync();
+        await _agent.StartChangeSetAsync("Launch");
+        var media = await CreateBrochureAsync("Summer brochure");
+        var refused = (await _agent.OkAsync("entity_create", """{ "entityType": "document", "subtype": "landingPage", "variant": { "culture": "en-US" }, "fields": { "name": "Refused", "subtitle": "No" } }"""))
+            .GetProperty("key").GetGuid();
+
+        var failure = await _agent.FailAsync("changeSet_apply", SetJson());
+        Assert.Multiple(() =>
+        {
+            Assert.That(failure.GetProperty("message").GetString(), Does.Contain("Nothing was applied"));
+            Assert.That(ContentService.GetById(refused), Is.Null);
+            // Media is saved before the documents' draft set is applied, so it was saved, then rolled back with the scope.
+            Assert.That(GetRequiredService<IMediaService>().GetById(media), Is.Null, "the media saved in the same scope was rolled back");
+        });
+    }
+
+    private async Task CreateBrochureTypeAsync()
+    {
+        var brochure = new MediaTypeBuilder().WithAlias("brochure").WithName("Brochure")
+            .AddPropertyGroup().WithAlias("content").WithName("Content")
+                .AddPropertyType().WithAlias("title").WithName("Title")
+                    .WithDataTypeId(Constants.DataTypes.Textbox).WithPropertyEditorAlias(Constants.PropertyEditors.Aliases.TextBox)
+                    .WithValueStorageType(ValueStorageType.Nvarchar).Done()
+                .Done()
+            .Build();
+        brochure.AllowedAsRoot = true;
+        await GetRequiredService<IMediaTypeService>().CreateAsync(brochure, Constants.Security.SuperUserKey);
+    }
+
+    private async Task<Guid> CreateBrochureAsync(string name)
+        => (await _agent.OkAsync("entity_create", $$"""{ "entityType": "media", "subtype": "brochure", "fields": { "name": "{{name}}", "title": "Summer" } }""")).GetProperty("key").GetGuid();
+
+    [Test]
     public async Task A_failed_side_effect_after_the_content_leaves_the_content_applied_and_the_set_resumable()
     {
         await _agent.StartChangeSetAsync("Content, then an operation");

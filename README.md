@@ -97,7 +97,7 @@ The details and the lessons are in [docs/FINDINGS.md](docs/FINDINGS.md). The tes
 - **Opening a set in an editor.** Nothing loads a set's working state into a backoffice workspace.
 - **Undo.** A failed apply is resumed, not undone. Nothing reverses a product's step that already applied.
 - **Products sharing a database.** Products that do share a connection could apply in one transaction; the
-  PoC always applies them one after another.
+  PoC applies them one after another. Only CMS documents and media share one, an Umbraco scope.
 
 ## Run it
 

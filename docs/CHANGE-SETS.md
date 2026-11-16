@@ -106,6 +106,10 @@ The draft set is the source of truth for content. Changes an AI makes are a CMS 
 and preview. The change set keeps only the draft set's id and the fact that it touched an entity. Products with no
 drafts of their own (the in-memory samples) work as before. Both kinds mix in one set.
 
+Both kinds can also share one transaction. CMS media has no drafts, but saves in the same Umbraco scope as documents,
+so its adapter uses the same unit of work. A step is one transaction: the entities of adapters without drafts are
+saved first, then the drafting adapter's draft is applied. If the draft fails, the scope rolls the media back too.
+
 What the adapter (`CmsDocumentAdapter`) does:
 
 | Change set needs | CMS draft set provides |

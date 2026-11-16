@@ -561,18 +561,18 @@ public sealed class ChangeSetService(
                 {
                     await using var transaction = await unitOfWork.BeginAsync(cancellationToken);
                     var entities = state.Entities.Where(e => step.Entities.Contains((e.EntityType, e.Key))).ToList();
-                    if (set.Drafts.TryGetValue(step.Key, out var draftId))
+                    // Entities a product drafts are applied with its draft, all or nothing. Other adapters can share the
+                    // transaction (CMS media shares documents' Umbraco scope): their entities are saved in it too.
+                    var drafting = set.Drafts.TryGetValue(step.Key, out var draftId) ? DraftingFor(step.Key) : null;
+                    foreach (var entity in entities.Where(e => e.Adapter != drafting))
                     {
-                        // The product applies its own draft, all or nothing.
-                        saved.AddRange(entities.Select(e => e.Summary));
-                        await DraftingFor(step.Key).ApplyDraftAsync(draftId, cancellationToken);
+                        saved.Add(await entity.Adapter.SaveAsync(entity.Working!, cancellationToken));
                     }
-                    else
+
+                    if (drafting is not null)
                     {
-                        foreach (var entity in entities)
-                        {
-                            saved.Add(await entity.Adapter.SaveAsync(entity.Working!, cancellationToken));
-                        }
+                        saved.AddRange(entities.Where(e => e.Adapter == drafting).Select(e => e.Summary));
+                        await drafting.ApplyDraftAsync(draftId, cancellationToken);
                     }
 
                     await transaction.CompleteAsync(cancellationToken);
