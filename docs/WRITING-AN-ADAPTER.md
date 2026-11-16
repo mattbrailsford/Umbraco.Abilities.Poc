@@ -276,8 +276,14 @@ Two optional parts, for editors that need them:
 | `BlockEditorHandler` | Block List and Block Grid |
 | `JsonValueEditorHandler` | The fallback: any other editor is a whole JSON value, described by Umbraco's value schema for it |
 
-Handlers are passed to the adapter (`editorHandlers`), and are asked before the core ones, so a package can also map a
-core editor its own way. A real package would register its handler through a collection builder. Where the contract
+Handlers are found on their own: the interface is `IDiscoverable`, and `PropertyEditorEntityHandlersComposer` adds
+every one in the scanned assemblies to `PropertyEditorEntityHandlerCollection`, as Umbraco.AI finds its handlers. Use
+`builder.PropertyEditorEntityHandlers()` to add or exclude one. Packages' handlers are asked before the core ones, so a
+package can also map a core editor its own way.
+
+**Write back everything you read.** When an edit touches a property, the adapter rewrites its whole value from the
+field. Anything the handler dropped on read is lost. Keep product data that isn't a field under a `$` name on the
+value, as the block handler keeps a block's settings key (`$settingsKey`). Where the contract
 should live (CMS core, Umbraco.AI or here) is open: see
 [FINDINGS](FINDINGS.md#where-property-editor-handlers-should-live).
 

@@ -117,7 +117,7 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
   - `ValueHandlerTests (all)`
 - Editors the CMS adapter has no rule for are fields described by Umbraco's own value schemas
   - `CmsDocumentAdapterTests.Editors_the_definition_has_no_rule_for_are_fields_described_by_Umbracos_value_schemas`
-- A third party's property editor with its own handler is the field its handler describes (a star rating as a number from 1 to 5), checked before Umbraco sees it, saved in the editor's own shape and read back
+- A third party's property editor with its own handler, found on its own, is the field its handler describes (a star rating as a number from 1 to 5), checked before Umbraco sees it, saved in the editor's own shape and read back
   - `CmsDocumentAdapterTests.A_third_party_editor_with_a_handler_is_a_field_shaped_by_that_handler`
 
 ## Workflows

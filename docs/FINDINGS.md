@@ -228,9 +228,39 @@ to ship one and have it "just work" everywhere, it has to live somewhere every c
 | This framework (`Umbraco.Abilities.Cms`) | Where it is now. No one else has to agree | Only the abilities see it. An editor's package would need a reference to Abilities |
 
 The recommendation is CMS core in the long run, through an RFC, with this repo as the place to settle the contract
-first. Before that, the contract should be compared with `IAIPropertyValueHandler` line by line. This has not been
-done yet: the two seem to cover the same ground (one handler per editor, knowing its stored value), but that is an
-assumption until checked. If they match, Umbraco.AI's handlers could become adapters over the core ones.
+first.
+
+#### Compared with Umbraco.AI's handlers
+
+Checked against Umbraco.AI's code (`Umbraco.AI/src/Umbraco.AI.Core/PropertyValueOperations/`). It has two contracts
+per editor. `IAIPropertyValueHandler` edits the stored value in place: add, remove and move an item, clear the value,
+get and set a property inside an item, and optional checks before each change. It has handlers for Block List, Block
+Grid, Media Picker, Multi URL Picker and Rich Text. `IAISimplifiedPropertyValueTransformer` gives a model a simpler
+schema for an editor (Rich Text as a markup string) and turns the model's value into the stored one.
+
+| Need | Umbraco.AI | Here |
+| --- | --- | --- |
+| Edit inside a value | Each handler implements every edit on its stored format | A handler reads and writes. The framework's edits (`entity.addItem`, `setValue` at a path) work on the field, the same for every editor |
+| A simpler schema for a model | A separate transformer, one way: the model's value to the stored value | `DescribeAsync`, with `ReadAsync` as the way back, so a model also reads the simple form |
+| Umbraco's errors inside a value | Not handled | The handler locates them, and nested values hand on |
+| Checks before a change | `ValidateAddItem`, `ValidateRemoveItem`, `ValidateSetValue` | The field's rules and the schema check. A check that needs code would be an `IValueHandler` on the field |
+| Default values for a new item | `IAIPropertyDefaultValueProvider`, over the CMS's defaults | None yet |
+| Finding handlers | `IDiscoverable` and a lazy collection builder: a package ships a handler and it is found | The same, taken from Umbraco.AI |
+| Data a handler doesn't understand | Never touched: edits are in place | Lost if the handler drops it on read. Only the properties an edit touches are rewritten, since the draft set stages changed properties only, but those are rewritten whole |
+
+So this contract covers Umbraco.AI's use case by a different route: one read and one write per editor instead of
+six edits, and the simple schema and the way back in one place. What it costs is that a handler must be lossless.
+Umbraco.AI's handlers could become one adapter over these: read, edit with the shared editor, write.
+
+Taken from Umbraco.AI: handlers are `IDiscoverable` and found by a composer
+(`PropertyEditorEntityHandlersComposer`). The star rating test registers nothing; its handler is found on its own.
+
+Not taken yet, and worth taking:
+
+- **Default values.** A new block's properties should start at the CMS's defaults. That needs a default on a field,
+  which the framework doesn't have.
+- **A round-trip check for handlers.** A test kit that reads a stored value, writes it back, and compares, so a
+  handler's author finds a lossy handler before an editor does.
 
 The handler here is separate from the framework's own `IValueHandler`. That one adds behaviour inside a value
 (Rich Text keeps its markup and blocks in step) and knows nothing about storage. A property editor handler can set
@@ -273,8 +303,7 @@ The tests that show it are listed in [TESTS.md](TESTS.md#against-a-real-umbraco)
 
 Not covered yet: templates (an update would clear one), publishing, rich text with blocks, culture-variant block
 properties against real Umbraco, a parent created in the same set, a third party's editor inside a block, and saving
-most editors that pass through as JSON (only the eyedropper is saved in a test). Handlers are passed to the adapter's
-constructor; a real package would register them through a collection builder.
+most editors that pass through as JSON (only the eyedropper is saved in a test), and default values for new blocks.
 
 ## Against a real model
 

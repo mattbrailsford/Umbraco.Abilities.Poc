@@ -9,6 +9,7 @@ using NUnit.Framework;
 
 using Umbraco.Abilities.AI;
 using Umbraco.Abilities.ChangeSets;
+using Umbraco.Abilities.Cms.PropertyEditors;
 using Umbraco.Abilities.Entities;
 using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Actions;
@@ -63,6 +64,10 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
 
         // A package's property editor, which Umbraco knows only as a JSON value.
         builder.DataEditors().Add<StarRatingPropertyEditor>();
+
+        // Property editor handlers are found on their own, the package's star rating handler included. A site runs
+        // this composer; the test host doesn't run package composers.
+        new PropertyEditorEntityHandlersComposer().Compose(builder);
 
         // A package's handlers: veto sets with certain names, and record what was applied.
         builder.AddNotificationHandler<ChangeSetApplyingNotification, VetoHandler>();
@@ -195,7 +200,7 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
             new CmsScopeUnitOfWorkProvider(GetRequiredService<ICoreScopeProvider>()),
             () => Constants.Security.SuperUserKey,
             GetRequiredService<IPropertyEditorSchemaService>(),
-            [new StarRatingHandler()]);
+            GetRequiredService<PropertyEditorEntityHandlerCollection>());
         adapters.Add(_documents);
 
         abilities

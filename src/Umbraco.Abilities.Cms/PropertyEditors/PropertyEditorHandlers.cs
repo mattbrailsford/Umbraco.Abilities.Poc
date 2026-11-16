@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 
 using Umbraco.Abilities.Entities;
+using Umbraco.Cms.Core.Composing;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Models.ContentEditing;
 
@@ -15,8 +16,14 @@ namespace Umbraco.Abilities.Cms.PropertyEditors;
 /// The adapter owns the rest: the property's alias and variation, cultures and segments, and saving through Umbraco.
 /// An editor with no handler is a whole JSON value, described by Umbraco's value schema for the editor.
 /// </para>
+/// <para>
+/// Handlers are found in scanned assemblies on their own (<see cref="PropertyEditorEntityHandlersComposer"/>), so a
+/// package only has to ship one. Each handler must write back everything it read: the adapter rewrites a property's
+/// whole value when an edit touches it, so anything a handler drops on read is lost on save. Keep product data that
+/// isn't a field under a <c>$</c> name on the value, as the block handler keeps a block's settings key.
+/// </para>
 /// </summary>
-public interface IPropertyEditorEntityHandler
+public interface IPropertyEditorEntityHandler : IDiscoverable
 {
     /// <summary>Whether this handler maps the values of the property editor with this alias.</summary>
     bool Handles(string editorAlias);
