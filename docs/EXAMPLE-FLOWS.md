@@ -1179,12 +1179,12 @@ Seven generic tools did all the building. The products supplied a schema and the
 ## What these examples don't show
 
 - **A model choosing the calls.** These were scripted. For runs where a real model chose them, see
-  [Against a real model](../README.md#against-a-real-model).
+  [Against a real model](FINDINGS.md#against-a-real-model).
 - **Real Commerce and Automate.** These are stand-ins shaped like the real code.
 - **Editing an existing entity, rebasing and conflicts.** See the tests listed under
-  [What the tests show](../README.md#what-the-tests-show).
+  [What the tests show](TESTS.md).
 - **Every Automate connection.** A step's exits each lead to one step. Automate can also send one exit to several
   steps, put a filter on a connection, give a step with outcomes an extra "any result" exit, and build Switch's
   outcomes from its cases. None of these has a field yet.
 - **Stable item keys in Commerce.** Commerce stores no ids for rules, so the keys above change once the discount is
-  saved. See "What the mapping costs" in the [README](../README.md#what-the-mapping-costs).
+  saved. See [What the mapping costs](WRITING-AN-ADAPTER.md#what-the-mapping-costs).

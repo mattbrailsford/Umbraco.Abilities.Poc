@@ -3,15 +3,16 @@
 > **Status:** Experiment. This guide is for reviewing the design through its code: what to read, in what order, and
 > what to question. The design itself is in
 > [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-> [README.md](README.md) has the findings.
+> [README.md](README.md) says why it exists. [docs/FINDINGS.md](docs/FINDINGS.md) has the findings.
 > [docs/EXAMPLE-FLOWS.md](docs/EXAMPLE-FLOWS.md) shows the tools in use: every call and result for a page, a discount
 > and two workflows, one that branches.
 
 ## What you are reviewing
 
 It tests one claim. If packages declare **abilities** (operations) and **entity adapters** (what their entities look
-like), and write calls are recorded into **change sets**, then "create or edit an entity from a description" needs no
-per-product code. The same pieces then serve the copilot, Automate and MCP.
+like), and write calls are recorded into **change sets**, then any surface can create and edit any product's entities
+with no per-product code. Creating an entity from a description is the hardest test of that, so the tests use it most.
+The same pieces serve the backoffice, the Umbraco.AI copilot, Automate and MCP.
 
 The code is about 7,400 lines of source and 2,500 lines of tests in seven projects. The source splits into the framework
 (about 4,200), the in-memory samples (about 1,600), the real CMS adapter (about 1,000), the draft sets stand-in
@@ -39,6 +40,14 @@ Umbraco.Abilities.Cms  ──→   Umbraco.Cms.DraftSets
    adapter, which is also      references Umbraco only, never Abilities
    the draft set adapter
 ```
+
+Each design layer and where it lives:
+
+| Layer | Code |
+| --- | --- |
+| 1. Abilities | `Abilities/Ability.cs`: `[Ability]` with `Kind` and `Reversible`, typed `AbilityBase`, failures with categories and paths, `EntitySummary` |
+| 2. Entity adapters | `Entities/`: fields with values (scalars, objects with fields, items: keyed typed objects), entity and item references, an item type registry, the working copy as one JSON value tree (`Entity`, `EntityValues`), a path editor generalised from Umbraco.AI's block path engine, and the generic entity abilities. `Entities/Models/`: the typed layer package developers write against (`EntityAdapterBase<TModel>`, model attributes, `ModelEditAbilityBase`) |
+| 3. Change sets | `ChangeSets/`: a recorded unit of "any Write ability call", working state worked out in memory, apply product by product (each all or nothing) and resumable, rebasing onto changes saved elsewhere meanwhile. Generalises the CMS Draft Sets PoC (`Umbraco.Cms.DraftSets`) |
 
 The tests: `Umbraco.Abilities.Tests` (xunit) runs the samples through the AI tools. `Umbraco.Abilities.Cms.Tests` (NUnit)
 does the same against a real Umbraco.
@@ -94,7 +103,7 @@ Start with what the system does, before how it does it.
    page, a discount that refers to that page, and an email to send afterwards.
 
 **Look for:** whether the tool calls are ones a real model could plausibly make. They're scripted here. A real model
-made the same kind of calls in a few runs (see "Against a real model" in the README), but that is not proof it always
+made the same kind of calls in a few runs (see [Against a real model](docs/FINDINGS.md#against-a-real-model)), but that is not proof it always
 will.
 
 ### Pass 2: layer 1, abilities (15 minutes)
@@ -105,7 +114,7 @@ will.
 | `src/Umbraco.Abilities.AI/AbilityAIFunction.cs` | The whole AI adapter: an ability becomes an `AIFunction`, with a schema from its input type. Only irreversible Writes need approval. It adds an optional `changeSetId` to every tool that uses a change set, keeps the sets open in the conversation in `AbilityToolSession` (with two or more open, a call must name one), and reports the set each call used |
 | `AbilityInvoker` (end of `ChangeSets/ChangeSetService.cs`) | The single entry point. A Write while a change set is current is recorded instead of run |
 
-**Look for:** whether `Kind` plus `Reversible` is enough to decide approval. Finding 1 in the README says approval
+**Look for:** whether `Kind` plus `Reversible` is enough to decide approval. Finding 1 in [FINDINGS.md](docs/FINDINGS.md#what-building-it-taught-us) says approval
 depends on the call, not just the tool. Also check whether the result shape suits Automate as well as AI.
 
 ### Pass 3: layer 2, entity adapters (45 minutes)
@@ -139,7 +148,7 @@ Then the typed layer, which is what a package developer actually writes against:
 - whether the schema language can carry your product's entities;
 - whether paths are a good contract for a model;
 - whether the typed layer removes enough work;
-- how much the editing contract plus its mapping costs a real package. The README's "What the mapping costs" has the numbers.
+- how much the editing contract plus its mapping costs a real package. [What the mapping costs](docs/WRITING-AN-ADAPTER.md#what-the-mapping-costs) has the numbers.
 
 ### Pass 4: the samples, as package code (20 minutes)
 
@@ -204,7 +213,7 @@ In `ChangeSetService.cs`, read the public methods in this order:
 **Look for:**
 - **The adapter's two jobs.** Reading `CmsDocumentAdapter` alongside `DraftSetService`, ask whether the line between
   them is where core's Draft Sets would draw it.
-- **The core checklist.** "What core's Draft Sets must address" in the README is the ask of the CMS team.
+- **The core checklist.** "[What core's Draft Sets must address](docs/ARCHITECTURE.md#what-cores-draft-sets-must-address-to-become-the-generic-change-set)" is the ask of the CMS team.
 - **Validation in some cultures only.** Look at how validation is limited to the cultures a document has.
 
 ## How it all connects
@@ -253,14 +262,18 @@ These are the judgments the PoC makes that a reviewer is best placed to challeng
 6. **Values as their editor's model.** The framework edits inside a value only through its handler, and keyed items
    are one built-in value type. Is that the right line between the language and the editors? Handled values rebase per
    field and their references aren't seen: acceptable as fallbacks?
-7. **Who owns the coordinator.** Abilities owns it here. The README's "If core owned the change set" covers the
+7. **Who owns the coordinator.** Abilities owns it here. "[If core owned the change set](docs/CHANGE-SETS.md#if-core-owned-the-change-set)" covers the
    alternative, and what core's Draft Sets must do to make it possible.
 8. **What it doesn't prove.** No LLM is in the loop. Change sets and draft sets aren't stored. Retried side effects aren't
-   durable. See "What it does not prove" in the README.
+   durable. See [What it does not prove](README.md#what-it-does-not-prove).
 
 ## Where the decisions are written down
 
-- [README.md](README.md): findings, numbers, and the sections referred to above.
+- [README.md](README.md): why it exists, what it shows, and what it does not prove.
+- [FINDINGS.md](docs/FINDINGS.md): what building it taught us, and what real Umbraco and a real model showed.
+- [WRITING-AN-ADAPTER.md](docs/WRITING-AN-ADAPTER.md): what a package writes, and what it costs.
+- [CHANGE-SETS.md](docs/CHANGE-SETS.md): applying, rebasing, authorization, retries and CMS Draft Sets.
+- [TESTS.md](docs/TESTS.md): each claim and the tests that show it.
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md): the design, with the same findings
   folded in.
 - [EXAMPLE-FLOWS.md](docs/EXAMPLE-FLOWS.md): four recorded flows, call by call.
