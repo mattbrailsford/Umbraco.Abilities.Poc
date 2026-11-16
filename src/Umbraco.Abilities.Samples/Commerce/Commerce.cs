@@ -91,12 +91,12 @@ public sealed class DiscountAdapter(
     DiscountProviderCollection rewardProviders,
     InMemoryDatabase unitOfWork,
     ItemTypeRegistry itemTypes)
-    : EntityAdapterBase<DiscountEditModel>(itemTypes, unitOfWork), IAuthorizingEntityAdapter
+    : EntityAdapterBase<DiscountEditModel>(itemTypes, unitOfWork)
 {
     /// <summary>Real Commerce would check the Commerce section and the user's access to the discount's store.</summary>
     public SampleAccess? Access { get; set; }
 
-    public Task<string?> AuthorizeAsync(EntityAccessRequest request, CancellationToken cancellationToken = default)
+    public override Task<string?> AuthorizeAsync(EntityAccessRequest request, CancellationToken cancellationToken = default)
         => Task.FromResult(Access?.Authorize(EntityType, request));
 
     public const string RuleGroup = "commerce.discount.rule";

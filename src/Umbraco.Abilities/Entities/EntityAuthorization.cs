@@ -18,7 +18,8 @@ public sealed record EntityAccessRequest(Guid UserKey, EntityPermission Permissi
 
 /// <summary>
 /// An adapter whose product has its own permission model: CMS user groups, document permissions and language access, or
-/// Commerce's store access. Abilities never build their own: they ask the product. An adapter without this allows everyone.
+/// Commerce's store access. Abilities never build their own: they ask the product. Every adapter must implement it:
+/// <see cref="EntityAdapterRegistry.Add"/> refuses one that doesn't, as Abilities refuses an ability with no access rule.
 /// </summary>
 public interface IAuthorizingEntityAdapter : IEntityAdapter
 {

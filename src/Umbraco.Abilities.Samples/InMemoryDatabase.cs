@@ -77,14 +77,14 @@ public sealed class InMemoryDatabase(string name) : IUnitOfWorkProvider
 /// model instead (Commerce's discount service, for example), and its adapter is just as short.
 /// </summary>
 public abstract class InMemoryModelAdapter<TModel>(InMemoryDatabase database, ItemTypeRegistry itemTypes, string editUrlPrefix)
-    : EntityAdapterBase<TModel>(itemTypes, database), IAuthorizingEntityAdapter
+    : EntityAdapterBase<TModel>(itemTypes, database)
     where TModel : class
 {
     protected InMemoryDatabase Database { get; } = database;
 
     public SampleAccess? Access { get; set; }
 
-    public Task<string?> AuthorizeAsync(EntityAccessRequest request, CancellationToken cancellationToken = default)
+    public override Task<string?> AuthorizeAsync(EntityAccessRequest request, CancellationToken cancellationToken = default)
         => Task.FromResult(Access?.Authorize(EntityType, request));
 
     public override Task<TModel?> LoadModelAsync(Guid key, CancellationToken cancellationToken = default)

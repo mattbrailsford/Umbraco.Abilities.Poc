@@ -54,8 +54,15 @@ public sealed class EntityAdapterRegistry
 {
     private readonly Dictionary<string, IEntityAdapter> _definitions = new(StringComparer.Ordinal);
 
+    /// <summary>Adds an adapter. It must check access (<see cref="IAuthorizingEntityAdapter"/>): one that doesn't is refused.</summary>
     public EntityAdapterRegistry Add(IEntityAdapter adapter)
     {
+        if (adapter is not IAuthorizingEntityAdapter)
+        {
+            throw new InvalidOperationException(
+                $"The {adapter.EntityType} adapter doesn't check access. Implement IAuthorizingEntityAdapter and ask the product's permission model; return null from AuthorizeAsync only if everyone may read and change these entities.");
+        }
+
         _definitions.Add(adapter.EntityType, adapter);
         EntityUdis.Register(adapter.EntityType);
         return this;

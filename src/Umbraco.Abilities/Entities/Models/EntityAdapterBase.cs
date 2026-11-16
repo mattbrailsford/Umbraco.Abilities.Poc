@@ -12,7 +12,7 @@ namespace Umbraco.Abilities.Entities.Models;
 /// DataAnnotations. Everything else (schemas, generic edit abilities, change sets, rebasing) comes for free.
 /// </summary>
 /// <typeparam name="TModel">The model class, marked with <see cref="EntityAttribute"/> and a <c>[Key]</c> Guid property.</typeparam>
-public abstract class EntityAdapterBase<TModel> : IEntityAdapter
+public abstract class EntityAdapterBase<TModel> : IAuthorizingEntityAdapter
     where TModel : class
 {
     private readonly (string EntityType, string Name, string Description) _entity;
@@ -48,6 +48,13 @@ public abstract class EntityAdapterBase<TModel> : IEntityAdapter
 
     /// <summary>Saves the model, creating it when it is new. Throw to fail the save; the product's transaction rolls back.</summary>
     public abstract Task SaveModelAsync(TModel model, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Whether the user may read, create or change the entity, asked of the product's own permission model. Null when
+    /// allowed; otherwise why not, in words the user can be told. Required: an adapter can't leave access open by
+    /// forgetting it, as an ability can't.
+    /// </summary>
+    public abstract Task<string?> AuthorizeAsync(EntityAccessRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>Finds models by name. Optional.</summary>
     protected virtual Task<IReadOnlyList<TModel>> FindModelsAsync(string query, CancellationToken cancellationToken)

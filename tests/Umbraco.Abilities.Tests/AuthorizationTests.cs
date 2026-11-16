@@ -1,3 +1,5 @@
+using Umbraco.Abilities.ChangeSets;
+using Umbraco.Abilities.Entities;
 using Umbraco.Abilities.Samples;
 
 namespace Umbraco.Abilities.Tests;
@@ -72,5 +74,39 @@ public class AuthorizationTests
         var refused = await _agent.FailAsync("commerce_activateDiscount", $$"""{ "discount": "{{discount}}" }""");
         Assert.Equal("AccessDenied", refused.GetProperty("status").GetString());
         Assert.False((await _site.Discounts.LoadModelAsync(discount))!.Active);
+    }
+
+    [Fact]
+    public void An_adapter_that_does_not_check_access_cannot_be_registered()
+    {
+        var refused = Assert.Throws<InvalidOperationException>(() => new EntityAdapterRegistry().Add(new OpenAdapter()));
+
+        Assert.Contains("doesn't check access", refused.Message);
+    }
+
+    /// <summary>An adapter that forgot its product's permission model.</summary>
+    private sealed class OpenAdapter : IEntityAdapter
+    {
+        public string EntityType => "open";
+
+        public bool CanCreate => true;
+
+        public IUnitOfWorkProvider UnitOfWork => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<EntitySubtype>> GetSubtypesAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<EntitySchema> GetSchemaAsync(string? subtype, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Entity New(Guid key, string? subtype) => throw new NotSupportedException();
+
+        public Task<Entity?> LoadAsync(Guid key, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<Problem>> ValidateAsync(Entity entity, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<EntitySummary> SaveAsync(Entity entity, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<EntitySummary>> FindAsync(string query, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public EntitySummary ToSummary(Entity entity) => throw new NotSupportedException();
     }
 }
