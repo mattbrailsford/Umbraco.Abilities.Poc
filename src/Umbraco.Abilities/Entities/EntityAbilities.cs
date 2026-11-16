@@ -95,7 +95,7 @@ public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemT
         }
 
         var schema = await adapter.GetSchemaAsync(input.Subtype, cancellationToken);
-        var itemTypes = await registry.ResolveAsync(context.UserKey, cancellationToken);
+        var itemTypes = await registry.ResolveAsync(schema.Root, context.UserKey, cancellationToken);
         var output = new JsonObject
         {
             ["entityType"] = schema.EntityType,

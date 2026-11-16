@@ -30,21 +30,26 @@ internal sealed record SchemaMap(ObjectSchema Schema, ContentVariation Variation
 
 /// <summary>
 /// Builds the schema language from Umbraco document types, element types and data types. Block editors
-/// become items fields whose item types are registered per data type, because the same element type can be used by
-/// several block editors with different settings types and areas.
+/// become items fields with one item type group per data type (<c>cms.blocks:{dataTypeKey}</c>), because the same
+/// element type can be used by several block editors with different settings types and areas. The group's types are
+/// read from the data type when they're needed (<see cref="BlockItemTypesAsync"/>), so they follow its configuration.
 /// </summary>
 internal sealed class CmsSchemaMapper(
     IContentTypeService contentTypes,
     IDataTypeService dataTypes,
-    ItemTypeRegistry itemTypes,
     IPropertyEditorSchemaService? schemas)
 {
     public const string NameField = "name";
     public const string ParentField = "parent";
     public const string SettingsField = "settings";
     public const string LayoutField = "layout";
+    public const string BlockGroupPrefix = "cms.blocks:";
 
-    private readonly HashSet<Guid> _dataTypesInProgress = [];
+    private const string AreasSuffix = "/areas";
+
+    private static string BlockGroup(Guid dataTypeKey) => $"{BlockGroupPrefix}{dataTypeKey}";
+
+    private static string AreaGroup(Guid dataTypeKey) => $"{BlockGroup(dataTypeKey)}{AreasSuffix}";
 
     public IContentType RequireType(Guid key)
         => contentTypes.Get(key) ?? throw new InvalidOperationException($"No content type with key {key}.");
@@ -148,119 +153,98 @@ internal sealed class CmsSchemaMapper(
     {
         var dataType = await dataTypes.GetAsync(propertyType.DataTypeKey)
             ?? throw new InvalidOperationException($"No data type {propertyType.DataTypeKey} for property '{propertyType.Alias}'.");
-        var rootGroup = dataType.Key.ToString();
-        var areaGroup = $"{rootGroup}/areas";
         var isGrid = propertyType.PropertyEditorAlias == Constants.PropertyEditors.Aliases.BlockGrid;
 
-        var blocks = new List<BlockMap>();
-        FieldDefinition field;
+        // How the value maps: which element types, settings and areas each configured block has. The item types, with
+        // the elements' fields, come from BlockItemTypesAsync when a call needs them.
+        List<BlockMap> blockMaps;
+        (int? Min, int? Max) limit;
         if (isGrid)
         {
-            var config = dataType.ConfigurationObject as BlockGridConfiguration ?? new BlockGridConfiguration();
-            var columns = config.GridColumns ?? 12;
-            // Every grid block, at the root or in an area, has a layout: where it sits.
+            var grid = dataType.ConfigurationObject as BlockGridConfiguration ?? new BlockGridConfiguration();
+            blockMaps = grid.Blocks.Select(b => new BlockMap(b.ContentElementTypeKey, RequireType(b.ContentElementTypeKey).Alias, b.SettingsElementTypeKey,
+                b.Areas.Select(a => new AreaMap(a.Key, a.Alias ?? a.Key.ToString())).ToList())).ToList();
+            limit = (grid.ValidationLimit.Min, grid.ValidationLimit.Max);
+        }
+        else
+        {
+            var list = dataType.ConfigurationObject as BlockListConfiguration ?? new BlockListConfiguration();
+            blockMaps = list.Blocks.Select(b => new BlockMap(b.ContentElementTypeKey, RequireType(b.ContentElementTypeKey).Alias, b.SettingsElementTypeKey, [])).ToList();
+            limit = (list.ValidationLimit.Min, list.ValidationLimit.Max);
+        }
+
+        var field = FieldDefinition.ItemsOf(propertyType.Alias, description, BlockGroup(dataType.Key)) with
+        {
+            VariesBy = CmsVariants.DimensionsOf(varies),
+            Min = limit.Min ?? (propertyType.Mandatory ? 1 : null),
+            Max = limit.Max,
+        };
+
+        return new PropertyMap(propertyType.Alias, propertyType.PropertyEditorAlias, isGrid ? PropertyKind.BlockGrid : PropertyKind.BlockList, field, blockMaps);
+    }
+
+    /// <summary>
+    /// The item types of a block group: the blocks its data type allows now. A Block List's group holds every configured
+    /// block. A Block Grid has two: the root (blocks allowed at the root, or not in areas) and its areas (blocks allowed
+    /// in areas). Each block's fields are its element type's, plus its settings and, in a grid, its layout and areas.
+    /// </summary>
+    public async Task<IEnumerable<ItemTypeDefinition>> BlockItemTypesAsync(string group)
+    {
+        var name = group[BlockGroupPrefix.Length..];
+        var inAreas = name.EndsWith(AreasSuffix, StringComparison.Ordinal);
+        var dataTypeKey = Guid.Parse(inAreas ? name[..^AreasSuffix.Length] : name);
+        var dataType = await dataTypes.GetAsync(dataTypeKey);
+        var types = new List<ItemTypeDefinition>();
+
+        if (dataType?.ConfigurationObject is BlockGridConfiguration grid)
+        {
+            var columns = grid.GridColumns ?? 12;
             var layout = FieldDefinition.ObjectOf(LayoutField, "Where the block sits in the grid.", ObjectSchema.Of(
                 new FieldDefinition("columnSpan", $"Columns the block spans, 1 to {columns}.", FieldType.Integer, Required: true),
                 new FieldDefinition("rowSpan", "Rows the block spans.", FieldType.Integer))) with
             { Required = true };
 
-            foreach (var block in config.Blocks)
+            foreach (var block in grid.Blocks.Where(b => inAreas ? b.AllowInAreas : b.AllowAtRoot || !b.AllowInAreas))
             {
-                var areas = block.Areas
-                    .Select(a => new AreaMap(a.Key, a.Alias ?? a.Key.ToString()))
-                    .ToList();
-                var areaFields = block.Areas.Select(a => FieldDefinition.ItemsOf(a.Alias ?? a.Key.ToString(), $"Area '{a.Alias}'.", areaGroup) with
+                var areas = block.Areas.Select(a => FieldDefinition.ItemsOf(a.Alias ?? a.Key.ToString(), $"Area '{a.Alias}'.", AreaGroup(dataTypeKey)) with
                 {
                     Min = a.MinAllowed,
                     Max = a.MaxAllowed,
-                }).Append(layout).ToArray();
-
-                blocks.Add(await RegisterBlockAsync(dataType.Key, block.ContentElementTypeKey, block.SettingsElementTypeKey, areas, areaFields,
-                    group: block.AllowAtRoot || !block.AllowInAreas ? rootGroup : areaGroup,
-                    alsoIn: block.AllowAtRoot && block.AllowInAreas ? [areaGroup] : []));
+                });
+                types.Add(await BlockTypeAsync(group, block.ContentElementTypeKey, block.SettingsElementTypeKey, [.. areas, layout]));
             }
-
-            field = FieldDefinition.ItemsOf(propertyType.Alias, description, rootGroup) with
-            {
-                VariesBy = CmsVariants.DimensionsOf(varies),
-                Min = config.ValidationLimit.Min ?? (propertyType.Mandatory ? 1 : null),
-                Max = config.ValidationLimit.Max,
-            };
         }
-        else
+        else if (dataType?.ConfigurationObject is BlockListConfiguration list && !inAreas)
         {
-            var config = dataType.ConfigurationObject as BlockListConfiguration ?? new BlockListConfiguration();
-            foreach (var block in config.Blocks)
+            foreach (var block in list.Blocks)
             {
-                blocks.Add(await RegisterBlockAsync(dataType.Key, block.ContentElementTypeKey, block.SettingsElementTypeKey, [], [], rootGroup, []));
+                types.Add(await BlockTypeAsync(group, block.ContentElementTypeKey, block.SettingsElementTypeKey, []));
             }
-
-            field = FieldDefinition.ItemsOf(propertyType.Alias, description, rootGroup) with
-            {
-                VariesBy = CmsVariants.DimensionsOf(varies),
-                Min = config.ValidationLimit.Min ?? (propertyType.Mandatory ? 1 : null),
-                Max = config.ValidationLimit.Max,
-            };
         }
 
-        var kind = isGrid ? PropertyKind.BlockGrid : PropertyKind.BlockList;
-        return new PropertyMap(propertyType.Alias, propertyType.PropertyEditorAlias, kind, field, blocks);
+        return types;
     }
 
-    private async Task<BlockMap> RegisterBlockAsync(
-        Guid dataTypeKey,
-        Guid contentKey,
-        Guid? settingsKey,
-        IReadOnlyList<AreaMap> areas,
-        FieldDefinition[] extraFields,
-        string group,
-        IReadOnlyList<string> alsoIn)
+    private async Task<ItemTypeDefinition> BlockTypeAsync(string group, Guid contentKey, Guid? settingsKey, FieldDefinition[] extraFields)
     {
         var content = RequireType(contentKey);
-        var block = new BlockMap(contentKey, content.Alias, settingsKey, areas);
+        var schema = (await MapAsync(content, isDocument: false)).Schema;
 
-        // A block editor nested inside its own element type would recurse forever; its item types are
-        // already being registered by the outer call.
-        if (!_dataTypesInProgress.Add(dataTypeKey.Xor(contentKey)))
-        {
-            return block;
-        }
+        // A block's settings element is an object field of the block, beside its own fields.
+        FieldDefinition[] settings = settingsKey is { } key
+            ? [FieldDefinition.ObjectOf(SettingsField, "The block's settings.", (await MapAsync(RequireType(key), isDocument: false)).Schema)]
+            : [];
 
-        try
-        {
-            var schema = (await MapAsync(content, isDocument: false)).Schema;
-            // A block's settings element is an object field of the block, beside its own fields.
-            FieldDefinition[] settings = settingsKey is { } key
-                ? [FieldDefinition.ObjectOf(SettingsField, "The block's settings.", (await MapAsync(RequireType(key), isDocument: false)).Schema)]
-                : [];
-
-            itemTypes.AddIfMissing(new ItemTypeDefinition(group, content.Alias, content.Name ?? content.Alias, content.Description ?? string.Empty,
-                schema with { Fields = [.. schema.Fields, .. settings, .. extraFields] })
-            {
-                AlsoIn = alsoIn,
-            });
-        }
-        finally
-        {
-            _dataTypesInProgress.Remove(dataTypeKey.Xor(contentKey));
-        }
-
-        return block;
+        return new ItemTypeDefinition(group, content.Alias, content.Name ?? content.Alias, content.Description ?? string.Empty,
+            schema with { Fields = [.. schema.Fields, .. settings, .. extraFields] });
     }
 }
 
-internal static class GuidExtensions
+/// <summary>Every CMS block group's item types, read from its data type each call, so they follow its configuration.</summary>
+internal sealed class CmsBlockItemTypeSource(CmsSchemaMapper mapper) : IItemTypeSource
 {
-    /// <summary>Combines two keys, only to name a (data type, element type) pair.</summary>
-    public static Guid Xor(this Guid a, Guid b)
-    {
-        var x = a.ToByteArray();
-        var y = b.ToByteArray();
-        for (var i = 0; i < x.Length; i++)
-        {
-            x[i] ^= y[i];
-        }
+    public bool Serves(string group) => group.StartsWith(CmsSchemaMapper.BlockGroupPrefix, StringComparison.Ordinal);
 
-        return new Guid(x);
-    }
+    public Task<IEnumerable<ItemTypeDefinition>> GetItemTypesAsync(string group, CancellationToken cancellationToken = default)
+        => mapper.BlockItemTypesAsync(group);
 }

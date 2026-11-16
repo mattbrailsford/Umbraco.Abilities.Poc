@@ -70,8 +70,9 @@ A type not in the list isn't offered in the schema, and adding one is refused. I
 still load, and validation reports them. When reading the setting means a database or service call, pass an
 asynchronous list instead: `allow.Field(x => x.Blocks, async cancellationToken => ...)`. It's read once per call. `AllowItems` also takes aliases, for a
 plugin seam's `DynamicItem` field, and fields of item classes inside the model. The real `CmsDocumentAdapter` builds
-its schema from data types, so it reads each data type's list itself (`CmsSchemaMapper`), with one item type group per
-data type.
+its schema from data types, so it goes one step further: each data type has its own item type group
+(`cms.blocks:{dataTypeKey}`), and one source serves them all (`CmsBlockItemTypeSource`). A source says which groups it
+serves and is asked for one at a time, so it can read that group's configuration when a call needs it.
 
 **Fluent configuration**, for a class the package doesn't own or won't annotate, such as a Management API request
 model in another assembly. It needs no base class either: items name their own key property

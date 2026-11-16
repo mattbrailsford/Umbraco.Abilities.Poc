@@ -20,7 +20,7 @@ public class TypedModelTests
     [Fact]
     public async Task The_structure_comes_from_the_model_class_and_its_attributes()
     {
-        var types = await _site.ItemTypes.ResolveAsync(null);
+        var types = await TypesAsync(_site.Discounts);
         var discount = await _site.Discounts.GetSchemaAsync(null);
         var fields = discount.Root.Fields.ToDictionary(f => f.Alias);
 
@@ -40,7 +40,7 @@ public class TypedModelTests
     [Fact]
     public async Task Varying_values_settings_layout_and_json_values_are_described_too()
     {
-        var types = await _site.ItemTypes.ResolveAsync(null);
+        var types = await TypesAsync(_site.Pages);
         var page = await _site.Pages.GetSchemaAsync(null);
         var fields = page.Root.Fields.ToDictionary(f => f.Alias);
 
@@ -101,7 +101,7 @@ public class TypedModelTests
 
         IReadOnlyList<Problem> problems =
         [
-            .. await SchemaValidator.ValidateAsync(entity, schema, await _site.ItemTypes.ResolveAsync(null), (_, _) => Task.FromResult(true)),
+            .. await SchemaValidator.ValidateAsync(entity, schema, await TypesAsync(_site.Discounts), (_, _) => Task.FromResult(true)),
             .. await _site.Discounts.ValidateAsync(entity),
         ];
 
@@ -113,7 +113,7 @@ public class TypedModelTests
     [Fact]
     public async Task Item_types_come_from_the_lists_element_type_and_can_be_narrowed_by_naming_classes()
     {
-        var types = await _site.ItemTypes.ResolveAsync(null);
+        var types = await TypesAsync(_site.Pages);
         var page = await _site.Pages.GetSchemaAsync(null);
         var fields = page.Root.Fields.ToDictionary(f => f.Alias);
         string[] Aliases(string group) => types.InGroup(group).Select(t => t.Alias).Order().ToArray();
@@ -131,7 +131,7 @@ public class TypedModelTests
     [Fact]
     public async Task A_class_with_no_attributes_or_base_class_is_described_fluently()
     {
-        var types = await _site.ItemTypes.ResolveAsync(null);
+        var types = await TypesAsync(_site.Media);
         var media = await _site.Media.GetSchemaAsync(null);
         var fields = media.Root.Fields.ToDictionary(f => f.Alias);
 
@@ -213,14 +213,14 @@ public class TypedModelTests
         // The page's blocks field allows what its data type's configuration lists, as a Block List does.
         var page = await _site.Pages.GetSchemaAsync(null);
         var blocks = page.Root.Fields.Single(f => f.Alias == "blocks").ItemTypeGroup!;
-        Assert.Equal(["cardGrid", "hero"], (await _site.ItemTypes.ResolveAsync(null)).InGroup(blocks).Select(t => t.Alias).Order());
+        Assert.Equal(["cardGrid", "hero"], (await TypesAsync(_site.Pages)).InGroup(blocks).Select(t => t.Alias).Order());
 
         var saved = new Page { Key = Guid.NewGuid(), Blocks = [new CardGrid()] };
         await _site.Pages.SaveModelAsync(saved);
 
         // An editor removes the card grid from the data type: it is no longer offered, and can't be added.
         _site.Pages.AllowedBlocks.Remove(typeof(CardGrid));
-        Assert.Equal(["hero"], (await _site.ItemTypes.ResolveAsync(null)).InGroup(blocks).Select(t => t.Alias));
+        Assert.Equal(["hero"], (await TypesAsync(_site.Pages)).InGroup(blocks).Select(t => t.Alias));
 
         await _agent.StartChangeSetAsync("Page");
         var key = (await _agent.OkAsync("entity_create", """{ "entityType": "document" }""")).GetProperty("key").GetGuid();
@@ -228,7 +228,7 @@ public class TypedModelTests
 
         // A page saved with a card grid before the change still loads it, and validation reports it.
         Assert.IsType<CardGrid>(Assert.Single((await _site.Pages.LoadModelAsync(saved.Key))!.Blocks));
-        var problems = await SchemaValidator.ValidateAsync((await _site.Pages.LoadAsync(saved.Key))!, page, await _site.ItemTypes.ResolveAsync(null), (_, _) => Task.FromResult(true));
+        var problems = await SchemaValidator.ValidateAsync((await _site.Pages.LoadAsync(saved.Key))!, page, await TypesAsync(_site.Pages), (_, _) => Task.FromResult(true));
         Assert.Contains(problems, p => p.Path == $"blocks/{saved.Blocks[0].Key}");
     }
 
@@ -239,4 +239,8 @@ public class TypedModelTests
     {
         protected override void Edit(DiscountEditModel discount, UnmarkedInput input) => discount.Active = true;
     }
+
+    // The item types an adapter's entities can hold, read as a call would read them.
+    private async Task<ItemTypes> TypesAsync(IEntityAdapter adapter)
+        => await _site.ItemTypes.ResolveAsync((await adapter.GetSchemaAsync(null)).Root, null);
 }

@@ -154,6 +154,8 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
 
 - The schema comes from the document type: cultures, varying fields, block types per items field, settings, grid areas and placement
   - `CmsDocumentDefinitionTests.The_schema_comes_from_the_document_type_and_its_block_editors`
+- A Block List offers the blocks its data type allows now: a block taken out of the data type stops being offered and can't be added, with no restart, and a page that already has one still loads, edits and is reported by validation
+  - `CmsDocumentDefinitionTests.A_block_list_offers_the_blocks_its_data_type_allows_now`
 - A culture-variant page with a Block List (per-culture block values and a settings element) and a Block Grid (column span, areas) built through the AI tools is stored by Umbraco as expected, and loads back to the same shape
   - `CmsDocumentDefinitionTests.A_page_built_from_text_is_saved_by_Umbraco_with_its_blocks_settings_grid_and_cultures`
 - Umbraco's validation errors come back on the entity paths and cultures, and the generic check agrees with Umbraco

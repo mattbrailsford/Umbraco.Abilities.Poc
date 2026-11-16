@@ -47,7 +47,9 @@ public sealed class PluginItemTypeSource : IItemTypeSource
 
     public string Group => _group;
 
-    public async Task<IEnumerable<ItemTypeDefinition>> GetItemTypesAsync(CancellationToken cancellationToken = default)
+    public bool Serves(string group) => group == _group;
+
+    public async Task<IEnumerable<ItemTypeDefinition>> GetItemTypesAsync(string group, CancellationToken cancellationToken = default)
         => (await _plugins(cancellationToken)).Select(Describe).ToList();
 
     private ItemTypeDefinition Describe(PluginDescriptor plugin)
@@ -88,7 +90,9 @@ public sealed class ItemTypeSource : IItemTypeSource
 
     public string Group { get; }
 
-    public Task<IEnumerable<ItemTypeDefinition>> GetItemTypesAsync(CancellationToken cancellationToken = default) => _itemTypes(cancellationToken);
+    public bool Serves(string group) => group == Group;
+
+    public Task<IEnumerable<ItemTypeDefinition>> GetItemTypesAsync(string group, CancellationToken cancellationToken = default) => _itemTypes(cancellationToken);
 }
 
 /// <summary>

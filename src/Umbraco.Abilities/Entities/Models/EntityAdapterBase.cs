@@ -318,7 +318,7 @@ public abstract class ModelEditAbilityBase<TInput, TModel>(EntityAdapterBase<TMo
 
         // Run directly, the ability saves: the user must be allowed to change the entity, as inside a change set.
         var after = adapter.ToEntity(model);
-        if (await EntityAccess.CheckAsync(adapter, new EntityAccessRequest(context.UserKey, EntityPermission.Update, key, after, EntityAccess.VariantsChanged(before, after, ModelSchemas.SchemaOf(typeof(TModel)), await adapter.ItemTypes.ResolveAsync(context.UserKey, cancellationToken))), cancellationToken) is { } denied)
+        if (await EntityAccess.CheckAsync(adapter, new EntityAccessRequest(context.UserKey, EntityPermission.Update, key, after, EntityAccess.VariantsChanged(before, after, ModelSchemas.SchemaOf(typeof(TModel)), await adapter.ItemTypes.ResolveAsync(ModelSchemas.SchemaOf(typeof(TModel)), context.UserKey, cancellationToken))), cancellationToken) is { } denied)
         {
             return EntityAccess.Denied(denied);
         }

@@ -111,7 +111,7 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
 
    | Seam | Why a product would wait | Now |
    | --- | --- | --- |
-   | Item type sources, allow lists, who may use a type | Reading a data type's allowed blocks, a user's sections | Read once at the start of each call (`ItemTypeRegistry.ResolveAsync`). The rest of the call looks types up in the result, `ItemTypes`, without waiting, so walking, diffing and validating values stay simple |
+   | Item type sources, allow lists, who may use a type | Reading a data type's allowed blocks, a user's sections | Read once at the start of each call (`ItemTypeRegistry.ResolveAsync`), only for the groups the entity's schema uses. The rest of the call looks types up in the result, `ItemTypes`, without waiting, so walking, diffing and validating values stay simple |
    | A product's edit (`ModelEditAbilityBase`) | Looking up a price or a related entity | `EditAsync`, beside `Edit` |
    | A new entity | Default values from a document type | `NewAsync` |
    | A product's transaction | EF Core's transactions are asynchronous | `BeginAsync`, `CompleteAsync`, `IAsyncDisposable` |
@@ -119,8 +119,17 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
    Still synchronous, on purpose: `ToSummary` (it reads the name from the entity; an edit URL that needs a lookup, such
    as one with a store in it, would need it too), value handlers (they rearrange a value; settings they need could come
    with the resolved item types), `Prepare` (it only picks keys), and the optional hooks that have an async twin
-   (`Validate`, `ListModels`). Resolving item types on every call reads every source each time; a real product would
+   (`Validate`, `ListModels`). Resolving item types on every call reads the sources each time; a real product would
    cache them and clear the cache when a plugin or data type changes.
+17. **Item types can depend on configuration, not just on what's installed.** A Block List allows the blocks its data
+   type lists, so two properties can allow different blocks, and an editor can change the list at any time. The CMS
+   adapter used to add each data type's blocks to the registry while it built a schema, and never removed them: a block
+   taken out of a data type stayed allowed until a restart. Now a source says which groups it serves
+   (`IItemTypeSource.Serves`) and is asked for one group at a time. The CMS has one source for every
+   `cms.blocks:{dataTypeKey}` group, which reads that data type when a call needs it. Each call asks only for the groups
+   its entity's schema uses, then the groups those blocks use, so it is always current and reads nothing else. A page
+   that already holds a block its data type no longer allows still loads and can still be edited; validation names the
+   block. Its settings are kept, but a grid block's areas are not, since the configuration no longer names them.
 
 ## Developer experience of adapters
 
@@ -173,9 +182,8 @@ is not built yet:
    starting point, so both share one handler model. It moves the ~260 lines of block code and the ~90 lines of error
    paths out of the adapter and next to each editor. The handler also owns what an editor allows, since that is
    editor configuration: a Block List's allowed blocks come from its data type's configuration, not from a type
-   hierarchy, so the handler reads the list per data type and offers only those blocks. The registry's run-time allow
-   list (`ItemTypeRegistry.Allow`, which typed adapters reach through `AllowItems`) is the seam it would use. It can
-   wait, so it can read a data type with `IDataTypeService.GetAsync`: see finding 16.
+   hierarchy, so the handler reads the list per data type and offers only those blocks. The seam for that exists now:
+   a source that serves a group per data type and reads it when asked (see finding 17).
 2. **A base class for "types are data".** The product lists its type definitions (document types, media types,
    member types, forms) and each property's editor. The framework builds the schema, using the value handlers for
    each editor's inner structure. The product still loads and saves. This covers the ~270 lines of schema building.

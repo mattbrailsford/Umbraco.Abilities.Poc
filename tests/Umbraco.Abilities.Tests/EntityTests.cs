@@ -151,7 +151,7 @@ public class EntityTests
         var itemTypes = await new ItemTypeRegistry()
             .Add(new ItemTypeDefinition("grid", "text", "Text", "Text in a grid.", ObjectSchema.Of()) { AvailableTo = (user, _) => ValueTask.FromResult(user != restricted) })
             .Add(new ItemTypeDefinition("list", "text", "Text", "Text in a list.", ObjectSchema.Of()))
-            .ResolveAsync(restricted);
+            .ResolveAsync(ObjectSchema.Of(FieldDefinition.ItemsOf("blocks", "Blocks.", "list"), FieldDefinition.ItemsOf("grid", "Grid.", "grid")), restricted);
         var schema = ObjectSchema.Of(FieldDefinition.ItemsOf("blocks", "Blocks.", "list"), FieldDefinition.ItemsOf("grid", "Grid.", "grid"));
 
         var after = new Entity { EntityType = "page", Key = Guid.NewGuid() };
@@ -201,7 +201,7 @@ public class EntityTests
             }))
             .Allow("blocks", async cancellationToken => { await Task.Delay(1, cancellationToken); return ["hero", "quote"]; });
 
-        var itemTypes = await registry.ResolveAsync(Guid.NewGuid());
+        var itemTypes = await registry.ResolveAsync(ObjectSchema.Of(FieldDefinition.ItemsOf("blocks", "Blocks.", "blocks")), Guid.NewGuid());
 
         Assert.Equal(["hero", "quote"], itemTypes.InGroup("blocks").Select(t => t.Alias));
         Assert.False(itemTypes.IsAvailable(itemTypes.Find("blocks", "quote")!));

@@ -107,7 +107,6 @@ public sealed class ChangeSetService(
 
     public async Task<AbilityResult> RecordAsync(Guid setId, IAbility ability, JsonObject input, AbilityContext context, CancellationToken cancellationToken = default)
     {
-        var itemTypes = await registry.ResolveAsync(context.UserKey, cancellationToken);
         try
         {
             var set = Get(setId);
@@ -181,6 +180,7 @@ public sealed class ChangeSetService(
             }
 
             var schema = await adapter.GetSchemaAsync(working.Subtype, cancellationToken);
+            var itemTypes = await registry.ResolveAsync(schema.Root, context.UserKey, cancellationToken);
             var output = await edit.ApplyAsync(working, recorded, new EntityEditContext(adapter, schema, itemTypes), cancellationToken);
 
             // The user the edit is made for must be allowed to make it, in the cultures it touches.
@@ -264,7 +264,6 @@ public sealed class ChangeSetService(
 
     private async Task<EntityState> ComputeAsync(ChangeSet set, string entityType, Guid key, CancellationToken cancellationToken)
     {
-        var itemTypes = await registry.ResolveAsync(null, cancellationToken);
         var adapter = adapters.Get(entityType);
         var live = await adapter.LoadAsync(key, cancellationToken);
         EntityState State(Entity? working, RebasedEntity? rebased = null) => new(entityType, key, adapter, live, working, rebased);
@@ -305,6 +304,7 @@ public sealed class ChangeSetService(
 
         // Someone else saved since: replay the set's edits onto theirs, skipping edits to what they removed.
         var schema = (await adapter.GetSchemaAsync(live.Subtype, cancellationToken)).Root;
+        var itemTypes = await registry.ResolveAsync(schema, null, cancellationToken);
         var theirs = EntityDiff.Compare(start.Fields, live.Fields, schema, itemTypes);
         var working = await ReplayAsync(adapter, live.Clone(), calls, theirs.Where(t => t.Structural).ToList(), cancellationToken);
         var yoursEntity = await ReplayAsync(adapter, start.Clone(), calls, skipUnder: [], cancellationToken);
@@ -397,7 +397,8 @@ public sealed class ChangeSetService(
             return entity;
         }
 
-        var context = new EntityEditContext(adapter, await adapter.GetSchemaAsync(entity.Subtype, cancellationToken), await registry.ResolveAsync(null, cancellationToken));
+        var entitySchema = await adapter.GetSchemaAsync(entity.Subtype, cancellationToken);
+        var context = new EntityEditContext(adapter, entitySchema, await registry.ResolveAsync(entitySchema.Root, null, cancellationToken));
         foreach (var call in calls)
         {
             try
@@ -423,7 +424,6 @@ public sealed class ChangeSetService(
 
     private async Task<IReadOnlyList<EntityProblems>> ValidateAsync(ChangeSet set, SetState state, CancellationToken cancellationToken)
     {
-        var itemTypes = await registry.ResolveAsync(null, cancellationToken);
         var result = new List<EntityProblems>();
         foreach (var entity in state.Entities)
         {
@@ -448,6 +448,7 @@ public sealed class ChangeSetService(
                 Variant = c.Variant,
             }));
             var schema = await entity.Adapter.GetSchemaAsync(working.Subtype, cancellationToken);
+            var itemTypes = await registry.ResolveAsync(schema.Root, null, cancellationToken);
             problems.AddRange(await SchemaValidator.ValidateAsync(working, schema, itemTypes, (type, k) => ExistsAsync(set, type, k, cancellationToken)));
             problems.AddRange(await entity.Adapter.ValidateAsync(working, cancellationToken));
 
@@ -487,7 +488,6 @@ public sealed class ChangeSetService(
     /// </summary>
     public async Task<AbilityResult> ApplyAsync(Guid setId, AbilityContext context, CancellationToken cancellationToken = default)
     {
-        var itemTypes = await registry.ResolveAsync(context.UserKey, cancellationToken);
         ChangeSet set;
         try
         {
@@ -506,6 +506,7 @@ public sealed class ChangeSetService(
         {
             var permission = entity.Live is null ? EntityPermission.Create : EntityPermission.Update;
             var schema = (await entity.Adapter.GetSchemaAsync(entity.Working!.Subtype, cancellationToken)).Root;
+            var itemTypes = await registry.ResolveAsync(schema, context.UserKey, cancellationToken);
             var request = new EntityAccessRequest(context.UserKey, permission, entity.Key, entity.Working, EntityAccess.VariantsChanged(entity.Live, entity.Working, schema, itemTypes));
             if (await EntityAccess.CheckAsync(entity.Adapter, request, cancellationToken) is { } denied)
             {

@@ -48,6 +48,7 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
     private ChangeSetService _changeSets = null!;
     private ChangeSetAccessor _accessor = null!;
     private DraftSetService _draftSets = null!;
+    private IDataType _pageBlocks = null!;
 
     private IContentTypeService ContentTypeService => GetRequiredService<IContentTypeService>();
 
@@ -100,7 +101,7 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
             .Build();
         await ContentTypeService.CreateAsync(cardGroup, Constants.Security.SuperUserKey);
 
-        var blockList = await CreateDataTypeAsync(Constants.PropertyEditors.Aliases.BlockList, "Page blocks", new BlockListConfiguration.BlockConfiguration[]
+        var blockList = _pageBlocks = await CreateDataTypeAsync(Constants.PropertyEditors.Aliases.BlockList, "Page blocks", new BlockListConfiguration.BlockConfiguration[]
         {
             new() { ContentElementTypeKey = hero.Key, SettingsElementTypeKey = heroSettings.Key },
             new() { ContentElementTypeKey = text.Key },
@@ -232,6 +233,36 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
         Assert.That(rowFields.GetProperty("layout").GetProperty("required")[0].GetString(), Is.EqualTo("columnSpan"));
         var areas = rowFields.EnumerateObject().Where(p => p.Value.TryGetProperty("x-item-types", out _)).Select(p => p.Name);
         Assert.That(areas, Is.EquivalentTo(new[] { "left", "right" }));
+    }
+
+    [Test]
+    public async Task A_block_list_offers_the_blocks_its_data_type_allows_now()
+    {
+        await _agent.StartChangeSetAsync("Blocks");
+        var page = await CreatePageAsync();
+        await AddItemAsync(page, "blocks", "cardGroup", "{}");
+
+        // An editor takes the card group out of the data type's allowed blocks.
+        var dataTypes = GetRequiredService<IDataTypeService>();
+        var dataType = (await dataTypes.GetAsync(_pageBlocks.Key))!;
+        var config = (BlockListConfiguration)dataType.ConfigurationObject!;
+        dataType.ConfigurationData = new Dictionary<string, object>
+        {
+            { "blocks", config.Blocks.Where(b => b.ContentElementTypeKey != ContentTypeService.Get("cardGroup")!.Key).ToArray() },
+        };
+        await dataTypes.UpdateAsync(dataType, Constants.Security.SuperUserKey);
+
+        // The next call follows it, with no restart: the card group is no longer offered and can't be added.
+        var schema = await _agent.OkAsync("entity_getSchema", """{ "entityType": "document", "subtype": "landingPage" }""");
+        Assert.That(TypesIn(schema.GetProperty("fields").GetProperty("properties").GetProperty("blocks")), Is.EquivalentTo(new[] { "hero", "textBlock" }));
+        await _agent.FailAsync("entity_addItem", $$"""{ "entityType": "document", "key": "{{page}}", "fieldPath": "blocks", "itemType": "cardGroup" }""");
+
+        // The card group the page already has still loads, other edits still work, and validation names it.
+        await SetAsync(page, "", "subtitle", "\"Still editable\"", "en-US");
+        var validation = await _agent.OkAsync("changeSet_validate", SetJson());
+        Assert.That(validation.GetProperty("valid").GetBoolean(), Is.False);
+        var problem = validation.GetProperty("entities")[0].GetProperty("problems")[0];
+        Assert.That(problem.GetProperty("errorMessages")[0].GetString(), Is.EqualTo("Item type 'cardGroup' is not allowed here."));
     }
 
     [Test]

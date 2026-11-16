@@ -41,6 +41,9 @@ public sealed class CmsDocumentAdapter : IDraftingEntityAdapter, IAuthorizingEnt
     // A block's settings key, kept on the item so a save reuses it. Not a field: '$' marks product data.
     private const string SettingsKeyProperty = "$settingsKey";
 
+    // The settings element type of a block its data type no longer allows, which the configuration can't tell.
+    private const string SettingsTypeProperty = "$settingsType";
+
     private static readonly JsonSerializerOptions ModelValueOptions = new() { Converters = { new JsonObjectConverter() } };
     // Umbraco points into a block value either by index, ".contentData[0].values[2].value", or, for a value
     // that is missing, by filter: ".contentData[1].values[?(@.alias == 'heading' && @.culture == 'en-US' && @.segment == null)].value".
@@ -86,7 +89,8 @@ public sealed class CmsDocumentAdapter : IDraftingEntityAdapter, IAuthorizingEnt
         _json = json;
         _actingUser = actingUser;
         _itemTypes = itemTypes;
-        _mapper = new CmsSchemaMapper(contentTypes, dataTypes, itemTypes, schemas);
+        _mapper = new CmsSchemaMapper(contentTypes, dataTypes, schemas);
+        itemTypes.AddSource(new CmsBlockItemTypeSource(_mapper));
     }
 
     public string EntityType => Type;
@@ -267,7 +271,7 @@ public sealed class CmsDocumentAdapter : IDraftingEntityAdapter, IAuthorizingEnt
         var type = DocumentType(after.Subtype);
         var map = await _mapper.MapAsync(type, isDocument: true);
         var touched = new HashSet<(string Alias, string? Culture, string? Segment)>();
-        foreach (var change in EntityDiff.Compare(before.Fields, after.Fields, map.Schema, await _itemTypes.ResolveAsync(null)))
+        foreach (var change in EntityDiff.Compare(before.Fields, after.Fields, map.Schema, await _itemTypes.ResolveAsync(map.Schema, null)))
         {
             var alias = change.Path.Split('/')[0];
             if (alias == CmsSchemaMapper.NameField)
@@ -396,16 +400,22 @@ public sealed class CmsDocumentAdapter : IDraftingEntityAdapter, IAuthorizingEnt
     {
         var content = contentData[layoutItem.ContentKey];
         var elementType = _mapper.RequireType(content.ContentTypeKey);
-        var block = property.Blocks.First(b => b.ContentElementTypeKey == content.ContentTypeKey);
+        // Null when the data type no longer allows the block: it still loads, and validation reports it.
+        var block = property.Blocks.FirstOrDefault(b => b.ContentElementTypeKey == content.ContentTypeKey);
 
         var item = EntityValues.NewItem(content.Key, elementType.Alias);
         await ReadValuesAsync(item, BlockValues(content), await _mapper.MapAsync(elementType, isDocument: false));
 
         if (layoutItem.SettingsKey is { } settingsKey
             && settingsData.TryGetValue(settingsKey, out var settings)
-            && block.SettingsElementTypeKey is { } settingsType)
+            && (block is null ? settings.ContentTypeKey : block.SettingsElementTypeKey) is { } settingsType)
         {
             item[SettingsKeyProperty] = settingsKey.ToString();
+            if (block is null)
+            {
+                item[SettingsTypeProperty] = settingsType.ToString();
+            }
+
             var settingsValues = new JsonObject();
             await ReadValuesAsync(settingsValues, BlockValues(settings), await _mapper.MapAsync(_mapper.RequireType(settingsType), isDocument: false));
             item[CmsSchemaMapper.SettingsField] = settingsValues;
@@ -422,7 +432,7 @@ public sealed class CmsDocumentAdapter : IDraftingEntityAdapter, IAuthorizingEnt
                     areaItems.Add(await ReadItemAsync(areaItem, property, contentData, settingsData));
                 }
 
-                item[block.Areas.FirstOrDefault(a => a.Key == area.Key)?.Alias ?? area.Key.ToString()] = areaItems;
+                item[block?.Areas.FirstOrDefault(a => a.Key == area.Key)?.Alias ?? area.Key.ToString()] = areaItems;
             }
         }
 
@@ -439,7 +449,7 @@ public sealed class CmsDocumentAdapter : IDraftingEntityAdapter, IAuthorizingEnt
         var type = DocumentType(document.Subtype);
         var map = await _mapper.MapAsync(type, isDocument: true);
         var root = document.Fields;
-        var cultures = EntityValues.VariantsIn(root, map.Schema, await _itemTypes.ResolveAsync(null)).Select(v => v.Culture).OfType<string>().Distinct().ToList();
+        var cultures = EntityValues.VariantsIn(root, map.Schema, await _itemTypes.ResolveAsync(map.Schema, null)).Select(v => v.Culture).OfType<string>().Distinct().ToList();
         var nameField = map.Schema.Find(CmsSchemaMapper.NameField)!;
         var index = new ErrorIndex();
 
@@ -511,8 +521,7 @@ public sealed class CmsDocumentAdapter : IDraftingEntityAdapter, IAuthorizingEnt
         async Task<BlockLayoutItemBase> WriteItemAsync(JsonObject item, string path)
         {
             var key = EntityValues.KeyOf(item);
-            var block = property.BlockFor(EntityValues.TypeOf(item))
-                ?? throw new InvalidOperationException($"Block '{EntityValues.TypeOf(item)}' is not configured for '{property.Alias}'.");
+            var block = property.BlockFor(EntityValues.TypeOf(item)) ?? UnconfiguredBlock(item);
             var elementMap = await _mapper.MapAsync(_mapper.RequireType(block.ContentElementTypeKey), isDocument: false);
 
             var nested = new Envelopes();
@@ -605,6 +614,16 @@ public sealed class CmsDocumentAdapter : IDraftingEntityAdapter, IAuthorizingEnt
         }
 
         return values;
+    }
+
+    // A block its data type no longer allows, so it is written back as it was read until it's removed. Its settings
+    // are kept; a grid block's areas are not, since the configuration no longer names them.
+    private BlockMap UnconfiguredBlock(JsonObject item)
+    {
+        var alias = EntityValues.TypeOf(item);
+        var type = _contentTypes.Get(alias) ?? throw new InvalidOperationException($"No element type '{alias}'.");
+        var settingsType = item[SettingsTypeProperty] is { } stored ? Guid.Parse(stored.ToString()) : (Guid?)null;
+        return new BlockMap(type.Key, alias, settingsType, []);
     }
 
     private static int? IntOf(JsonNode? node) => node is JsonValue value && value.TryGetValue<int>(out var number) ? number : null;

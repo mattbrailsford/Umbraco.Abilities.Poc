@@ -216,15 +216,19 @@ public sealed record ItemTypeDefinition(string Group, string Alias, string Name,
 }
 
 /// <summary>
-/// The item types of a plugin seam, read from the product's own registry each time they're needed: Commerce's discount
-/// rule providers, Automate's triggers and actions. A product writes one source per seam; plugins write nothing, and one
-/// installed later just shows up. Read once per call, asynchronously, so a source can query a database.
+/// Item types read from a product when they're needed, rather than registered at start-up. Two kinds: a plugin seam
+/// with one fixed group (Commerce's discount rule providers, Automate's triggers and actions), and types that depend
+/// on configuration, with a group per configuration (a Block List's allowed blocks, one group per data type). Only the
+/// groups an entity's schema uses are asked for, once per call, asynchronously, so a source can query a database and
+/// is always current.
 /// </summary>
 public interface IItemTypeSource
 {
-    string Group { get; }
+    /// <summary>Whether this source gives the types of <paramref name="group"/>, e.g. any group named <c>cms.blocks:{dataTypeKey}</c>.</summary>
+    bool Serves(string group);
 
-    Task<IEnumerable<ItemTypeDefinition>> GetItemTypesAsync(CancellationToken cancellationToken = default);
+    /// <summary>The types of one group this source serves.</summary>
+    Task<IEnumerable<ItemTypeDefinition>> GetItemTypesAsync(string group, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -315,19 +319,37 @@ public sealed class ItemTypeRegistry
     }
 
     /// <summary>
-    /// Reads every source, allow list and availability check once, for one call made for <paramref name="userKey"/>
-    /// (null: no user, such as start-up or a system task, which may use every type).
+    /// Reads the item types an entity's schema can hold, for one call made for <paramref name="userKey"/> (null: no user,
+    /// such as a system task, which may use every type). Starting from the schema's items fields, each group is read
+    /// once, from what was registered and from the sources that serve it; then the groups those types' own fields use,
+    /// until there are none left. Allow lists and availability checks are read for the same types.
     /// </summary>
-    public async Task<ItemTypes> ResolveAsync(Guid? userKey, CancellationToken cancellationToken = default)
+    public async Task<ItemTypes> ResolveAsync(ObjectSchema schema, Guid? userKey, CancellationToken cancellationToken = default)
     {
-        var types = _types.Values.ToList();
-        foreach (var source in _sources)
+        var groups = new Dictionary<string, IReadOnlyList<ItemTypeDefinition>>(StringComparer.Ordinal);
+        var pending = new Queue<string>(GroupsIn(schema));
+        while (pending.TryDequeue(out var group))
         {
-            types.AddRange(await source.GetItemTypesAsync(cancellationToken));
+            if (groups.ContainsKey(group))
+            {
+                continue;
+            }
+
+            var types = _types.Values.Where(t => t.Group == group || t.AlsoIn.Contains(group)).ToList();
+            foreach (var source in _sources.Where(s => s.Serves(group)))
+            {
+                types.AddRange(await source.GetItemTypesAsync(group, cancellationToken));
+            }
+
+            groups[group] = types;
+            foreach (var nested in types.SelectMany(t => GroupsIn(t.Schema)))
+            {
+                pending.Enqueue(nested);
+            }
         }
 
-        var allowed = new Dictionary<string, IReadOnlySet<string>>();
-        foreach (var (group, aliases) in _allowed)
+        var allowed = new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal);
+        foreach (var (group, aliases) in _allowed.Where(a => groups.ContainsKey(a.Key)))
         {
             allowed[group] = (await aliases(cancellationToken)).ToHashSet(StringComparer.Ordinal);
         }
@@ -335,7 +357,7 @@ public sealed class ItemTypeRegistry
         var unavailable = new HashSet<ItemTypeDefinition>(ReferenceEqualityComparer.Instance);
         if (userKey is { } user)
         {
-            foreach (var type in types.Where(t => t.AvailableTo is not null))
+            foreach (var type in groups.Values.SelectMany(t => t).Where(t => t.AvailableTo is not null).Distinct())
             {
                 if (!await type.AvailableTo!(user, cancellationToken))
                 {
@@ -344,14 +366,20 @@ public sealed class ItemTypeRegistry
             }
         }
 
-        return new ItemTypes(types, allowed, unavailable);
+        return new ItemTypes(groups, allowed, unavailable);
     }
 
     /// <summary>
     /// The registered classes and definitions only, without sources, allow lists or availability: enough to read a
     /// model's class items, which never come from a source.
     /// </summary>
-    internal ItemTypes Registered => new(_types.Values.ToList(), new Dictionary<string, IReadOnlySet<string>>(), new HashSet<ItemTypeDefinition>());
+    internal ItemTypes Registered => ItemTypes.Of([.. _types.Values]);
+
+    // The items fields' groups in a schema, inside objects too. Items' own fields are reached through their types.
+    private static IEnumerable<string> GroupsIn(ObjectSchema schema)
+        => schema.Fields.SelectMany(f => f.IsItems && f.ItemTypeGroup is { } group ? [group]
+            : f.Schema is { } inner ? GroupsIn(inner)
+            : []);
 }
 
 /// <summary>
@@ -360,24 +388,32 @@ public sealed class ItemTypeRegistry
 /// </summary>
 public sealed class ItemTypes
 {
-    private readonly IReadOnlyList<ItemTypeDefinition> _types;
+    private readonly IReadOnlyDictionary<string, IReadOnlyList<ItemTypeDefinition>> _groups;
     private readonly IReadOnlyDictionary<string, IReadOnlySet<string>> _allowed;
     private readonly IReadOnlySet<ItemTypeDefinition> _unavailable;
 
+    internal ItemTypes(
+        IReadOnlyDictionary<string, IReadOnlyList<ItemTypeDefinition>> groups,
+        IReadOnlyDictionary<string, IReadOnlySet<string>> allowed,
+        IReadOnlySet<ItemTypeDefinition> unavailable)
+        => (_groups, _allowed, _unavailable) = (groups, allowed, unavailable);
+
     /// <summary>A fixed set of item types, with no sources or limits: for tests, and for code that builds its own.</summary>
     public static ItemTypes Of(params ItemTypeDefinition[] types)
-        => new(types, new Dictionary<string, IReadOnlySet<string>>(), new HashSet<ItemTypeDefinition>());
-
-    internal ItemTypes(IReadOnlyList<ItemTypeDefinition> types, IReadOnlyDictionary<string, IReadOnlySet<string>> allowed, IReadOnlySet<ItemTypeDefinition> unavailable)
-        => (_types, _allowed, _unavailable) = (types, allowed, unavailable);
+        => new(
+            types.SelectMany(t => t.AlsoIn.Prepend(t.Group).Select(g => (Group: g, Type: t)))
+                .GroupBy(x => x.Group, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => (IReadOnlyList<ItemTypeDefinition>)g.Select(x => x.Type).ToList(), StringComparer.Ordinal),
+            new Dictionary<string, IReadOnlySet<string>>(),
+            new HashSet<ItemTypeDefinition>());
 
     /// <summary>Finds a type by alias, or by <c>group:alias</c> when the alias is used in several groups.</summary>
     public ItemTypeDefinition? Find(string alias)
     {
         var separator = alias.LastIndexOf(':');
-        return separator > 0
+        return separator > 0 && _groups.ContainsKey(alias[..separator])
             ? Find(alias[..separator], alias[(separator + 1)..])
-            : _types.FirstOrDefault(t => t.Alias == alias);
+            : _groups.Values.SelectMany(t => t).FirstOrDefault(t => t.Alias == alias);
     }
 
     /// <summary>Finds a type in a group, allowed or not, so items saved before a setting changed still read.</summary>
@@ -388,11 +424,10 @@ public sealed class ItemTypes
     public IReadOnlyList<ItemTypeDefinition> InGroup(string group)
         => _allowed.TryGetValue(group, out var allowed)
             ? AllInGroup(group).Where(t => allowed.Contains(t.Alias)).ToList()
-            : AllInGroup(group).ToList();
+            : AllInGroup(group);
 
     /// <summary>Whether the call's user may use the type.</summary>
     public bool IsAvailable(ItemTypeDefinition itemType) => !_unavailable.Contains(itemType);
 
-    private IEnumerable<ItemTypeDefinition> AllInGroup(string group)
-        => _types.Where(t => t.Group == group || t.AlsoIn.Contains(group));
+    private IReadOnlyList<ItemTypeDefinition> AllInGroup(string group) => _groups.GetValueOrDefault(group) ?? [];
 }
