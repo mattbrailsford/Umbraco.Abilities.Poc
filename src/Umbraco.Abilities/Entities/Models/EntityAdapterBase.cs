@@ -187,3 +187,23 @@ public abstract class ModelEditAbilityBase<TInput, TModel>(EntityAdapterBase<TMo
     private static TInput Read(JsonObject input)
         => System.Text.Json.JsonSerializer.Deserialize<TInput>(input, AbilityJson.Options) ?? throw new AbilityInputException("Input is required.");
 }
+
+/// <summary>
+/// Draft-aware reads for a product's own Read abilities, in its model's terms. Inside a change set they show the set's
+/// changes; outside one, live data. A product runs its own query for what's live, then reads it through these.
+/// </summary>
+public static class ChangeSetModelReads
+{
+    /// <summary>One model as the current call sees it; null if it doesn't exist, or the current set deleted it.</summary>
+    public static async Task<TModel?> ReadModelAsync<TModel>(this ChangeSetService changeSets, EntityAdapterBase<TModel> adapter, Guid key, CancellationToken cancellationToken = default)
+        where TModel : class
+        => await changeSets.ReadAsync(adapter, key, cancellationToken) is { } entity ? adapter.ToModel(entity) : null;
+
+    /// <summary>
+    /// The models a product's query found live, as the current call sees them, plus any the current set created.
+    /// Filter after reading.
+    /// </summary>
+    public static async Task<IReadOnlyList<TModel>> ReadModelsAsync<TModel>(this ChangeSetService changeSets, EntityAdapterBase<TModel> adapter, IEnumerable<Guid> liveKeys, CancellationToken cancellationToken = default)
+        where TModel : class
+        => (await changeSets.ReadAllAsync(adapter, liveKeys, cancellationToken)).Select(adapter.ToModel).ToList();
+}

@@ -50,7 +50,8 @@ public abstract class EntityEditAbilityBase<TInput> : AbilityBase<TInput, object
     protected override Task<AbilityResult> ExecuteAsync(TInput input, AbilityContext context, CancellationToken cancellationToken)
         => Task.FromResult(AbilityResult.Fail(
             AbilityOperationStatus.InvalidInput,
-            "Entity edits are recorded in a change set. Call changeSet_create first and run with its id as the active change set."));
+            "Entity edits are recorded in a change set, and none is open. Create one with changeSet_create, or name one with changeSetId.",
+            [new Problem("changeSetId", "No change set is open.")]));
 
     private static TInput Read(JsonObject input)
         => input.Deserialize<TInput>(AbilityJson.Options) ?? throw new AbilityInputException("Input is required.");
@@ -142,7 +143,7 @@ public sealed class FindEntityAbility(EntityAdapterRegistry adapters, ChangeSetS
         var adapter = adapters.Get(input.EntityType);
         var found = (await adapter.FindAsync(input.Query, cancellationToken)).ToList();
 
-        if (context.ChangeSetId is { } setId)
+        if (changeSets.CurrentId is { } setId)
         {
             // Entities the set touches are matched on their working state, not their live name.
             var set = changeSets.Get(setId);
@@ -162,7 +163,7 @@ public sealed class FindEntityAbility(EntityAdapterRegistry adapters, ChangeSetS
 
         // Only what the user may read. (What the set itself touches was checked when it was recorded.)
         var readable = new List<EntitySummary>();
-        var inSet = context.ChangeSetId is { } id ? changeSets.Get(id).Changes.Where(c => c.EntityType == input.EntityType).Select(c => c.EntityKey).ToHashSet() : [];
+        var inSet = changeSets.CurrentId is { } id ? changeSets.Get(id).Changes.Where(c => c.EntityType == input.EntityType).Select(c => c.EntityKey).ToHashSet() : [];
         foreach (var reference in found)
         {
             if (inSet.Contains(reference.Key)
@@ -193,9 +194,7 @@ public sealed class GetEntityAbility(EntityAdapterRegistry adapters, ChangeSetSe
             return EntityAccess.Denied(denied, "key");
         }
 
-        var entity = context.ChangeSetId is { } setId
-            ? await changeSets.GetWorkingStateAsync(changeSets.Get(setId), input.EntityType, input.Key, cancellationToken)
-            : await adapters.Get(input.EntityType).LoadAsync(input.Key, cancellationToken);
+        var entity = await changeSets.ReadAsync(adapter, input.Key, cancellationToken);
 
         return entity is null
             ? AbilityResult.Fail(AbilityOperationStatus.InvalidInput, $"No {input.EntityType} with key {input.Key}.", [new Problem("key", "Not found.")])

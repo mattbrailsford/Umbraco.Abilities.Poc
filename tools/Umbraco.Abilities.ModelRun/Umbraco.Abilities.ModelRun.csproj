@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Runs a real model against the sample site. Not a test: it calls the Claude API, so it costs money and its
+    result varies. Needs ANTHROPIC_API_KEY. See Program.cs for how to run it.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Umbraco.Abilities/Umbraco.Abilities.csproj" />
+    <ProjectReference Include="../../src/Umbraco.Abilities.AI/Umbraco.Abilities.AI.csproj" />
+    <ProjectReference Include="../../src/Umbraco.Abilities.Samples/Umbraco.Abilities.Samples.csproj" />
+    <PackageReference Include="Anthropic" />
+    <PackageReference Include="Microsoft.Extensions.AI" />
+  </ItemGroup>
+</Project>

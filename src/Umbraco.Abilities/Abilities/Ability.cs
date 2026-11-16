@@ -67,10 +67,10 @@ public sealed record AbilityDescriptor(
 }
 
 /// <summary>
-/// Who is calling (a backoffice user's key, as the CMS's services take it) and which change set (if any) is active. An
-/// agent acts for a user: it gets that user's permissions, no more.
+/// Who is calling: a backoffice user's key, as the CMS's services take it. An agent acts for a user: it gets that user's
+/// permissions, no more. Which change set the call works in is ambient, from <c>IChangeSetAccessor</c>.
 /// </summary>
-public sealed record AbilityContext(Guid UserKey, Guid? ChangeSetId = null);
+public sealed record AbilityContext(Guid UserKey);
 
 /// <summary>
 /// How an ability call ended. Mirrors the CMS's operation status enums (e.g. <c>ContentEditingOperationStatus</c>).
