@@ -5,14 +5,17 @@ adapters** (what their entities look like, and how to load and save them), and W
 edit an entity from a description" needs no per-product code.
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) is the design this code tests.
-- [README.md](README.md) holds the findings: what was built, what it taught us, what it does not prove.
+- [README.md](README.md) is the entry point: why it exists, the idea, what it shows, what it does not prove.
+- [docs/FINDINGS.md](docs/FINDINGS.md) holds the findings: what building it taught us, real Umbraco, a real model.
+- [docs/WRITING-AN-ADAPTER.md](docs/WRITING-AN-ADAPTER.md), [docs/CHANGE-SETS.md](docs/CHANGE-SETS.md) and
+  [docs/TESTS.md](docs/TESTS.md) hold the details of each part, and which test shows which claim.
 - [REVIEWING.md](REVIEWING.md) is the guided tour: the map, how one call flows, and a reading order.
 
 It started in the [Umbraco.AI repo](https://github.com/umbraco/Umbraco.AI) and moved here because it is not AI
 specific. This repo is now the source of truth for the proof of concept and its design. The Umbraco.AI code it builds
 on (the content tools and block path engine) still lives there.
 
-Read the relevant ARCHITECTURE and README sections before changing a design layer. Many choices there were made on purpose
+Read the relevant ARCHITECTURE and docs sections before changing a design layer. Many choices there were made on purpose
 (for example: one value tree, variation as named dimensions, caller-chosen keys).
 
 ## Build and test
@@ -65,7 +68,9 @@ These boundaries are part of what the PoC proves. Do not cross them.
 
 ## Docs
 
-- README and REVIEWING use plain, short sentences and tables. Keep that style.
-- When building something teaches a lesson about the design, add it to "What building it taught us" in the README.
-- When a gap is closed, update "What it does not prove" and the "Not covered yet" list.
+- README, REVIEWING and the docs use plain, short sentences and tables. Keep that style.
+- Keep the README an entry point. Details go in `docs/`.
+- When building something teaches a lesson about the design, add it to "What building it taught us" in `docs/FINDINGS.md`.
+- When a new test shows a claim, list it in `docs/TESTS.md`.
+- When a gap is closed, update "What it does not prove" in the README and the "Not covered yet" list in `docs/FINDINGS.md`.
 - When a finding changes the design, update `docs/ARCHITECTURE.md` too. It is the design's source of truth.
