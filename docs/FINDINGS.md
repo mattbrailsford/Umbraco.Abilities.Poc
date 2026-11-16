@@ -101,27 +101,35 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
    properties are the slots, and property editors are the plugins. The typed layer only helps models that are C#
    classes, so the CMS adapter had to do all of it alone. See
    [Runtime-defined models](#runtime-defined-models) below.
+15. **A model with one varying part is still a typed model.** The Automate workflow was written against raw entities,
+   as the escape hatch for a schema that is data. But only its steps vary; its name, switch and trigger don't. As a
+   model class with `List<DynamicItem>` steps it lost its hand-written schema, and its save and load now map typed
+   connections. The escape hatch is for models where the whole shape is data, such as a document type.
 
 ## Developer experience of adapters
 
 Making things easy for a model is one side. The other is what a package developer writes. Reading the samples as
 package code found these costs:
 
-| Cost today | Fix |
-| --- | --- |
-| An items field needs a group string, a constant and a separate `RegisterItemTypes` call per item class | Work out the item types from the list's element type: every `[ItemType]` class that extends it. Name types only to narrow the list |
-| Every product with a provider registry writes the same item type source and the same "alias plus string settings" mapper (about 90 lines for Commerce) | Ship both in the framework. A product only says where its providers are |
-| An adapter with no access check silently allows everything | Require one when the adapter is registered, as Abilities requires an access rule on every ability |
-| Fluent configuration lives in a static constructor, as global state | An overridable `Configure(builder)` on the adapter, like EF Core's `OnModelCreating` |
-| Wiring an adapter takes three separate calls | One registration call that also registers its item types and entity type |
-| The workflow adapter digs through raw JSON, although only its steps vary | A typed model with `List<DynamicItem>` steps, as discounts do |
-| Optional methods need `Task.FromResult<IReadOnlyList<…>>` wrapping | Simpler overloads, and a problem collector: `problems.At(d => d.EndDate, "…")` |
-| `ModelEditAbilityBase` asks for `KeyOf(input)` | Find the input property marked `[EntityKey]` for the adapter's entity type |
-| Every save starts with "load it, or create it if missing" | Split into create and update in the base class |
-| Entities repeat `[Key]` and `[EntityVersion]`, while items have `EntityItemModel` | An optional `EntityModel` base class |
-| Descriptions are written as `[Description]`, next to doc comments | Fall back to `/// <summary>` |
-| A missing `[Key]` or an unsupported property type fails at start-up | Build-time checks from a source generator, which could also replace the reflection in `ModelSchemas` |
-| Testing an adapter needs the framework's own test harness | Ship `ScriptedAgent` and a "load, change, save and compare" check |
+| Cost | Fix | Status |
+| --- | --- | --- |
+| An items field needed a group string, a constant and a separate `RegisterItemTypes` call per item class | Work out the item types from the list's element type: every `[ItemType]` class that extends it. Name classes only to narrow the list | Done |
+| Every product with a provider registry wrote the same item type source and the same "alias plus string settings" mapper (about 90 lines for Commerce) | `PluginItemTypeSource`, `PluginDescriptor` and `PluginSettings` in the framework. A product describes one plugin and says where its plugins are | Done. Commerce and Automate both use them |
+| An adapter with no access check silently allowed everything | Required when the adapter is registered, as Abilities requires an access rule on every ability | Done |
+| Fluent configuration lived in a static constructor, as global state | An overridable `Configure(models)` on the adapter, like EF Core's `OnModelCreating` | Done |
+| Wiring an adapter took three separate calls | The adapter registers its own item types and item type sources when it's created. Adding it to the registry is the one call left | Done |
+| The workflow adapter dug through raw JSON, although only its steps vary | A typed model with `List<DynamicItem>` steps, as discounts do. The untyped in-memory base class is gone | Done |
+| Optional methods needed `Task.FromResult<IReadOnlyList<…>>` wrapping | A problem collector (`problems.At(d => d.EndDate, "…")`) in a plain `Validate`, and finding from `ListModels()` | Done |
+| `ModelEditAbilityBase` asked for `KeyOf(input)` | Found from the input property marked `[EntityKey]` for the adapter's entity type | Done |
+| Entities repeated `[Key]` and `[EntityVersion]`, while items have `EntityItemModel` | An optional `EntityModel` base class | Done |
+| Every save starts with "load it, or create it if missing" | Split into create and update in the base class | Not needed. In practice it is one line (`GetDiscount(...)?.AsWritable() ?? CreateDiscount(...)`), and a split would add a method |
+| Descriptions are written as `[Description]`, next to doc comments | Fall back to `/// <summary>` | Not done. Needs the XML doc file shipped, or a source generator |
+| A missing `[Key]` or an unsupported property type fails at start-up | Build-time checks from a source generator, which could also replace the reflection in `ModelSchemas` | Not done. Start-up errors now say what to add |
+| Testing an adapter needs the framework's own test harness | Ship `ScriptedAgent` and a "load, change, save and compare" check | Not done |
+
+Measured on the Commerce sample, the item types, mapper and domain rules went from about 55 statement lines to about
+30. The editing contract lost its key and version lines. Automate's workflow lost its hand-written schema, and its
+save and load now work on typed connections.
 
 ### Runtime-defined models
 
@@ -138,6 +146,22 @@ How the CMS document adapter's code splits, and who else has each part:
 
 Automate shows a smaller form of the same thing: it stores steps and connections as separate lists joined by keys,
 and its adapter converts them on load and save.
+
+Two parts are not about the CMS at all. They are about any model whose types are data. What would help, and what
+is not built yet:
+
+1. **Value handlers per editor.** A handler that knows one property editor's stored value: how to read it into
+   fields and items, how to write it back, and how to turn the editor's error paths into entity paths. The CMS
+   adapter would then ask a registry for the handler of each property, instead of knowing Block List and Block Grid
+   itself. Element types and UI Builder would reuse the same handlers. Umbraco.AI's `IAIPropertyValueHandler` is the
+   starting point, so both share one handler model. It moves the ~260 lines of block code and the ~90 lines of error
+   paths out of the adapter and next to each editor.
+2. **A base class for "types are data".** The product lists its type definitions (document types, media types,
+   member types, forms) and each property's editor. The framework builds the schema, using the value handlers for
+   each editor's inner structure. The product still loads and saves. This covers the ~270 lines of schema building.
+
+With both, a CMS-like adapter would be its load, save, drafts and permissions, as the typed adapters are. The CMS
+behaviour row stays: it is a change for CMS core, not for adapters.
 
 ## What running against Umbraco taught us
 

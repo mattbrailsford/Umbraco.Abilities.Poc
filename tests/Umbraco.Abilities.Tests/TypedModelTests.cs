@@ -189,4 +189,25 @@ public class TypedModelTests
         Assert.Equal(first, second);
         Assert.NotEqual(rule, first);
     }
+
+    [Fact]
+    public void An_edit_ability_finds_its_key_from_the_inputs_entity_key_property()
+    {
+        // ActivateDiscountAbility writes no KeyOf: its input's [EntityKey("umbraco-commerce-discount")] property is the key.
+        var discount = Guid.NewGuid();
+        var target = new ActivateDiscountAbility(_site.Discounts).Prepare(new System.Text.Json.Nodes.JsonObject { ["discount"] = discount.ToString() });
+        Assert.Equal(discount, target.EntityKey);
+
+        // An input without one says what to add.
+        var error = Assert.Throws<InvalidOperationException>(() => new UnmarkedEditAbility(_site.Discounts).Prepare(new System.Text.Json.Nodes.JsonObject { ["discount"] = discount.ToString() }));
+        Assert.Contains("[EntityKey(\"umbraco-commerce-discount\")]", error.Message);
+    }
+
+    private sealed record UnmarkedInput(Guid Discount);
+
+    [Ability("test.unmarked", "Unmarked", Kind = AbilityKind.Write)]
+    private sealed class UnmarkedEditAbility(DiscountAdapter discounts) : ModelEditAbilityBase<UnmarkedInput, DiscountEditModel>(discounts)
+    {
+        protected override void Edit(DiscountEditModel discount, UnmarkedInput input) => discount.Active = true;
+    }
 }

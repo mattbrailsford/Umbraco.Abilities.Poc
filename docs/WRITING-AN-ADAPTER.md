@@ -26,10 +26,8 @@ descriptions, required and rules, items fields), and gets an option when a model
 
 ```csharp
 [Entity("umbraco-commerce-discount", "Discount")]
-public sealed class DiscountEditModel
+public sealed class DiscountEditModel : EntityModel   // the key and version; or mark your own [Key] and [EntityVersion]
 {
-    [Key] public Guid Key { get; set; }
-    [EntityVersion] public long? Version { get; set; }
     [EntityName, Required] public string? Name { get; set; }
     public DateOnly? EndDate { get; set; }
     [EntityKey("document")] public Guid? LandingPage { get; set; }
@@ -41,28 +39,37 @@ public sealed class Hero : PageBlock
 {
     [Required] public Varying<string> Heading { get; set; } = [];
 }
+
+public sealed class CmsPage : EntityModel
+{
+    [Items] public List<PageBlock> Blocks { get; set; } = [];                    // every [ItemType] class that extends PageBlock
+    [Items(typeof(RichText), Max = 2)] public List<GridBlock> Left { get; set; } = [];  // narrowed to the classes named
+}
 ```
+
+An items field of classes needs no group name and no registration. Its item types are every `[ItemType]` class that
+extends the list's element type, found when the adapter is created. Name classes only to narrow the list.
 
 **Fluent configuration**, for a class the package doesn't own or won't annotate, such as a Management API request
 model in another assembly. It needs no base class either: items name their own key property
-(`Samples/Cms/CmsPage.cs`).
+(`Samples/Cms/CmsPage.cs`). It goes in the adapter, like EF Core's `OnModelCreating`, not in global state.
 
 ```csharp
-ModelConfiguration.Configure<MediaRequestModel>(media => media
-    .IsEntity("media", "Media")
-    .HasKey(x => x.Id)
-    .HasVersion(x => x.Version)
-    .Ignore(x => x.UpdateDate)
-    .Field(x => x.Name).IsName().Required()
-    .Items(x => x.Crops, CropGroup));
-
-ModelConfiguration.Configure<MediaCropRequestModel>(crop => crop
-    .IsItemType("crop", "Crop")
-    .HasKey(x => x.Id)
-    .Field(x => x.Width).Required().Rule(new RangeAttribute(1, 10000)));
+protected override void Configure(ModelConfigurator<MediaRequestModel> models) => models
+    .Entity(media => media
+        .IsEntity("media", "Media")
+        .HasKey(x => x.Id)
+        .HasVersion(x => x.Version)
+        .Ignore(x => x.UpdateDate)
+        .Field(x => x.Name).IsName().Required()
+        .Items(x => x.Crops))
+    .Model<MediaCropRequestModel>(crop => crop
+        .IsItemType("crop", "Crop")
+        .HasKey(x => x.Id)
+        .Field(x => x.Width).Required().Rule(new RangeAttribute(1, 10000)));
 ```
 
-**The adapter** maps to the domain and adds the rules the contract can't express:
+**The adapter** maps to the domain, checks access, and adds the rules the contract can't express:
 
 ```csharp
 public sealed class DiscountAdapter(DiscountService discounts, ...) : EntityAdapterBase<DiscountEditModel>(...)
@@ -75,10 +82,20 @@ public sealed class DiscountAdapter(DiscountService discounts, ...) : EntityAdap
         discounts.SaveDiscount(discount);
         return Task.CompletedTask;
     }
-    protected override Task<IReadOnlyList<Problem>> ValidateModelAsync(DiscountEditModel d, CancellationToken ct)
-        => /* ProblemAt(x => x.EndDate, "Must be on or after startDate.") */;
+
+    public override Task<string?> AuthorizeAsync(EntityAccessRequest request, CancellationToken ct) => /* null: allowed */;
+
+    protected override IEnumerable<DiscountEditModel> ListModels() => discounts.GetDiscounts().Select(ToEditModel);
+
+    protected override void Validate(DiscountEditModel d, ModelProblems<DiscountEditModel> problems)
+    {
+        if (d.EndDate < d.StartDate) problems.At(x => x.EndDate, "Must be on or after startDate.");
+    }
 }
 ```
+
+The access check is required. Registering an adapter without one fails at start-up, as an ability without an access
+rule does. Finding by name works from `ListModels`; override `FindModelsAsync` when the product can search itself.
 
 What the package no longer writes:
 
@@ -90,8 +107,10 @@ What the package no longer writes:
 | Block settings and a grid block's layout | Ordinary object properties (`Settings`, `Layout`): a class becomes an object field |
 | Turning the contract into the working copy and back | Done both ways, keeping item keys and giving each item its path |
 | Range and format checks reported on entity paths (`rewards/{key}/percent`) | DataAnnotations, as attributes or fluent `Rule(...)`, on items and objects at any depth |
-| A path for a domain problem | `ProblemAt(x => x.EndDate, ...)`, or `ProblemAt(item, r => r.Percent, ...)` for an item |
-| An ability that edits an entity, both directly and inside a change set | `ModelEditAbilityBase<TInput, TModel>`: one `Edit(model, input)` method |
+| A path for a domain problem | `problems.At(x => x.EndDate, ...)`, or `problems.At(item, r => r.Percent, ...)` for an item |
+| Item type groups and registering each item class | The list's element type, or the classes named in `[Items(...)]` |
+| An item type source and a settings mapper per plugin seam | `PluginItemTypeSource` and `PluginSettings`: the product only describes one plugin |
+| An ability that edits an entity, both directly and inside a change set | `ModelEditAbilityBase<TInput, TModel>`: one `Edit(model, input)` method. The key is the input's `[EntityKey]` property |
 
 `[Required]` and `[AllowedValues]` become part of the schema, so the generic validator checks them per culture.
 Every other rule runs on the contract. Each problem is reported once. A renamed property is a compile error, not a
@@ -105,14 +124,15 @@ are a provider alias plus string settings, with no ids.
 
 | Part | Statement lines |
 | --- | --- |
-| Editing contract | 11 |
+| Editing contract | 9 |
 | Mapping for the discount: load, save, dates, keys | about 35 |
-| Domain rules (dates in order, unique code) and item registration | about 18 |
-| Item type source: Commerce's providers as item types. Once per seam, for every provider, third parties' included | 17 |
-| Provider mapper: an item ↔ provider alias plus string settings, with children for groups. Once for every provider | 20 |
+| Domain rules (dates in order, unique code) and finding | about 8 |
+| Item types: describe one Commerce provider, and say where the providers are. Once per seam, for every provider, third parties' included | about 12 |
+| Provider mapper: a group rule's children. The framework maps alias plus string settings | about 10 |
 
 The mapping is ordinary typed C#, roughly the size of a Management API mapper. It is the only per-entity code the
-package writes besides the contract.
+package writes besides the contract. Before the developer experience fixes in [FINDINGS.md](FINDINGS.md#developer-experience-of-adapters),
+the last three rows were about 55 lines. They are now about 30.
 
 **One limit the mapping exposed:** Commerce's rules have no ids, so the adapter derives each item's key from the
 discount, the position and the provider alias. A rule's key is stable across loads. But a rule the agent added gets
@@ -122,9 +142,10 @@ paper over.
 
 ## Entities whose schema is data
 
-A CMS document type is defined in the backoffice. A workflow's step types are other packages' abilities. Neither has
-a class to describe, so `CmsDocumentAdapter` and `WorkflowAdapter` implement `IEntityAdapter` over the typed
-`Entity`. There is still no `JsonObject` digging: they use `item.Settings` or `item.Layout`, not
+A CMS document type is defined in the backoffice. It has no class to describe, so `CmsDocumentAdapter` implements
+`IEntityAdapter` over the typed `Entity`. An Automate workflow looked like the same case, since its step types are
+other packages' abilities and plugins. But only its steps vary, so it is a model class with `List<DynamicItem>` steps,
+as a discount's rules are. In the CMS adapter there is still no `JsonObject` digging: they use `item.Settings` or `item.Layout`, not
 `item["settings"]["fields"]`. The CMS adapter builds Umbraco's own `BlockListValue`, `BlockGridValue`,
 `BlockItemData`, `BlockPropertyValue`, `BlockGridLayoutItem` and `BlockItemVariation` instead of hand-built
 envelopes, and Umbraco's serializer reads and writes them. Moving to the typed document took it from 621 lines to 599.
@@ -205,10 +226,24 @@ How the framework uses them:
   with `x-bindings`, and type and reference checks wait until it resolves.
 - **Availability.** An item type can say who may use it (`AvailableTo`, here from required sections). The schema offers
   a user only those, and adding one they may not use is refused when it's recorded.
-- **In a typed contract** the field is `List<DynamicItem>`: items with a type and JSON fields, items fields included. One mapper
-  per seam turns them into the product's stored form (`ProviderItems`: provider alias plus string settings, children
-  for groups), using each setting's CLR type.
-- **Abilities** can be item types too (`AbilityItemTypes`), so workflow steps are abilities and Automate's actions side by side.
+- **In a typed contract** the field is `List<DynamicItem>`: items with a type and JSON fields, items fields included.
+  `PluginSettings` turns them into the most common stored form (provider alias plus string settings), using each
+  setting's CLR type. A product adds only what's its own, such as a group rule's children.
+- **Abilities** can be item types too (`AbilityItemTypes`, through a plain `ItemTypeSource`), so workflow steps are
+  abilities and Automate's actions side by side.
+
+What a product writes per seam is one method that describes a plugin, and one line that says where its plugins are:
+
+```csharp
+protected override IEnumerable<IItemTypeSource> ItemTypeSources() =>
+[
+    new PluginItemTypeSource(RuleGroup, () => ruleProviders.Select(Describe), Editors),
+];
+
+private static PluginDescriptor Describe(DiscountProviderBase provider) => new(
+    provider.Alias, provider.Label, provider.Description,
+    provider.SettingDefinitions.Select(s => new SettingDescriptor(s.Key, s.Label, s.Description, s.PropertyType, ...)).ToList());
+```
 
 Classes per item type are still an option for types a package owns and wants to describe richly (the CMS page's
 blocks), but they are no longer the way to do plugin seams.

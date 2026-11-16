@@ -124,7 +124,7 @@ This is the core idea: a product-neutral way to describe and edit any entity. Re
 | File | What it is |
 | --- | --- |
 | `Entities/Schema.cs` | The schema language. `ObjectSchema` holds fields. A **field** has a value type, required, allowed values, references and the dimensions it `VariesBy`; the schema lists the dimensions (`VariationDimension`) and their values. Two value types nest: `Object` (fields of its own, such as a block's settings or a grid block's layout) and `Items` (keyed, typed objects: rules, blocks, workflow steps, with min and max). `ItemTypeRegistry` maps a group to item types, registered once or read from an `IItemTypeSource`: a product's plugin registry, read whenever needed |
-| `Entities/IEntityAdapter.cs` | What a product implements: describe, new, load, validate, save, find, and optional subtypes (document types). `IVersionedEntityAdapter` is for products with version history |
+| `Entities/IEntityAdapter.cs` | What a product implements: describe, new, load, validate, save, find, and optional subtypes (document types). `IVersionedEntityAdapter` is for products with version history. The registry refuses an adapter that doesn't check access |
 | `Entities/Entity.cs` | The working copy: one JSON value tree. A varying value is stored per variant where its field is. `EntityValues` reads and writes values through their fields, `Walk` lists every value, and `Find` is the one path walker: object steps by field, item steps by key |
 | `Entities/EntityEditor.cs` | Path editing over `EntityValues.Find`, generalised from Umbraco.AI's block path engine: `title`, `blocks/{key}/heading`, `blocks/{key}/settings/theme`. `FieldChecker` checks and normalizes values. A UDI given for a reference is turned into the field's own form |
 | `Entities/SchemaValidator.cs` | Generic validation from the schema: required (per culture), allowed values, references that exist (including in the same set), item counts. It also renders the JSON Schema the model sees |
@@ -159,16 +159,16 @@ These are what a package would write. Judge them as such: how short, how obvious
 | `Samples/Commerce/Domain.cs` and `Providers.cs` | Commerce's own model, with no Abilities code: a discount shaped like Commerce's (immutable, `AsWritable()`, UTC dates, rules as provider alias plus string settings with children for groups, no rule ids), and rule and reward providers shaped like Umbraco.Commerce.Core's |
 | `Samples/Commerce/Commerce.cs` | Commerce's integration: the editing contract (`DiscountEditModel`, whose rules and rewards are `DynamicItem`s), the adapter that maps to the domain, one item type source per provider seam, and the provider mapper. Also `ActivateDiscountAbility`, a product ability that edits an entity |
 | `Samples/Acme/AcmeWeekdayRule.cs` | A third party's rule, written as a plain Commerce provider with no Abilities code |
-| `Samples/Automate/Plugins.cs`, `Workflow.cs` | Automate's plugin model (triggers, actions and control flows with `[Field]` settings, required sections and outcomes), and its item type sources. A step's outcomes become its exits |
+| `Samples/Automate/Plugins.cs` | Automate's plugin model: triggers, actions and control flows with `[Field]` settings, required sections and outcomes |
 | `Samples/Commerce/CommerceAutomate.cs` | Commerce's Automate package: a trigger and an action, one with settings that take bindings |
 | `Samples/Cms/RichTextValue.cs` | A Rich Text-shaped value (markup plus blocks) and its handler: the inner model is the editor's, not the framework's |
 | `Samples/Cms/CmsPage.cs` | CMS-shaped content: culture variation, blocks with settings, a grid with placement and areas, per-culture block lists, pickers. Media is described **fluently** over plain request models |
-| `Samples/Automate/Workflow.cs` | An adapter written against `Entity`, the escape hatch for a schema that is data, not code. Step types are abilities. It converts each step's exits (`next`, or `outcomes`) to Automate's list of connections on save, and back on load |
+| `Samples/Automate/Workflow.cs` | A workflow as a model class whose steps are `DynamicItem`s. Step types are Automate's plugins and other packages' abilities, from item type sources. A step's outcomes become its exits; the adapter converts them to Automate's list of connections on save, and back on load |
 | `Samples/Email/SendEmail.cs` | A side effect with retries |
 | `Samples/SampleSite.cs` | How it's wired, as composers would wire it. Each block is one package |
 | `Samples/InMemoryDatabase.cs`, `SampleAccess.cs` | Stand-ins for each product's storage, transaction and permission model |
 
-**Look for:** how much each product writes per plugin seam (one source, one mapper, one editor table), and the derived keys in `DiscountAdapter`, which exist because Commerce rules have no ids. That's a known
+**Look for:** how much each product writes per plugin seam (one method that describes a plugin, one line per seam in `ItemTypeSources`, one editor table), and the derived keys in `DiscountAdapter`, which exist because Commerce rules have no ids. That's a known
 limit to raise with Commerce.
 
 ### Pass 5: layer 3, change sets (40 minutes)

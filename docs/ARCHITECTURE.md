@@ -161,34 +161,35 @@ A contract is described in one of two ways. Attributes suit a class the package 
 ```csharp
 // Attributes, on a class written for the purpose
 [Entity("commerce.discount", "Discount")]
-public class DiscountEditModel
+public class DiscountEditModel : EntityModel          // the key and version
 {
-    [Key] public Guid Key { get; set; }
     [EntityName, Required] public string? Name { get; set; }
     [EntityKey("cms.page")] public Guid? LandingPage { get; set; }
     [Items("commerce.discount.rule", Min = 1)] public List<DynamicItem> Rules { get; set; } = [];  // a plugin seam
 }
 
-// Fluent, over a class the package doesn't own
-ModelConfiguration.Configure<MediaRequestModel>(media => media
-    .IsEntity("cms.media", "Media")
-    .HasKey(x => x.Id)
-    .Ignore(x => x.UpdateDate)
-    .Field(x => x.Name).IsName().Required()
-    .Items(x => x.Crops, "cms.media.crop"));
-
-// The adapter: map to the domain, plus the rules a contract can't express
+// The adapter: map to the domain, check access, plus the rules a contract can't express
 public class DiscountAdapter : EntityAdapterBase<DiscountEditModel>
 {
     public override Task<DiscountEditModel?> LoadModelAsync(Guid key, CancellationToken ct);  // domain → contract
     public override Task SaveModelAsync(DiscountEditModel model, CancellationToken ct);      // contract → domain
-    protected override Task<IReadOnlyList<Problem>> ValidateModelAsync(DiscountEditModel d, CancellationToken ct);
+    public override Task<string?> AuthorizeAsync(EntityAccessRequest request, CancellationToken ct);  // required
+    protected override void Validate(DiscountEditModel d, ModelProblems<DiscountEditModel> problems);
+    protected override IEnumerable<IItemTypeSource> ItemTypeSources();  // one PluginItemTypeSource per plugin seam
 }
 
-// A product ability that edits the entity: works directly, and as a change inside a change set
+// Fluent, over a class the package doesn't own: in the adapter that uses it
+protected override void Configure(ModelConfigurator<MediaRequestModel> models) => models.Entity(media => media
+    .IsEntity("cms.media", "Media")
+    .HasKey(x => x.Id)
+    .Ignore(x => x.UpdateDate)
+    .Field(x => x.Name).IsName().Required()
+    .Items(x => x.Crops));   // item types from the list's element type
+
+// A product ability that edits the entity: works directly, and as a change inside a change set.
+// The key is the input's [EntityKey("commerce.discount")] property.
 public class ActivateDiscount : ModelEditAbilityBase<ActivateInput, DiscountEditModel>
 {
-    protected override Guid KeyOf(ActivateInput input) => input.Discount;
     protected override void Edit(DiscountEditModel d, ActivateInput input) => d.Active = true;
 }
 ```
@@ -490,7 +491,7 @@ A standalone [proof of concept](../) implements all three layers, with stand-ins
 | Keys chosen at record time work | Writing generated keys into the recorded input made replay deterministic. A discount referred to a page created in the same set, and a workflow step to a later step, with no key remapping | Settles the "new items referring to each other" risk in favour of keys chosen when the call is recorded |
 | Which change set a call works in is ambient, and named per call | A real model (Claude Opus 5.5) built a discount from text with only the generic tools, but couldn't validate it: it was never told the set's id. A set the model created itself couldn't be used at all, since nothing passed its id to later calls | As in the CMS Draft Sets PoC, an accessor makes one set current per call (per request over HTTP, from the `Umb-Change-Set` header), and no ability input carries the id. The AI adapter adds an optional `changeSetId` to every tool that uses a set (an ability that can't depend on one, like getting a schema, says `UsesChangeSet = false`); without it a call uses the only set open in the conversation, and with two or more open it must name one. Every result reports the set used, and an unknown set is refused |
 | A step's exits are fields, one per outcome | Automate stores links as connections with an optional outcome, and any action can name its outcomes. As a list of connections, checking an outcome is one the step has needs Automate-only code, and the schema can only describe outcomes in text | A step with one exit has `next`; a step that names outcomes has an `outcomes` object with one exit per outcome, and no `next`. The generic checks refuse a wrong name and report an exit to a missing step by path. The adapter converts to and from Automate's connections. Fan-out, connection filters, the "any result" exit and Switch's cases are not covered |
-| Typing moves the work, not the line count | Moving the samples to model classes left their size about the same: Commerce went from 74 to 62 statement lines, and the real CMS adapter from 621 to 599 lines. But a discount's structure was previously written twice, as field definitions and as string-keyed JSON reads. Now it is written once. Typed values also exposed a validator bug that only parsed JSON had hidden | Make EntityAdapterBase\<TModel> the default for package developers, with IEntityAdapter over a typed document as the escape hatch for a schema that is data |
+| Typing moves the work, not the line count | Moving the samples to model classes left their size about the same: Commerce went from 74 to 62 statement lines, and the real CMS adapter from 621 to 599 lines. But a discount's structure was previously written twice, as field definitions and as string-keyed JSON reads. Now it is written once. Typed values also exposed a validator bug that only parsed JSON had hidden | Make EntityAdapterBase\<TModel> the default for package developers, with IEntityAdapter over a typed document as the escape hatch for a schema that is data. Automate's workflow turned out not to need it: only its steps vary, so they are `List<DynamicItem>` |
 
 Not yet proven: the real Commerce and Automate models (including every kind of Automate connection), persistence, opening a set in an editor, and how reliably real models use the tools beyond a few runs.
 

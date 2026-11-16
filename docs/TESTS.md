@@ -72,6 +72,10 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
   - `TypedModelTests.A_model_round_trips_through_its_document_with_item_keys_and_paths`
 - Each problem is reported once, whether it comes from the schema, an attribute or a domain rule
   - `TypedModelTests.Each_problem_is_reported_once_whether_it_comes_from_the_structure_or_an_attribute`
+- Item types come from an items list's element type, with nothing registered by hand, and can be narrowed by naming classes
+  - `TypedModelTests.Item_types_come_from_the_lists_element_type_and_can_be_narrowed_by_naming_classes`
+- An edit ability finds the entity's key from its input's `[EntityKey]` property, and says what to add when there is none
+  - `TypedModelTests.An_edit_ability_finds_its_key_from_the_inputs_entity_key_property`
 
 ## CMS draft sets
 
@@ -91,6 +95,8 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
   - `UdiTests (all)`
 - An agent gets the permissions of the user it acts for: recording, applying (checked for the applying user, nothing applied if any change is refused), finding, reading and direct runs; with the CMS's real document permissions
   - `AuthorizationTests (all)`
+- An adapter with no access check can't be registered
+  - `AuthorizationTests.An_adapter_that_does_not_check_access_cannot_be_registered`
   - `CmsDocumentDefinitionTests.An_agent_gets_the_CMS_permissions_of_the_user_it_acts_for`
 - A side effect with retries is queued after apply and retried with backoff; it gives up after its limit; correctable input isn't retried; on real Umbraco it runs on the background queue
   - `SideEffectRetryTests (all)`
