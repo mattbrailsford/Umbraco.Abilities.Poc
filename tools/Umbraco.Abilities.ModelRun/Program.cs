@@ -78,7 +78,7 @@ Console.WriteLine();
 Console.WriteLine("── Change set check ──");
 if (session.ChangeSetId is not { } setId)
 {
-    Console.WriteLine("The model didn't leave a change set open.");
+    Console.WriteLine($"The model left {session.OpenChangeSetIds.Count} change sets open, not one.");
     return;
 }
 

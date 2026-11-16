@@ -40,6 +40,13 @@ public sealed class AbilityAttribute(string id, string name) : Attribute
     /// retried, never correctable input or a refusal. Zero runs it inline, once.
     /// </summary>
     public int Retries { get; set; }
+
+    /// <summary>
+    /// False for an ability whose result can't depend on a change set, such as describing a schema. It always runs
+    /// outside a set: its tool takes no change set id, and needs none named while several sets are open. Only reads,
+    /// and the change set tools that start a set, can say false: any other Write would run on live data.
+    /// </summary>
+    public bool UsesChangeSet { get; set; } = true;
 }
 
 /// <summary>
@@ -61,7 +68,8 @@ public sealed record AbilityDescriptor(
     AbilityKind Kind,
     bool Reversible,
     Type InputType,
-    int Retries = 0)
+    int Retries = 0,
+    bool UsesChangeSet = true)
 {
     public bool RequiresApproval => Kind == AbilityKind.Write && !Reversible;
 }
@@ -175,7 +183,14 @@ public abstract class AbilityBase<TInput, TOutput> : IAbility
             attribute.Kind,
             attribute.Reversible,
             typeof(TInput),
-            attribute.Retries);
+            attribute.Retries,
+            attribute.UsesChangeSet);
+
+        if (!attribute.UsesChangeSet && attribute.Kind == AbilityKind.Write && this is not ChangeSets.IChangeSetLifecycleAbility)
+        {
+            throw new InvalidOperationException(
+                $"{attribute.Id} is a Write, so it must use the change set: outside one it would change live data.");
+        }
     }
 
     public AbilityDescriptor Descriptor { get; }

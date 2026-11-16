@@ -8,28 +8,49 @@ using Umbraco.Abilities.ChangeSets;
 namespace Umbraco.Abilities.AI;
 
 /// <summary>
-/// What one conversation keeps between tool calls: the user it acts for, and its current change set. The surface
-/// creates one per conversation, and may open a change set up front by setting <see cref="ChangeSetId"/>.
+/// What one conversation keeps between tool calls: the user it acts for, and the change sets open in it. The surface
+/// creates one per conversation, and may open a change set up front with <see cref="Open"/>.
 /// </summary>
 public sealed class AbilityToolSession(Guid userKey)
 {
+    private readonly List<Guid> _open = [];
+
     /// <summary>The user the model acts for. It gets their permissions, no more.</summary>
     public Guid UserKey { get; set; } = userKey;
 
     /// <summary>
-    /// The change set calls work in when they don't name one: the one last created or named in this conversation.
-    /// Cleared once that set is applied or discarded.
+    /// The change sets created or named in this conversation that are still open, oldest first. A set leaves once it
+    /// is applied or discarded.
     /// </summary>
-    public Guid? ChangeSetId { get; set; }
+    public IReadOnlyList<Guid> OpenChangeSetIds => _open;
+
+    /// <summary>
+    /// The change set calls work in when they don't name one: the only set open in this conversation. Null when none is
+    /// open, or when several are: then every call must name one.
+    /// </summary>
+    public Guid? ChangeSetId => _open.Count == 1 ? _open[0] : null;
+
+    /// <summary>Adds a change set to the conversation, as creating or naming one does.</summary>
+    public void Open(Guid changeSetId)
+    {
+        if (!_open.Contains(changeSetId))
+        {
+            _open.Add(changeSetId);
+        }
+    }
+
+    /// <summary>Takes a change set out of the conversation. The set itself is untouched.</summary>
+    public void Close(Guid changeSetId) => _open.Remove(changeSetId);
 }
 
 /// <summary>
 /// Exposes one ability as an M.E.AI tool. Nothing here is specific to an ability: every ability a package
 /// declares becomes a tool the same way. An Automate or MCP adapter would be the same size.
 /// <para>
-/// Every tool also takes an optional <c>changeSetId</c>, added here so no ability declares it. A call works in the set it
-/// names, or else the conversation's current set, which is ambient for that call only (<see cref="IChangeSetAccessor"/>).
-/// Every result says which set the call used.
+/// Every tool that uses a change set (<see cref="AbilityAttribute.UsesChangeSet"/>) also takes an optional <c>changeSetId</c>, added here so no ability declares it. A call works in the set it
+/// names, or else the only set open in the conversation, which is ambient for that call only
+/// (<see cref="IChangeSetAccessor"/>). With two or more open, a call must name one, so an edit never lands in a set the
+/// model didn't mean. Every result says which set the call used.
 /// </para>
 /// </summary>
 public sealed class AbilityAIFunction : AIFunction
@@ -38,8 +59,8 @@ public sealed class AbilityAIFunction : AIFunction
     public const string ChangeSetIdArgument = "changeSetId";
 
     private const string ChangeSetIdDescription =
-        "The change set to work in. Leave it out to use the current one: the change set last created or named in this " +
-        "conversation. Every result says which change set it used.";
+        "The change set to work in. Leave it out when only one change set is open in this conversation, and that one is " +
+        "used. Required when two or more are open. Every result says which change set it used.";
 
     private readonly IAbility _ability;
     private readonly AbilityInvoker _invoker;
@@ -52,8 +73,8 @@ public sealed class AbilityAIFunction : AIFunction
         _invoker = invoker;
         _session = session;
 
-        // Creating a set makes a new one current, so naming one there means nothing.
-        _takesChangeSet = ability is not CreateChangeSetAbility;
+        // Abilities that don't use a change set (describing a schema, starting a set) take no id and always run outside one.
+        _takesChangeSet = ability.Descriptor.UsesChangeSet;
         var schema = AIJsonUtilities.CreateJsonSchema(ability.Descriptor.InputType, serializerOptions: AbilityJson.Options);
         JsonSchema = _takesChangeSet ? WithChangeSetId(schema) : schema;
         AdditionalProperties = new Dictionary<string, object?>
@@ -110,25 +131,39 @@ public sealed class AbilityAIFunction : AIFunction
             };
         }
 
-        // A set that is named must exist: never fall back to live data because of a wrong or stale id.
+        // Sets applied or discarded since the last call (here or elsewhere) are no longer open.
+        foreach (var closed in _session.OpenChangeSetIds.Where(id => changeSets.Find(id) is null).ToList())
+        {
+            _session.Close(closed);
+        }
+
+        ChangeSet? used;
         if (named is { } given)
         {
-            if (changeSets.Find(given) is null)
+            // A set that is named must exist: never fall back to live data because of a wrong or stale id.
+            used = changeSets.Find(given);
+            if (used is null)
             {
                 return Payload(AbilityResult.Fail(AbilityOperationStatus.InvalidInput,
                     $"No change set {given}. It may have been applied or discarded.",
                     [new Problem(ChangeSetIdArgument, "Not found.")]), null);
             }
 
-            _session.ChangeSetId = given;
+            _session.Open(given);
         }
-
-        if (_session.ChangeSetId is { } current && changeSets.Find(current) is null)
+        else if (_takesChangeSet && _session.OpenChangeSetIds.Count > 1)
         {
-            _session.ChangeSetId = null;
+            // Guessing between two open sets could put an edit in the wrong one, so ask.
+            var open = string.Join(", ", _session.OpenChangeSetIds.Select(id => $"'{changeSets.Get(id).Name}' ({id})"));
+            return Payload(AbilityResult.Fail(AbilityOperationStatus.InvalidInput,
+                $"{_session.OpenChangeSetIds.Count} change sets are open in this conversation: {open}. Name the one to use with changeSetId.",
+                [new Problem(ChangeSetIdArgument, "Required while more than one change set is open.")]), null);
+        }
+        else
+        {
+            used = _takesChangeSet && _session.ChangeSetId is { } only ? changeSets.Find(only) : null;
         }
 
-        var used = _session.ChangeSetId is { } setId ? changeSets.Find(setId) : null;
         AbilityResult result;
         using (changeSets.Use(used?.Id))
         {
@@ -138,13 +173,13 @@ public sealed class AbilityAIFunction : AIFunction
         var usedSet = used is null ? null : new ChangeSetUsed(used.Id, used.Name);
         if (result.Result is ChangeSetCreated created)
         {
-            _session.ChangeSetId = created.ChangeSetId;
+            _session.Open(created.ChangeSetId);
             usedSet = new ChangeSetUsed(created.ChangeSetId, created.Name);
         }
         else if (used is not null && changeSets.Find(used.Id) is null)
         {
-            // Applied or discarded: the conversation has no current set until one is created or named.
-            _session.ChangeSetId = null;
+            // Applied or discarded: it leaves the conversation.
+            _session.Close(used.Id);
             usedSet = usedSet! with { Open = false };
         }
 

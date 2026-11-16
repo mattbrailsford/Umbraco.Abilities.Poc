@@ -25,11 +25,25 @@ public sealed class ScriptedAgent
     /// <summary>What the conversation keeps between calls: its user and current change set.</summary>
     public AbilityToolSession Session { get; } = new(SampleAccess.Editor);
 
-    /// <summary>The conversation's current change set. Setting it plays a surface that opened (or closed) one.</summary>
+    /// <summary>
+    /// The conversation's current change set: the only one open in it. Setting it plays a surface that opened one (and
+    /// closed any others), or with null, closed them all.
+    /// </summary>
     public Guid? ChangeSetId
     {
         get => Session.ChangeSetId;
-        set => Session.ChangeSetId = value;
+        set
+        {
+            foreach (var open in Session.OpenChangeSetIds.ToList())
+            {
+                Session.Close(open);
+            }
+
+            if (value is { } id)
+            {
+                Session.Open(id);
+            }
+        }
     }
 
     /// <summary>The user the agent acts for. It gets their permissions, no more.</summary>
@@ -67,10 +81,10 @@ public sealed class ScriptedAgent
 
     public async Task<Guid> StartChangeSetAsync(string name)
     {
-        // The new set becomes the conversation's current one: nothing here copies the id.
+        // The new set joins the conversation: nothing here copies the id.
         var output = await OkAsync("changeSet_create", $$"""{ "name": "{{name}}" }""");
         var id = output.GetProperty("changeSetId").GetGuid();
-        Assert.Equal(id, ChangeSetId);
+        Assert.Contains(id, Session.OpenChangeSetIds);
         return id;
     }
 }

@@ -73,7 +73,7 @@ public sealed record GetEntitySchemaInput(
     [property: Description("Optional item type aliases (from an items field's x-item-types) to get the full schema for. Use group:alias when an alias appears in several groups.")] string[]? ItemTypes = null,
     [property: Description("The subtype, for entity types that have them, e.g. a document's content type alias.")] string? Subtype = null);
 
-[Ability("entity.getSchema", "Get entity schema", Kind = AbilityKind.Read,
+[Ability("entity.getSchema", "Get entity schema", Kind = AbilityKind.Read, UsesChangeSet = false,
     Description = "Returns an entity type's fields as JSON Schema. An items field lists its item types (x-item-types). " +
                   "Call it first. Call again with itemTypes to get the fields of the item types you will add.")]
 public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemTypeRegistry itemTypes)

@@ -7,8 +7,8 @@ public sealed record CreateChangeSetInput([property: Description("A name a perso
 /// <summary>What <c>changeSet.create</c> returns. A surface sees it and makes the new set current for later calls.</summary>
 public sealed record ChangeSetCreated(Guid ChangeSetId, string Name);
 
-[Ability("changeSet.create", "Create change set", Kind = AbilityKind.Write, Reversible = true,
-    Description = "Starts a change set and makes it the current one: later edits are recorded in it, not saved, until a person applies it.")]
+[Ability("changeSet.create", "Create change set", Kind = AbilityKind.Write, Reversible = true, UsesChangeSet = false,
+    Description = "Starts a change set: later edits are recorded in it, not saved, until a person applies it. While it is the only change set open in this conversation, calls use it without naming it. With two or more open, every call must name one with changeSetId.")]
 public sealed class CreateChangeSetAbility(ChangeSetService changeSets) : AbilityBase<CreateChangeSetInput, object>, IChangeSetLifecycleAbility
 {
     protected override Task<AbilityResult> ExecuteAsync(CreateChangeSetInput input, AbilityContext context, CancellationToken cancellationToken)

@@ -19,7 +19,7 @@ tested separately.
 
 | Tool | What it does |
 | --- | --- |
-| `changeSet_create` | Starts a change set and makes it the current one |
+| `changeSet_create` | Starts a change set. While it's the only one open, calls use it without naming it |
 | `entity_getSchema` | What an entity type looks like. Ask again with `itemTypes` for the fields of the item types you'll use |
 | `entity_find` | Turns a name into a key. Inside a change set it sees the set's changes |
 | `entity_create` | Creates an entity in the current change set |
@@ -47,8 +47,9 @@ steps/{stepKey}/next
 
 A problem from `changeSet_validate` uses the same path an edit takes, so a fix needs no translation.
 
-**Which change set.** Every tool except `changeSet_create` also takes an optional `changeSetId`. Leave it out and
-the call works in the conversation's current set: the one last created or named. None of the calls below needed it.
+**Which change set.** Every tool except `changeSet_create` and `entity_getSchema` also takes an optional `changeSetId`. Leave it out and
+the call works in the only change set open in the conversation. With two or more open, a call must name one, or it
+is refused with a list of the open sets. Each flow below has one set open, so none of the calls needed it.
 
 **Results.** Every result has the same shape, and says which change set the call used:
 

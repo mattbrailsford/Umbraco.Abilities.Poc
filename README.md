@@ -492,8 +492,9 @@ Each claim is followed by the tests that show it. `(all)` means every test in th
   - `ChangeSetTests.A_product_read_ability_shows_the_current_sets_changes_and_live_data_outside_it`
 - Replay is deterministic, and keys handed to the model are the stored keys (for products that store item ids; see Commerce's derived keys)
   - `ChangeSetTests.Replaying_a_set_gives_the_same_entity_every_time`
-- A call works in the change set it names, or the conversation's current one (the last created or named). No ability
-  takes the id: the AI adapter adds an optional `changeSetId` to every tool, and the set is ambient for that call only
+- A call works in the change set it names, or the only one open in the conversation. With two or more open, it must
+  name one. No ability takes the id: the AI adapter adds an optional `changeSetId` to every tool that uses a set, and the set is ambient
+  for that call only
   - `CurrentChangeSetTests` (all)
 - An HTTP request names its change set in the `Umb-Change-Set` header; an unknown set is refused before the request runs
   - `CmsDocumentAdapterTests.A_request_naming_a_change_set_in_its_header_works_in_that_set_for_that_request_only`
@@ -666,9 +667,12 @@ These feed back into the design in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
    `changeSet.create` returned an id, but nothing passed it on to later calls. The scripted tests hid this by copying
    the id by hand. Now it works like the CMS Draft Sets proof of concept: an accessor holds the current set for one
    call, per request, and nothing else carries it. No ability input has a change set id. The AI adapter adds an
-   optional `changeSetId` to every tool, so a call can name a set (two can be open in one conversation). Leave it out
-   and the call uses the conversation's current set: the one last created or named. Every result says which set it
-   used, and a set that doesn't exist is refused rather than falling back to live data. For HTTP callers, a middleware
+   optional `changeSetId` to every tool, so a call can name a set. Leave it out and the call uses the only set open in
+   the conversation. With two or more open, a call that names none is refused and told which are open: using the last
+   one touched would let a model that forgot to switch back edit the wrong set, with nothing to say so. Every result
+   says which set it used, and a set that doesn't exist is refused rather than falling back to live data. An ability
+   whose result can't depend on a set (getting a schema, starting a set) says `UsesChangeSet = false`: it takes no id
+   and always runs outside one. A Write can't say it, since it would change live data. For HTTP callers, a middleware
    reads the `Umb-Change-Set` header into the same accessor.
 
 ## Applying a set

@@ -551,6 +551,7 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
         var refused = await _agent.FailAsync("changeSet_apply", SetJson());
         Assert.That(refused.GetProperty("message").GetString(), Is.EqualTo("Applying was refused. Change sets called 'Not today' can't be applied."));
         Assert.That(ContentService.GetById(page.Key), Is.Null);
+        await _agent.OkAsync("changeSet_discard", "{}");
 
         // Vetoed at the CMS draft set: the Content step fails and rolls back.
         await _agent.StartChangeSetAsync("Not this content");
@@ -558,6 +559,7 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
         refused = await _agent.FailAsync("changeSet_apply", SetJson());
         Assert.That(refused.GetProperty("message").GetString(), Does.Contain("Content failed and was rolled back").And.Contain("Draft sets called 'Not this content' can't be applied."));
         Assert.That(ContentService.GetById(page.Key), Is.Null);
+        await _agent.OkAsync("changeSet_discard", "{}");
 
         // Applied: both notifications are raised.
         await _agent.StartChangeSetAsync("Fine");
@@ -584,6 +586,7 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
             Assert.That(refused.GetProperty("status").GetString(), Is.EqualTo("AccessDenied"));
             Assert.That(refused.GetProperty("message").GetString(), Is.EqualTo("You don't have permission to update this document."));
         });
+        await _agent.OkAsync("changeSet_discard", "{}");
 
         // A set made by someone who may change the page, applied by the reader: refused, nothing changes.
         _agent.UserKey = Constants.Security.SuperUserKey;
@@ -1076,7 +1079,7 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
         public Agent(AbilityRegistry abilities, AbilityInvoker invoker)
             => _tools = AbilityAITools.Create(abilities, invoker, _session).ToDictionary(t => t.Name);
 
-        /// <summary>The conversation's current change set: the one the agent last created or named.</summary>
+        /// <summary>The conversation's current change set: the only one open in it.</summary>
         public Guid? ChangeSetId => _session.ChangeSetId;
 
         /// <summary>The user the agent acts for. It gets their permissions, no more.</summary>

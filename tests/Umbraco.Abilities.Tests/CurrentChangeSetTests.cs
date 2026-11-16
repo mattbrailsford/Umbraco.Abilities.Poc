@@ -6,7 +6,7 @@ namespace Umbraco.Abilities.Tests;
 
 /// <summary>
 /// Which change set a call works in. A call names one with the generic <c>changeSetId</c> argument, or works in the
-/// conversation's current set: the one last created or named. Within the call it is ambient, through the change set
+/// conversation's current set: the only one open in it. With two or more open, it must name one. Within the call it is ambient, through the change set
 /// accessor, so no ability takes the id as input. A real model found the gap this closes: it was never told the id of
 /// the set it worked in, and a set it created itself could not be used.
 /// </summary>
@@ -38,21 +38,67 @@ public class CurrentChangeSetTests
     }
 
     [Fact]
-    public async Task Two_change_sets_in_one_conversation_are_kept_apart_by_naming_one()
+    public async Task With_two_change_sets_open_every_call_must_name_one()
     {
         var christmas = await _agent.StartChangeSetAsync("Christmas");
         var blackFriday = await _agent.StartChangeSetAsync("Black Friday");
 
-        // The set created last is current.
-        await _agent.OkAsync("entity_create", """{ "entityType": "umbraco-commerce-discount", "fields": { "name": "Black Friday" } }""");
+        // Guessing could put the edit in the wrong set, so a call that names none is refused, and lists the open sets.
+        var refused = await _agent.FailAsync("entity_create", """{ "entityType": "umbraco-commerce-discount", "fields": { "name": "Black Friday" } }""");
+        Assert.True(refused.GetProperty("correctable").GetBoolean());
+        Assert.Equal("changeSetId", refused.GetProperty("problems")[0].GetProperty("path").GetString());
+        Assert.Contains("'Christmas'", refused.GetProperty("message").GetString());
+        Assert.Contains("'Black Friday'", refused.GetProperty("message").GetString());
+        Assert.Empty(_site.ChangeSets.Get(christmas).Changes);
+        Assert.Empty(_site.ChangeSets.Get(blackFriday).Changes);
 
-        // Naming a set works in it, and makes it current for the calls that follow.
+        // Naming a set works in it, and doesn't make it current: the next call must name one again.
         var named = await _agent.CallAsync("entity_create", $$"""{ "changeSetId": "{{christmas}}", "entityType": "umbraco-commerce-discount", "fields": { "name": "Christmas" } }""");
         Assert.Equal(christmas, named.GetProperty("changeSet").GetProperty("id").GetGuid());
-        await _agent.OkAsync("entity_create", """{ "entityType": "document", "variant": { "culture": "en-US" }, "fields": { "title": "Christmas gifts" } }""");
+        await _agent.OkAsync("entity_create", $$"""{ "changeSetId": "{{blackFriday}}", "entityType": "umbraco-commerce-discount", "fields": { "name": "Black Friday" } }""");
+        await _agent.FailAsync("changeSet_validate", "{}");
 
+        Assert.Single(_site.ChangeSets.Get(christmas).Changes);
         Assert.Single(_site.ChangeSets.Get(blackFriday).Changes);
-        Assert.Equal(2, _site.ChangeSets.Get(christmas).Changes.Count);
+    }
+
+    [Fact]
+    public async Task A_tool_that_uses_no_change_set_needs_none_named_while_several_are_open()
+    {
+        await _agent.StartChangeSetAsync("Christmas");
+        await _agent.StartChangeSetAsync("Black Friday");
+
+        var schema = await _agent.CallAsync("entity_getSchema", """{ "entityType": "umbraco-commerce-discount" }""");
+
+        Assert.True(schema.GetProperty("success").GetBoolean(), schema.ToString());
+        Assert.Equal(JsonValueKind.Null, schema.GetProperty("changeSet").ValueKind);
+    }
+
+    [Fact]
+    public async Task Once_only_one_set_is_left_open_calls_use_it_without_naming_it()
+    {
+        var christmas = await _agent.StartChangeSetAsync("Christmas");
+        var blackFriday = await _agent.StartChangeSetAsync("Black Friday");
+        await _agent.OkAsync("entity_create", $$"""{ "changeSetId": "{{blackFriday}}", "entityType": "document", "variant": { "culture": "en-US" }, "fields": { "title": "Deals" } }""");
+
+        await _agent.OkAsync("changeSet_apply", $$"""{ "changeSetId": "{{blackFriday}}" }""");
+
+        Assert.Equal(christmas, _agent.ChangeSetId);
+        var edit = await _agent.CallAsync("entity_create", """{ "entityType": "umbraco-commerce-discount", "fields": { "name": "Christmas" } }""");
+        Assert.Equal(christmas, edit.GetProperty("changeSet").GetProperty("id").GetGuid());
+        Assert.Single(_site.ChangeSets.Get(christmas).Changes);
+    }
+
+    [Fact]
+    public async Task Naming_a_set_from_outside_the_conversation_adds_it_to_the_open_sets()
+    {
+        var mine = await _agent.StartChangeSetAsync("Mine");
+        var shared = _site.ChangeSets.Create("Shared").Id;
+
+        await _agent.OkAsync("entity_create", $$"""{ "changeSetId": "{{shared}}", "entityType": "umbraco-commerce-discount", "fields": { "name": "Shared" } }""");
+
+        Assert.Equal([mine, shared], _agent.Session.OpenChangeSetIds);
+        await _agent.FailAsync("entity_create", """{ "entityType": "umbraco-commerce-discount", "fields": { "name": "Which one?" } }""");
     }
 
     [Fact]
@@ -112,14 +158,15 @@ public class CurrentChangeSetTests
     }
 
     [Fact]
-    public void Every_tool_but_create_takes_an_optional_change_set_id_that_no_ability_declares()
+    public void Every_tool_that_uses_a_change_set_takes_an_optional_change_set_id_that_no_ability_declares()
     {
+        string[] noChangeSet = ["changeSet_create", "entity_getSchema"];
         foreach (var (name, tool) in _agent.Tools)
         {
             var properties = tool.JsonSchema.GetProperty("properties");
             var required = tool.JsonSchema.TryGetProperty("required", out var list) ? list.EnumerateArray().Select(r => r.GetString()).ToList() : [];
 
-            Assert.Equal(name != "changeSet_create", properties.TryGetProperty("changeSetId", out _));
+            Assert.Equal(!noChangeSet.Contains(name), properties.TryGetProperty("changeSetId", out _));
             Assert.DoesNotContain("changeSetId", required);
         }
     }
