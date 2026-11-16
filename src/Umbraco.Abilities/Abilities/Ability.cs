@@ -216,6 +216,21 @@ public abstract class AbilityBase<TInput, TOutput> : IAbility
     protected static AbilityResult Success(TOutput output) => AbilityResult.Ok(output);
 }
 
+/// <summary>
+/// The input of an ability that takes none. Callers send an empty object (<c>{}</c>). Derive from
+/// <see cref="AbilityBase{TOutput}"/> rather than naming this type.
+/// </summary>
+public sealed record NoInput;
+
+/// <summary>A stateless ability that takes no input, only a typed output. For example, one that works on the current change set.</summary>
+public abstract class AbilityBase<TOutput> : AbilityBase<NoInput, TOutput>
+{
+    protected sealed override Task<AbilityResult> ExecuteAsync(NoInput input, AbilityContext context, CancellationToken cancellationToken)
+        => ExecuteAsync(context, cancellationToken);
+
+    protected abstract Task<AbilityResult> ExecuteAsync(AbilityContext context, CancellationToken cancellationToken);
+}
+
 public sealed class AbilityRegistry
 {
     private readonly Dictionary<string, IAbility> _abilities = new(StringComparer.Ordinal);

@@ -4,12 +4,6 @@ namespace Umbraco.Abilities.ChangeSets;
 
 public sealed record CreateChangeSetInput([property: Description("A name a person will recognise, e.g. 'Black Friday campaign'.")] string Name);
 
-/// <summary>
-/// The input of an ability that works on the current change set. It is empty: which set is current is ambient
-/// (<see cref="IChangeSetAccessor"/>), set by whoever started the call.
-/// </summary>
-public sealed record CurrentChangeSetInput;
-
 /// <summary>What <c>changeSet.create</c> returns. A surface sees it and makes the new set current for later calls.</summary>
 public sealed record ChangeSetCreated(Guid ChangeSetId, string Name);
 
@@ -26,9 +20,9 @@ public sealed class CreateChangeSetAbility(ChangeSetService changeSets) : Abilit
 
 [Ability("changeSet.validate", "Validate change set", Kind = AbilityKind.Read,
     Description = "Checks every entity in the set. Returns problems by path; fix them with the entity edit abilities.")]
-public sealed class ValidateChangeSetAbility(ChangeSetService changeSets) : AbilityBase<CurrentChangeSetInput, object>, IChangeSetLifecycleAbility
+public sealed class ValidateChangeSetAbility(ChangeSetService changeSets) : AbilityBase<object>, IChangeSetLifecycleAbility
 {
-    protected override async Task<AbilityResult> ExecuteAsync(CurrentChangeSetInput input, AbilityContext context, CancellationToken cancellationToken)
+    protected override async Task<AbilityResult> ExecuteAsync(AbilityContext context, CancellationToken cancellationToken)
     {
         var problems = await changeSets.ValidateAsync(changeSets.GetCurrent().Id, cancellationToken);
         return Success(new { valid = problems.Count == 0, entities = problems });
@@ -37,25 +31,25 @@ public sealed class ValidateChangeSetAbility(ChangeSetService changeSets) : Abil
 
 [Ability("changeSet.summarize", "Summarize change set", Kind = AbilityKind.Read,
     Description = "Lists what applying the set would create, update and run. Show it to the person before they apply.")]
-public sealed class SummarizeChangeSetAbility(ChangeSetService changeSets) : AbilityBase<CurrentChangeSetInput, ChangeSetSummary>, IChangeSetLifecycleAbility
+public sealed class SummarizeChangeSetAbility(ChangeSetService changeSets) : AbilityBase<ChangeSetSummary>, IChangeSetLifecycleAbility
 {
-    protected override async Task<AbilityResult> ExecuteAsync(CurrentChangeSetInput input, AbilityContext context, CancellationToken cancellationToken)
+    protected override async Task<AbilityResult> ExecuteAsync(AbilityContext context, CancellationToken cancellationToken)
         => Success(await changeSets.SummarizeAsync(changeSets.GetCurrent().Id, cancellationToken));
 }
 
 [Ability("changeSet.apply", "Apply change set", Kind = AbilityKind.Write,
     Description = "Saves every entity in the set and runs its recorded operations, all or nothing. This is the only step that changes live data.")]
-public sealed class ApplyChangeSetAbility(ChangeSetService changeSets) : AbilityBase<CurrentChangeSetInput, IReadOnlyList<EntitySummary>>, IChangeSetLifecycleAbility
+public sealed class ApplyChangeSetAbility(ChangeSetService changeSets) : AbilityBase<IReadOnlyList<EntitySummary>>, IChangeSetLifecycleAbility
 {
-    protected override Task<AbilityResult> ExecuteAsync(CurrentChangeSetInput input, AbilityContext context, CancellationToken cancellationToken)
+    protected override Task<AbilityResult> ExecuteAsync(AbilityContext context, CancellationToken cancellationToken)
         => changeSets.ApplyAsync(changeSets.GetCurrent().Id, context, cancellationToken);
 }
 
 [Ability("changeSet.discard", "Discard change set", Kind = AbilityKind.Write, Reversible = true,
     Description = "Throws the set away. No live data changes.")]
-public sealed class DiscardChangeSetAbility(ChangeSetService changeSets) : AbilityBase<CurrentChangeSetInput, object>, IChangeSetLifecycleAbility
+public sealed class DiscardChangeSetAbility(ChangeSetService changeSets) : AbilityBase<object>, IChangeSetLifecycleAbility
 {
-    protected override async Task<AbilityResult> ExecuteAsync(CurrentChangeSetInput input, AbilityContext context, CancellationToken cancellationToken)
+    protected override async Task<AbilityResult> ExecuteAsync(AbilityContext context, CancellationToken cancellationToken)
     {
         var id = changeSets.GetCurrent().Id;
         await changeSets.DiscardAsync(id, cancellationToken);

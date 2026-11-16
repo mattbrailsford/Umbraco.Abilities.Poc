@@ -101,7 +101,7 @@ will.
 
 | File | What it is |
 | --- | --- |
-| `src/Umbraco.Abilities/Abilities/Ability.cs` | The contract. `[Ability]` declares an operation: id, `Kind` (Explain, Read, Transform, Trigger, Write), `Reversible`, `Retries`. `AbilityBase<TInput, TOutput>` gives typed input from JSON. `AbilityContext` holds the acting user's key. Which change set a call works in is ambient, not context: see `ChangeSets/ChangeSetAccessor.cs`. `AbilityResult` mirrors the CMS's `Attempt<TResult, TStatus>`, and `Problem` mirrors `PropertyValidationError` |
+| `src/Umbraco.Abilities/Abilities/Ability.cs` | The contract. `[Ability]` declares an operation: id, `Kind` (Explain, Read, Transform, Trigger, Write), `Reversible`, `Retries`. `AbilityBase<TInput, TOutput>` gives typed input from JSON. `AbilityBase<TOutput>` is for an ability that takes no input, like the change set tools. `AbilityContext` holds the acting user's key. Which change set a call works in is ambient, not context: see `ChangeSets/ChangeSetAccessor.cs`. `AbilityResult` mirrors the CMS's `Attempt<TResult, TStatus>`, and `Problem` mirrors `PropertyValidationError` |
 | `src/Umbraco.Abilities.AI/AbilityAIFunction.cs` | The whole AI adapter: an ability becomes an `AIFunction`, with a schema from its input type. Only irreversible Writes need approval. It adds an optional `changeSetId` to every tool, keeps the conversation's current set in `AbilityToolSession`, and reports the set each call used |
 | `AbilityInvoker` (end of `ChangeSets/ChangeSetService.cs`) | The single entry point. A Write while a change set is current is recorded instead of run |
 
