@@ -201,7 +201,7 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
    - **"Types are data" stops at Umbraco's content types.** The handler contract is written against a property type
      and a data type. Umbraco Forms has field types and their settings instead. Covering it means describing a
      property in neutral terms (alias, name, mandatory, editor, settings) and letting each product map its own. Not
-     built: there is no Forms adapter to prove it against.
+     built: there is no Forms adapter to prove it against. See [Umbraco Forms](#umbraco-forms).
 
 ## Developer experience of adapters
 
@@ -306,6 +306,54 @@ Not taken yet, and worth taking:
 The handler here is separate from the framework's own `IValueHandler`. That one adds behaviour inside a value
 (Rich Text keeps its markup and blocks in step) and knows nothing about storage. A property editor handler can set
 one on the field it describes.
+
+### Umbraco Forms
+
+Not built. Written down so the idea isn't lost. Whether it is worth building depends on one decision: whether the
+Forms AI add-on moves onto abilities. Its tools would then come from the abilities instead of its own code, which is
+the claim this PoC tests.
+
+Checked against the Forms docs and the API docs shipped in the `Umbraco.Forms.Core` 17.6.2 package (built for
+Umbraco 17). Not against the Forms source, which is not public, and not against the Forms AI add-on, whose code was
+not available.
+
+What Forms looks like:
+
+| Part | Shape | Like in the CMS |
+| --- | --- | --- |
+| Form | Pages, then field sets, then containers, then fields | A document type, but each form is its own type |
+| Field | Alias, caption, mandatory, field type, settings, allowed values (prevalues), regex | A property type |
+| Field type | A class per kind of field. Declares a data type (`String`, `LongString`, `Integer`, `DateTime`, `Bit`) and its settings with `[Setting]` | A property editor |
+| Field settings | Plain strings, keyed by setting name | A data type's configuration, which is typed |
+| Entry (`Record`) | A list of values per field. No cultures or segments | A document's values |
+| Saving an entry | `IRecordService.SubmitAsync`. Approve and reject are state changes | `IContentEditingService` |
+
+Which adapter it needs depends on what the add-on does:
+
+| If the add-on... | The entity is | What it needs |
+| --- | --- | --- |
+| Builds forms | The form | A Forms adapter. Pages, field sets and fields are items, field types are item types. This is the items model blocks already use. The neutral property description is not needed |
+| Works with entries | The entry | An entries adapter whose fields come from the form. This is where the neutral property description pays off: field type handlers in the same shape as property editor handlers |
+| Both | Both | Both adapters |
+
+What the entries side would cost:
+
+- **A neutral property description.** The handler contexts take Umbraco's property type and data type directly.
+  They would take alias, label, description, required, editor alias and settings instead. Forms has all of these.
+  The CMS handlers would map from the same description, so this changes the handlers' inputs, not their shape.
+- **Values are always lists.** A field type handler reads and writes a list, not one value.
+- **Settings are strings.** A handler parses its own settings, as the plugin settings in the samples do.
+
+Risks, from the API docs, not checked in code:
+
+- **Submitting likely runs the form's workflows,** such as sending emails. `SubmitAsync` "submits the form and (if
+  configured) stores the associated record". An agent editing entries could set them off. Saving may need to go
+  through storage (`IRecordStorage`) instead, which skips Forms' own checks.
+- **Converting a value needs the web request.** `FieldType.ConvertToRecord` takes an `HttpContext`, so saving an
+  entry outside a request may be awkward.
+- **No drafts.** Entries would be kept and replayed by the change set, as media is.
+
+Open question: what the Forms AI add-on does today. Its tools decide which row above applies.
 
 ## What running against Umbraco taught us
 
