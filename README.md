@@ -90,6 +90,9 @@ The details and the lessons are in [docs/FINDINGS.md](docs/FINDINGS.md). The tes
   model gets them right, or how it does on documents, workflows or edits.
 - **Persistence and scale.** Sets are in memory, and working state is recomputed by replaying every call
   on each read.
+- **Property editors shipping their own handlers.** The handler contract is in this repo, and only a test's star
+  rating uses it from outside the core editors. A real editor package would have to reference Abilities until the
+  contract has a home (see [FINDINGS](docs/FINDINGS.md#where-property-editor-handlers-should-live)).
 - **Opening a set in an editor.** Nothing loads a set's working state into a backoffice workspace.
 - **Undo.** A failed apply is resumed, not undone. Nothing reverses a product's step that already applied.
 - **Products sharing a database.** Products that do share a connection could apply in one transaction; the

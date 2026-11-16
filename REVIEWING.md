@@ -206,16 +206,23 @@ In `ChangeSetService.cs`, read the public methods in this order:
 
 | File | What it is |
 | --- | --- |
-| `Umbraco.Abilities.Cms/CmsSchemaMapper.cs` | Builds the schema from document types and data type configuration: Block List, Block Grid (areas become items fields, column span becomes placement), pickers, variation |
-| `Umbraco.Abilities.Cms/CmsDocumentAdapter.cs` | The real adapter. Reads go through Umbraco's own block value classes in editor format. Validation uses Umbraco's, with its JSON paths translated back to entity paths (`ErrorIndex`). Content is applied through its draft set, so its `SaveAsync` is unused. It is also the **draft set adapter** (stage, read, rebase, resolve, apply), and **authorization** goes through `IContentPermissionService` |
+| `Umbraco.Abilities.Cms/CmsSchemaMapper.cs` | Builds the schema from document and element types: a name and parent, then each property as its editor's handler describes it. Sets each field's alias and variation from the property |
+| `Umbraco.Abilities.Cms/PropertyEditors/PropertyEditorHandlers.cs` | The contract a property editor implements (`IPropertyEditorEntityHandler`: describe, read, write), the contexts handlers get, error locators, and `IPropertyEditorItemTypes` for editors whose values hold items |
+| `Umbraco.Abilities.Cms/PropertyEditors/BlockEditorHandler.cs` | Block List and Block Grid: one item type group per data type read from its configuration each call, values read and written with Umbraco's block value classes, and Umbraco's JSON error paths turned back into entity paths |
+| `Umbraco.Abilities.Cms/PropertyEditors/ValueEditorHandlers.cs` | The core editors whose value is the field's value (one line each), and the fallback: a whole JSON value with Umbraco's value schema |
+| `tests/Umbraco.Abilities.Cms.Tests/StarRatingEditor.cs` | A third party's editor and its handler, as a package would ship them |
+| `Umbraco.Abilities.Cms/CmsDocumentAdapter.cs` | The real adapter. Reads go through Umbraco's own block value classes in editor format. Each property is read and written by its editor's handler. Validation uses Umbraco's, with its JSON paths translated back to entity paths by the handler that wrote the value. Content is applied through its draft set, so its `SaveAsync` is unused. It is also the **draft set adapter** (stage, read, rebase, resolve, apply), and **authorization** goes through `IContentPermissionService` |
 | `Umbraco.Cms.DraftSets/DraftSetService.cs` | The stand-in for CMS core's Draft Sets. It records per-property changes over live content and reads through them, reports what others changed and the conflicts, and applies in one scope. It writes audit entries and raises notifications through the scope. It references Umbraco only |
-| `tests/Umbraco.Abilities.Cms.Tests/CmsDocumentDefinitionTests.cs` | Everything above against Umbraco 18 on SQLite: blocks, settings, grids and cultures saved by Umbraco; validation paths; rollback; resume; rebasing; draft sets; vetoes; real user permissions; the background queue |
+| `tests/Umbraco.Abilities.Cms.Tests/CmsDocumentAdapterTests.cs` | Everything above against Umbraco 18 on SQLite: blocks, settings, grids and cultures saved by Umbraco; validation paths; rollback; resume; rebasing; draft sets; vetoes; real user permissions; the background queue |
 
 **Look for:**
 - **The adapter's two jobs.** Reading `CmsDocumentAdapter` alongside `DraftSetService`, ask whether the line between
   them is where core's Draft Sets would draw it.
 - **The core checklist.** "[What core's Draft Sets must address](docs/ARCHITECTURE.md#what-cores-draft-sets-must-address-to-become-the-generic-change-set)" is the ask of the CMS team.
 - **Validation in some cultures only.** Look at how validation is limited to the cultures a document has.
+- **The property editor contract.** Read `StarRatingEditor.cs`, then `BlockEditorHandler`. Is describe, read and write
+  enough for the editors you know, and should the contract live in CMS core (see
+  [FINDINGS](docs/FINDINGS.md#where-property-editor-handlers-should-live))?
 
 ## How it all connects
 

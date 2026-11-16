@@ -112,6 +112,16 @@ like any other. Its handler adds the rest: adding a block places its tag in the 
 and every tag must have a block. Umbraco.AI's update tools have one handler per property editor, and the same split
 applies to them.
 
+**Property editors map their own values.** In the CMS, what a property's value looks like is up to its property
+editor, and third parties write editors. So the CMS adapter knows no editor. Each one has a handler
+(`IPropertyEditorEntityHandler`) that describes the field a property becomes, reads the stored value into it, and
+writes it back. It can also locate Umbraco's errors inside its value, and serve the item types of the groups it names
+(the block editors: one group per data type). Element values go back through the adapter, so each property inside
+a block goes to its own editor's handler. An editor with no handler is a whole JSON value with Umbraco's value schema.
+This is a different seam from `IValueHandler`: that one adds behaviour inside a value; this one is storage and
+schema. Where the contract should live (CMS core, Umbraco.AI or here) is an open question, written up in
+[FINDINGS](FINDINGS.md#where-property-editor-handlers-should-live).
+
 **What this replaces.** The proof of concept first kept "slots" (lists of items) apart from fields, then folded them into
 fields as an items value type, but still stored items apart from other values. Each step removed a question that
 shouldn't exist: whether a property editor is a field or a slot, and then why items are stored differently. Storing one

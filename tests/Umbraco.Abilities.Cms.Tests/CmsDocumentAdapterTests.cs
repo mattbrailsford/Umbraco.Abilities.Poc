@@ -61,6 +61,9 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
     {
         builder.AddNotificationHandler<ContentSavingNotification, RefuseSavingHandler>();
 
+        // A package's property editor, which Umbraco knows only as a JSON value.
+        builder.DataEditors().Add<StarRatingPropertyEditor>();
+
         // A package's handlers: veto sets with certain names, and record what was applied.
         builder.AddNotificationHandler<ChangeSetApplyingNotification, VetoHandler>();
         builder.AddNotificationHandler<DraftSetApplyingNotification, VetoHandler>();
@@ -125,6 +128,7 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
 
         // Editors the mapper has no rule for. Umbraco describes each one's value with a schema.
         var accent = await CreateEditorDataTypeAsync(Constants.PropertyEditors.Aliases.ColorPickerEyeDropper, "Accent colour");
+        var rating = await CreateEditorDataTypeAsync(StarRatingPropertyEditor.Alias, "Star rating");
 
         _page = new ContentTypeBuilder()
             .WithAlias("landingPage")
@@ -152,6 +156,10 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
             .AddPropertyType()
                 .WithAlias("size").WithName("Size").WithDataTypeId(Constants.DataTypes.DropDownSingle)
                 .WithPropertyEditorAlias(Constants.PropertyEditors.Aliases.DropDownListFlexible).WithVariations(ContentVariation.Nothing)
+                .Done()
+            .AddPropertyType()
+                .WithAlias("rating").WithName("Rating").WithDataTypeId(rating.Id)
+                .WithPropertyEditorAlias(StarRatingPropertyEditor.Alias).WithVariations(ContentVariation.Nothing)
                 .Done()
             .Build();
         _page.AllowedAsRoot = true;
@@ -186,7 +194,8 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
             itemTypes,
             new CmsScopeUnitOfWorkProvider(GetRequiredService<ICoreScopeProvider>()),
             () => Constants.Security.SuperUserKey,
-            GetRequiredService<IPropertyEditorSchemaService>());
+            GetRequiredService<IPropertyEditorSchemaService>(),
+            [new StarRatingHandler()]);
         adapters.Add(_documents);
 
         abilities
@@ -741,6 +750,36 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
         await SetAsync(page, "", "accent", "\"#336699\"");
         await _agent.OkAsync("changeSet_apply", SetJson());
         Assert.That(ContentService.GetById(page)!.GetValue<string>("accent"), Is.EqualTo("#336699"));
+    }
+
+    [Test]
+    public async Task A_third_party_editor_with_a_handler_is_a_field_shaped_by_that_handler()
+    {
+        // The package's handler makes the rating a whole number, not the editor's JSON.
+        var schema = await _agent.OkAsync("entity_getSchema", """{ "entityType": "document", "subtype": "landingPage" }""");
+        var rating = schema.GetProperty("fields").GetProperty("properties").GetProperty("rating");
+        Assert.That(rating.GetProperty("type").GetString(), Is.EqualTo("integer"), rating.ToString());
+
+        // Its rules are checked before Umbraco sees the value.
+        await _agent.StartChangeSetAsync("Rating");
+        var page = await CreatePageAsync();
+        await SetAsync(page, "", "subtitle", "\"Sun and sand\"", "en-US");
+        await SetAsync(page, "", "rating", "7");
+        var validation = await _agent.OkAsync("changeSet_validate", SetJson());
+        var problem = validation.GetProperty("entities")[0].GetProperty("problems")[0];
+        Assert.That(problem.GetProperty("path").GetString(), Is.EqualTo("rating"), problem.ToString());
+
+        // Saved in the editor's own shape, and read back as the number.
+        await SetAsync(page, "", "rating", "4");
+        await _agent.OkAsync("changeSet_apply", SetJson());
+        var stored = JsonNode.Parse(ContentService.GetById(page)!.GetValue<string>("rating")!)!;
+        var loaded = (await _documents.LoadAsync(page))!;
+        Assert.Multiple(() =>
+        {
+            Assert.That(stored["stars"]!.GetValue<int>(), Is.EqualTo(4));
+            Assert.That(stored["of"]!.GetValue<int>(), Is.EqualTo(5));
+            Assert.That(EntityValues.ReadAny(loaded.Fields, "rating")!.GetValue<int>(), Is.EqualTo(4));
+        });
     }
 
     [Test]

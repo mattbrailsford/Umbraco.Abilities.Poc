@@ -84,14 +84,14 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
 ## CMS draft sets
 
 - Content changes in a change set are a CMS draft set: the backoffice can read it, it records only what changed, and discarding the set discards it
-  - `CmsDocumentDefinitionTests.Content_changes_in_a_change_set_are_a_CMS_draft_set_that_records_only_what_changed`
+  - `CmsDocumentAdapterTests.Content_changes_in_a_change_set_are_a_CMS_draft_set_that_records_only_what_changed`
 - The CMS draft set works on its own, with no abilities: stage, read through, conflict, resolve, validate, apply
-  - `CmsDocumentDefinitionTests.A_draft_set_works_on_its_own_with_no_abilities`
+  - `CmsDocumentAdapterTests.A_draft_set_works_on_its_own_with_no_abilities`
 - A package can veto applying a change set or its CMS draft set with a cancelable notification, and both raise applied notifications; applying writes to the CMS audit log
-  - `CmsDocumentDefinitionTests.A_package_can_veto_applying_a_change_set_or_its_draft_set_with_a_CMS_notification`
-  - `CmsDocumentDefinitionTests.A_draft_set_works_on_its_own_with_no_abilities`
+  - `CmsDocumentAdapterTests.A_package_can_veto_applying_a_change_set_or_its_draft_set_with_a_CMS_notification`
+  - `CmsDocumentAdapterTests.A_draft_set_works_on_its_own_with_no_abilities`
 - A draft set applied in a scope that then rolls back isn't applied and raises no applied notification
-  - `CmsDocumentDefinitionTests.A_draft_set_applied_inside_a_scope_that_rolls_back_is_not_applied_and_raises_nothing`
+  - `CmsDocumentAdapterTests.A_draft_set_applied_inside_a_scope_that_rolls_back_is_not_applied_and_raises_nothing`
 
 ## Identity, permissions and retries
 
@@ -101,10 +101,10 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
   - `AuthorizationTests (all)`
 - An adapter with no access check can't be registered
   - `AuthorizationTests.An_adapter_that_does_not_check_access_cannot_be_registered`
-  - `CmsDocumentDefinitionTests.An_agent_gets_the_CMS_permissions_of_the_user_it_acts_for`
+  - `CmsDocumentAdapterTests.An_agent_gets_the_CMS_permissions_of_the_user_it_acts_for`
 - A side effect with retries is queued after apply and retried with backoff; it gives up after its limit; correctable input isn't retried; on real Umbraco it runs on the background queue
   - `SideEffectRetryTests (all)`
-  - `CmsDocumentDefinitionTests.A_side_effect_with_retries_runs_on_Umbracos_background_queue_after_the_content_commits`
+  - `CmsDocumentAdapterTests.A_side_effect_with_retries_runs_on_Umbracos_background_queue_after_the_content_commits`
 
 ## Plugin types and editor values
 
@@ -116,7 +116,9 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
 - A value whose model is its editor's (Rich Text's markup plus blocks) is edited inside through its handler, with the same tools; the handler keeps markup and blocks in step and reports its problems on paths inside the value
   - `ValueHandlerTests (all)`
 - Editors the CMS adapter has no rule for are fields described by Umbraco's own value schemas
-  - `CmsDocumentDefinitionTests.Editors_the_definition_has_no_rule_for_are_fields_described_by_Umbracos_value_schemas`
+  - `CmsDocumentAdapterTests.Editors_the_definition_has_no_rule_for_are_fields_described_by_Umbracos_value_schemas`
+- A third party's property editor with its own handler is the field its handler describes (a star rating as a number from 1 to 5), checked before Umbraco sees it, saved in the editor's own shape and read back
+  - `CmsDocumentAdapterTests.A_third_party_editor_with_a_handler_is_a_field_shaped_by_that_handler`
 
 ## Workflows
 
@@ -153,28 +155,28 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
 ## Against a real Umbraco
 
 - The schema comes from the document type: cultures, varying fields, block types per items field, settings, grid areas and placement
-  - `CmsDocumentDefinitionTests.The_schema_comes_from_the_document_type_and_its_block_editors`
+  - `CmsDocumentAdapterTests.The_schema_comes_from_the_document_type_and_its_block_editors`
 - A Block List offers the blocks its data type allows now: a block taken out of the data type stops being offered and can't be added, with no restart, and a page that already has one still loads, edits and is reported by validation
-  - `CmsDocumentDefinitionTests.A_block_list_offers_the_blocks_its_data_type_allows_now`
+  - `CmsDocumentAdapterTests.A_block_list_offers_the_blocks_its_data_type_allows_now`
 - A culture-variant page with a Block List (per-culture block values and a settings element) and a Block Grid (column span, areas) built through the AI tools is stored by Umbraco as expected, and loads back to the same shape
-  - `CmsDocumentDefinitionTests.A_page_built_from_text_is_saved_by_Umbraco_with_its_blocks_settings_grid_and_cultures`
+  - `CmsDocumentAdapterTests.A_page_built_from_text_is_saved_by_Umbraco_with_its_blocks_settings_grid_and_cultures`
 - Umbraco's validation errors come back on the entity paths and cultures, and the generic check agrees with Umbraco
-  - `CmsDocumentDefinitionTests.Umbraco_validation_problems_come_back_on_the_entity_paths_and_cultures`
+  - `CmsDocumentAdapterTests.Umbraco_validation_problems_come_back_on_the_entity_paths_and_cultures`
 - Editing an existing page keeps what the edit didn't touch (other cultures, settings, the grid)
-  - `CmsDocumentDefinitionTests.Editing_an_existing_page_keeps_everything_the_edit_did_not_touch`
+  - `CmsDocumentAdapterTests.Editing_an_existing_page_keeps_everything_the_edit_did_not_touch`
 - A page refused on save (by a notification handler) rolls back the page saved before it in the same Umbraco scope
-  - `CmsDocumentDefinitionTests.A_failed_save_rolls_back_every_document_in_the_Umbraco_scope`
+  - `CmsDocumentAdapterTests.A_failed_save_rolls_back_every_document_in_the_Umbraco_scope`
 - A side effect failing after Content's step leaves the content applied, and resuming doesn't save it again
-  - `CmsDocumentDefinitionTests.A_failed_side_effect_after_the_content_leaves_the_content_applied_and_the_set_resumable`
+  - `CmsDocumentAdapterTests.A_failed_side_effect_after_the_content_leaves_the_content_applied_and_the_set_resumable`
 - A backoffice change made meanwhile (Danish subtitle) is rebased onto; the set's block edit applies on top and both are kept
-  - `CmsDocumentDefinitionTests.Changes_saved_in_the_backoffice_meanwhile_are_rebased_onto_when_they_do_not_overlap`
+  - `CmsDocumentAdapterTests.Changes_saved_in_the_backoffice_meanwhile_are_rebased_onto_when_they_do_not_overlap`
 - A value changed in both the set and the backoffice is a conflict, with its culture, until one is kept
-  - `CmsDocumentDefinitionTests.A_value_changed_in_both_the_set_and_the_backoffice_is_a_conflict_to_resolve`
+  - `CmsDocumentAdapterTests.A_value_changed_in_both_the_set_and_the_backoffice_is_a_conflict_to_resolve`
 - Values that vary by culture and segment are saved per segment, in the page and inside a block, and load back the same
-  - `CmsDocumentDefinitionTests.Values_that_vary_by_culture_and_segment_are_saved_per_segment_and_load_back`
-  - `CmsDocumentDefinitionTests.Block_values_that_vary_by_segment_are_saved_in_the_block_and_load_back`
+  - `CmsDocumentAdapterTests.Values_that_vary_by_culture_and_segment_are_saved_per_segment_and_load_back`
+  - `CmsDocumentAdapterTests.Block_values_that_vary_by_segment_are_saved_in_the_block_and_load_back`
 - A required value left empty in a segment is a problem in that segment, from Umbraco and from the generic check alike
-  - `CmsDocumentDefinitionTests.A_required_value_missing_in_a_segment_is_a_problem_in_that_segment_as_Umbraco_reports_it`
+  - `CmsDocumentAdapterTests.A_required_value_missing_in_a_segment_is_a_problem_in_that_segment_as_Umbraco_reports_it`
 - A value that varies by segment only is shared by every culture, saved per segment, and a missing one is a problem with no culture
-  - `CmsDocumentDefinitionTests.A_value_that_varies_by_segment_only_is_shared_by_every_culture_and_saved_per_segment`
-  - `CmsDocumentDefinitionTests.A_required_segment_only_value_missing_in_a_segment_is_a_problem_with_no_culture`
+  - `CmsDocumentAdapterTests.A_value_that_varies_by_segment_only_is_shared_by_every_culture_and_saved_per_segment`
+  - `CmsDocumentAdapterTests.A_required_segment_only_value_missing_in_a_segment_is_a_problem_with_no_culture`

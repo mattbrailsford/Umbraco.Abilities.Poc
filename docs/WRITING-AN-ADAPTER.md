@@ -71,8 +71,9 @@ still load, and validation reports them. When reading the setting means a databa
 asynchronous list instead: `allow.Field(x => x.Blocks, async cancellationToken => ...)`. It's read once per call. `AllowItems` also takes aliases, for a
 plugin seam's `DynamicItem` field, and fields of item classes inside the model. The real `CmsDocumentAdapter` builds
 its schema from data types, so it goes one step further: each data type has its own item type group
-(`cms.blocks:{dataTypeKey}`), and one source serves them all (`CmsBlockItemTypeSource`). A source says which groups it
-serves and is asked for one at a time, so it can read that group's configuration when a call needs it.
+(`cms.blocks:{dataTypeKey}`), and the block editor's handler serves them all (`BlockEditorHandler`, see
+[Property editors in the CMS adapter](#property-editors-in-the-cms-adapter)). A source says which groups it serves and
+is asked for one at a time, so it can read that group's configuration when a call needs it.
 
 **Fluent configuration**, for a class the package doesn't own or won't annotate, such as a Management API request
 model in another assembly. It needs no base class either: items name their own key property
@@ -170,9 +171,11 @@ A CMS document type is defined in the backoffice. It has no class to describe, s
 `IEntityAdapter` over the typed `Entity`. An Automate workflow looked like the same case, since its step types are
 other packages' abilities and plugins. But only its steps vary, so it is a model class with `List<DynamicItem>` steps,
 as a discount's rules are. In the CMS adapter there is still no `JsonObject` digging: they use `item.Settings` or `item.Layout`, not
-`item["settings"]["fields"]`. The CMS adapter builds Umbraco's own `BlockListValue`, `BlockGridValue`,
+`item["settings"]["fields"]`. The block editor's handler builds Umbraco's own `BlockListValue`, `BlockGridValue`,
 `BlockItemData`, `BlockPropertyValue`, `BlockGridLayoutItem` and `BlockItemVariation` instead of hand-built
-envelopes, and Umbraco's serializer reads and writes them. Moving to the typed document took it from 621 lines to 599.
+envelopes, and Umbraco's serializer reads and writes them. Moving to the typed document took it from 621 lines to 599. Each
+property's value is its editor's handler's job (see
+[Property editors in the CMS adapter](#property-editors-in-the-cms-adapter)), so the adapter itself names no editor.
 
 ## Values, paths and handlers
 
@@ -212,9 +215,69 @@ Because paths reach inside every described value, rebasing works per value and p
 included, and references inside objects and items are checked. Only a JSON value with just a schema is still opaque:
 it rebases as one value, and references in it aren't seen.
 
-**Not done yet.** The CMS adapter still maps Block List and Block Grid itself, to the built-in items. The next step
-is to make those editors' handlers the ones Umbraco.AI already has (`IAIPropertyValueHandler`), so Abilities and
-Umbraco.AI's tools share one handler model and the CMS adapter loses its block code.
+## Property editors in the CMS adapter
+
+In the CMS, a property's value is shaped by its property editor, and anyone can write an editor. So the CMS adapter
+knows no editor. Each editor has a handler, `IPropertyEditorEntityHandler`, that turns its values into a field and
+back. A property editor's package implements one, and every property using the editor works with the entity tools.
+
+| Method | What it does |
+| --- | --- |
+| `Handles(editorAlias)` | Says which editor it maps |
+| `DescribeAsync(context)` | The field a property becomes. `context` has the property, its data type and configuration, and helpers (`context.Field(type)`, `context.Items(group)`) |
+| `ReadAsync(stored, reader)` | The stored value, in editor format, as the field's value. For an items field, an array of items |
+| `WriteAsync(value, writer)` | The field's value as the stored value Umbraco saves |
+
+A third party's star rating, stored as `{ "stars": 4, "of": 5 }` (`tests/Umbraco.Abilities.Cms.Tests/StarRatingEditor.cs`):
+
+```csharp
+public sealed class StarRatingHandler : IPropertyEditorEntityHandler
+{
+    public bool Handles(string editorAlias) => editorAlias == "Acme.StarRating";
+
+    public Task<FieldDefinition> DescribeAsync(PropertyEditorContext context, CancellationToken cancellationToken = default)
+        => Task.FromResult(context.Field(FieldType.Integer) with
+        {
+            Description = $"{context.Description} A rating in stars, 1 to 5.",
+            Rules = [new RangeAttribute(1, 5)],
+        });
+
+    public Task<JsonNode?> ReadAsync(JsonNode stored, PropertyValueReader reader, CancellationToken cancellationToken = default)
+        => Task.FromResult(Parse(stored)?["stars"]?.DeepClone()); // Parse: stored JSON comes back as text or an object
+
+    public Task<JsonNode?> WriteAsync(JsonNode value, PropertyValueWriter writer, CancellationToken cancellationToken = default)
+        => Task.FromResult<JsonNode?>(new JsonObject { ["stars"] = value.DeepClone(), ["of"] = 5 });
+}
+```
+
+A model now sets a number, and a rating of 7 is a problem on `rating` before Umbraco sees it. Without the handler, the
+rating would be a whole JSON value the model has to get right.
+
+What the adapter does, so a handler doesn't:
+
+- **The property.** The field's alias and variation come from the property, after the handler describes it.
+- **Cultures and segments.** A handler reads and writes one value; the adapter calls it once per variant.
+- **Elements.** An editor whose values hold elements (blocks) asks the adapter to read or write them
+  (`reader.ReadElementAsync`, `writer.WriteElementAsync`). Each of the element's properties goes to its own handler.
+- **Saving and validating.** Through `IContentEditingService`, as before.
+
+Two optional parts, for editors that need them:
+
+- **Error paths.** Umbraco reports an error inside a value as a JSON path into it. `writer.LocateErrorsWith(...)` says
+  how to turn that into an entity path. Without it, the error is on the property, with the JSON path.
+- **Item types.** A handler whose field holds items also implements `IPropertyEditorItemTypes`: which groups it serves,
+  and their item types now. The block handler reads the data type's allowed blocks each call.
+
+| Handler | Editors |
+| --- | --- |
+| `ValueEditorHandler` | An editor whose stored value is the field's value. One line per editor: `new ValueEditorHandler("My.Editor", c => c.Field(FieldType.String))`. Used for the core text, number, boolean, tags and content picker editors |
+| `BlockEditorHandler` | Block List and Block Grid |
+| `JsonValueEditorHandler` | The fallback: any other editor is a whole JSON value, described by Umbraco's value schema for it |
+
+Handlers are passed to the adapter (`editorHandlers`), and are asked before the core ones, so a package can also map a
+core editor its own way. A real package would register its handler through a collection builder. Where the contract
+should live (CMS core, Umbraco.AI or here) is open: see
+[FINDINGS](FINDINGS.md#where-property-editor-handlers-should-live).
 
 ## Item types for plugin seams
 

@@ -130,6 +130,36 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
    its entity's schema uses, then the groups those blocks use, so it is always current and reads nothing else. A page
    that already holds a block its data type no longer allows still loads and can still be edited; validation names the
    block. Its settings are kept, but a grid block's areas are not, since the configuration no longer names them.
+18. **Each property editor maps its own values.** The CMS schema mapper had a `switch` on editor aliases, and the
+   adapter held all the Block List and Block Grid code. So a third party's editor could only ever be a whole JSON value.
+   Now each editor has a handler (`IPropertyEditorEntityHandler`) that does three things: describes the field a
+   property becomes, reads the stored value into the field's value, and writes it back. A handler can also say how to
+   turn Umbraco's error paths inside its value into entity paths, and serve the item types of the groups it names.
+   The core editors moved onto it, and the adapter and mapper no longer name any editor:
+
+   | Handler | Editors | Size |
+   | --- | --- | --- |
+   | `ValueEditorHandler` | Text box, text area, integer, decimal, boolean, tags, content picker | One line each |
+   | `BlockEditorHandler` | Block List and Block Grid: the group per data type, its item types, reading and writing block values, error paths | ~380 lines, moved out of the adapter and mapper |
+   | `JsonValueEditorHandler` | Every editor no handler takes: a whole JSON value with Umbraco's value schema | The fallback |
+   | `StarRatingHandler` (test project) | A third party's editor, stored as `{ "stars": 4, "of": 5 }` | ~25 lines. Its field is a number from 1 to 5, checked before Umbraco sees it |
+
+   The adapter went from about 770 lines to about 550, and the mapper from 250 to 80. Building it taught four things:
+   - **Elements go back through the adapter.** A block's values are properties too, each with its own editor. So a
+     handler never maps an element's properties itself: it asks the adapter to read or write them
+     (`ReadElementAsync`, `WriteElementAsync`), and each property goes to its own handler. A star rating inside a
+     block works with no extra code.
+   - **Error paths chain.** Umbraco reports an error inside a block in a block as one long JSON path. The block
+     handler finds the block, then hands the rest of the path to the inner property's locator. Each handler only
+     knows its own format.
+   - **The property stays the CMS's.** The adapter sets the field's alias and variation from the property after the
+     handler describes it, so a handler can't get them wrong. Cultures, segments and saving stay in the adapter.
+   - **Item types need element schemas, which need handlers.** Building a block's item type maps its element type,
+     whose properties need handlers. Passing the element schemas into the call (`IElementSchemas`), instead of
+     giving the handler the mapper, keeps the handlers free of that loop.
+
+   Where the handlers should live in the end is open. See
+   [Where property editor handlers should live](#where-property-editor-handlers-should-live).
 
 ## Developer experience of adapters
 
@@ -163,8 +193,8 @@ How the CMS document adapter's code splits, and who else has each part:
 | Part | Lines (rough) | Who else has it | Generic fix |
 | --- | --- | --- | --- |
 | Building the schema from document types and data types | ~270 | Anything editors define: media types, member types, likely Forms | A base class for "types are data": the product lists its type definitions, and the framework builds the schema |
-| Reading and writing block values (layout, contentData, settingsData, expose) | ~260 | Any product storing property editor values: element types, UI Builder | Value handlers per editor, so the knowledge lives with the editor. Umbraco.AI's `IAIPropertyValueHandler` is the starting point |
-| Turning Umbraco's error paths back into entity paths | ~90 | Any product that validates in its own path format | The same handler translates its editor's errors |
+| Reading and writing block values (layout, contentData, settingsData, expose) | ~260 | Any product storing property editor values: element types, UI Builder | Done: a handler per editor (finding 18). The block code now lives in `BlockEditorHandler` |
+| Turning Umbraco's error paths back into entity paths | ~90 | Any product that validates in its own path format | Done: each handler locates errors in its own value, and hands nested paths on |
 | Plugging into CMS draft sets | ~90 | Any product with its own drafts | Already generic: `IDraftingEntityAdapter` |
 | Permissions | ~50 | Any product with its own permission model | Already generic: `IAuthorizingEntityAdapter` |
 | CMS behaviour: update replaces every value, invalid values saved then reported, every culture validated | ~100 | Only the CMS | Belongs in CMS core: see the Draft Sets checklist in ARCHITECTURE |
@@ -175,21 +205,36 @@ and its adapter converts them on load and save.
 Two parts are not about the CMS at all. They are about any model whose types are data. What would help, and what
 is not built yet:
 
-1. **Value handlers per editor.** A handler that knows one property editor's stored value: how to read it into
-   fields and items, how to write it back, and how to turn the editor's error paths into entity paths. The CMS
-   adapter would then ask a registry for the handler of each property, instead of knowing Block List and Block Grid
-   itself. Element types and UI Builder would reuse the same handlers. Umbraco.AI's `IAIPropertyValueHandler` is the
-   starting point, so both share one handler model. It moves the ~260 lines of block code and the ~90 lines of error
-   paths out of the adapter and next to each editor. The handler also owns what an editor allows, since that is
-   editor configuration: a Block List's allowed blocks come from its data type's configuration, not from a type
-   hierarchy, so the handler reads the list per data type and offers only those blocks. The seam for that exists now:
-   a source that serves a group per data type and reads it when asked (see finding 17).
+1. **Value handlers per editor.** Built (finding 18). A handler knows one property editor's stored value: how to
+   describe it, read it into fields and items, write it back, and turn the editor's error paths into entity paths. It
+   also owns what the editor allows, since that is editor configuration: the block handler reads a data type's
+   allowed blocks per call. Element types and UI Builder could reuse the same handlers. Still open: where they live.
 2. **A base class for "types are data".** The product lists its type definitions (document types, media types,
    member types, forms) and each property's editor. The framework builds the schema, using the value handlers for
    each editor's inner structure. The product still loads and saves. This covers the ~270 lines of schema building.
 
 With both, a CMS-like adapter would be its load, save, drafts and permissions, as the typed adapters are. The CMS
 behaviour row stays: it is a change for CMS core, not for adapters.
+
+### Where property editor handlers should live
+
+The handlers are built in this repo, in `Umbraco.Abilities.Cms/PropertyEditors`. For a property editor's developer
+to ship one and have it "just work" everywhere, it has to live somewhere every consumer can see. Three places:
+
+| Place | For | Against |
+| --- | --- | --- |
+| CMS core, beside the property editor | A property editor already owns its value editor and its value schema (`IPropertyEditorSchemaService`). A handler is the next part of the same contract. Every consumer gets it: Abilities, Umbraco.AI, imports, Deploy-like tools. An editor's package ships one thing | A core change: it goes through Umbraco's RFC process on GitHub, and once public it is bound by semver |
+| Umbraco.AI | It already has one handler per editor, `IAIPropertyValueHandler`, for building values step by step on a path | Abilities isn't AI specific, and must not depend on the AI packages. Editors would implement an AI interface to work with anything else |
+| This framework (`Umbraco.Abilities.Cms`) | Where it is now. No one else has to agree | Only the abilities see it. An editor's package would need a reference to Abilities |
+
+The recommendation is CMS core in the long run, through an RFC, with this repo as the place to settle the contract
+first. Before that, the contract should be compared with `IAIPropertyValueHandler` line by line. This has not been
+done yet: the two seem to cover the same ground (one handler per editor, knowing its stored value), but that is an
+assumption until checked. If they match, Umbraco.AI's handlers could become adapters over the core ones.
+
+The handler here is separate from the framework's own `IValueHandler`. That one adds behaviour inside a value
+(Rich Text keeps its markup and blocks in step) and knows nothing about storage. A property editor handler can set
+one on the field it describes.
 
 ## What running against Umbraco taught us
 
@@ -227,8 +272,9 @@ The tests that show it are listed in [TESTS.md](TESTS.md#against-a-real-umbraco)
    each of the page's cultures.
 
 Not covered yet: templates (an update would clear one), publishing, rich text with blocks, culture-variant block
-properties against real Umbraco, a parent created in the same set, and editors other than text,
-numbers, booleans, tags, content picker and blocks (they pass through as JSON, untested).
+properties against real Umbraco, a parent created in the same set, a third party's editor inside a block, and saving
+most editors that pass through as JSON (only the eyedropper is saved in a test). Handlers are passed to the adapter's
+constructor; a real package would register them through a collection builder.
 
 ## Against a real model
 
