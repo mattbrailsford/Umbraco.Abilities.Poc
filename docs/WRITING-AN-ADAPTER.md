@@ -50,11 +50,26 @@ public sealed class CmsPage : EntityModel
 An items field of classes needs no group name and no registration. Its item types are every `[ItemType]` class that
 extends the list's element type, found when the adapter is created. Name classes only to narrow the list.
 
-This rule is for models written in code, where the class hierarchy is the package's own choice. The sample page is a
-code-defined stand-in, not how CMS content works. In the CMS, a Block List or Block Grid allows the blocks its data
-type's configuration lists, and two properties on the same document type can allow different blocks. The real
-`CmsDocumentAdapter` reads that list per data type (`CmsSchemaMapper`), with one item type group per data type. The
-code-defined equivalent of a data type's list is naming the classes: `[Items(typeof(Hero), typeof(CardGrid))]`.
+The class hierarchy only says which classes *could* go in a field. Which ones are allowed is often a setting. In the
+CMS, a Block List or Block Grid allows the blocks its data type's configuration lists, and two properties on the same
+document type can allow different blocks. There are two ways to say it:
+
+| The allowed list is | Write |
+| --- | --- |
+| Fixed in code | Name the classes: `[Items(typeof(TwoColumn), typeof(RichText))]` |
+| A setting, known only at run time | Override `AllowItems` on the adapter. The list is read each time it's needed, so a changed setting applies straight away |
+
+```csharp
+public List<Type> AllowedBlocks { get; } = [typeof(Hero), typeof(CardGrid)];   // stands in for the data type's configuration
+
+protected override void AllowItems(ItemAllowList<Page> allow)
+    => allow.Field(x => x.Blocks, () => AllowedBlocks);
+```
+
+A type not in the list isn't offered in the schema, and adding one is refused. `AllowItems` also takes aliases, for a
+plugin seam's `DynamicItem` field, and fields of item classes inside the model. The real `CmsDocumentAdapter` builds
+its schema from data types, so it reads each data type's list itself (`CmsSchemaMapper`), with one item type group per
+data type.
 
 **Fluent configuration**, for a class the package doesn't own or won't annotate, such as a Management API request
 model in another assembly. It needs no base class either: items name their own key property

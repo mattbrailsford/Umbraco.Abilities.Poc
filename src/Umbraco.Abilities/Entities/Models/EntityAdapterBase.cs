@@ -37,6 +37,8 @@ public abstract class EntityAdapterBase<TModel> : IAuthorizingEntityAdapter
         {
             itemTypes.AddSource(source);
         }
+
+        AllowItems(new ItemAllowList<TModel>(itemTypes));
     }
 
     public string EntityType => _entity.EntityType;
@@ -107,6 +109,16 @@ public abstract class EntityAdapterBase<TModel> : IAuthorizingEntityAdapter
 
     protected virtual string? GetEditUrl(Guid key) => null;
 
+    /// <summary>
+    /// Item types allowed by a setting only known at run time, such as a Block List data type's allowed blocks:
+    /// <c>allow.Field(x =&gt; x.Blocks, () =&gt; settings.AllowedBlocks)</c>. The list is read
+    /// each time it's needed, so a changed setting applies straight away. Optional: without it, an items field allows
+    /// the classes its attribute names, or every class that extends its element type.
+    /// </summary>
+    protected virtual void AllowItems(ItemAllowList<TModel> allow)
+    {
+    }
+
     // ── IEntityAdapter, done by the framework ───────────────────────────────────────────────────
 
     public Task<IReadOnlyList<EntitySubtype>> GetSubtypesAsync(CancellationToken cancellationToken = default)
@@ -172,6 +184,36 @@ public abstract class EntityAdapterBase<TModel> : IAuthorizingEntityAdapter
         };
         entity.Fields = ModelSchemas.Write(model);
         return entity;
+    }
+}
+
+/// <summary>Limits items fields to the item types a run-time setting allows. See <c>AllowItems</c> on the adapter.</summary>
+public sealed class ItemAllowList<TModel>(ItemTypeRegistry itemTypes)
+    where TModel : class
+{
+    /// <summary>Allows only these item classes in a field of the model.</summary>
+    public ItemAllowList<TModel> Field<TValue>(Expression<Func<TModel, TValue>> field, Func<IEnumerable<Type>> itemClasses)
+        => Field<TModel, TValue>(field, itemClasses);
+
+    /// <summary>Allows only the item types with these aliases in a field of the model, e.g. a plugin seam's <c>DynamicItem</c> field.</summary>
+    public ItemAllowList<TModel> Field<TValue>(Expression<Func<TModel, TValue>> field, Func<IEnumerable<string>> aliases)
+        => Field<TModel, TValue>(field, aliases);
+
+    /// <summary>Allows only these item classes in a field of an item class inside the model.</summary>
+    public ItemAllowList<TModel> Field<TOwner, TValue>(Expression<Func<TOwner, TValue>> field, Func<IEnumerable<Type>> itemClasses)
+        where TOwner : class
+        => Field(field, () => itemClasses().Select(c => ModelSchemas.Info(c).ItemType?.Alias
+            ?? throw new InvalidOperationException($"{c.Name} is not an item type: add [ItemType] or configure it with IsItemType.")));
+
+    /// <summary>Allows only the item types with these aliases in a field of an item class inside the model.</summary>
+    public ItemAllowList<TModel> Field<TOwner, TValue>(Expression<Func<TOwner, TValue>> field, Func<IEnumerable<string>> aliases)
+        where TOwner : class
+    {
+        var alias = ModelSchemas.AliasOf(ModelBuilder<TOwner>.PropertyOf(field));
+        var group = ModelSchemas.SchemaOf(typeof(TOwner)).Find(alias)?.ItemTypeGroup
+            ?? throw new InvalidOperationException($"{typeof(TOwner).Name}.{alias} is not an items field.");
+        itemTypes.Allow(group, aliases);
+        return this;
     }
 }
 

@@ -36,10 +36,12 @@ public sealed class Page : EntityModel
     [EntityKey("document", "media"), Description("Related pages or media.")]
     public List<EntityReference>? Related { get; set; }
 
+    // Allowed blocks come from the data type's configuration at run time: see CmsPageAdapter.AllowedBlocks.
     [Items, Description("The page's content blocks.")]
     public List<PageBlock> Blocks { get; set; } = [];
 
-    [Items, Description("A layout grid.")]
+    // Or named in code, when the list is fixed.
+    [Items(typeof(TwoColumn), typeof(RichText)), Description("A layout grid.")]
     public List<GridBlock> Grid { get; set; } = [];
 
     [Items, Description("Promotions, chosen per language.")]
@@ -192,6 +194,15 @@ public sealed class CmsPageAdapter(InMemoryDatabase database, ItemTypeRegistry i
     public static readonly IReadOnlyList<string> Cultures = ["en-US", "da-DK"];
 
     public const int GridColumns = 12;
+
+    /// <summary>
+    /// Stands in for the Block List data type's configuration: the blocks an editor allowed on the property. It can
+    /// change while the site runs, so it's read each time the field's item types are needed.
+    /// </summary>
+    public List<Type> AllowedBlocks { get; } = [typeof(Hero), typeof(CardGrid)];
+
+    protected override void AllowItems(ItemAllowList<Page> allow)
+        => allow.Field(x => x.Blocks, () => AllowedBlocks);
 
     protected override Task<IReadOnlyList<string>?> GetDimensionValuesAsync(string dimension, CancellationToken cancellationToken)
         => Task.FromResult(dimension == VariationDimensions.Culture ? Cultures : null);

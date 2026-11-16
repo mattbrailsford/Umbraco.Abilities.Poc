@@ -203,6 +203,23 @@ public class TypedModelTests
         Assert.Contains("[EntityKey(\"umbraco-commerce-discount\")]", error.Message);
     }
 
+[Fact]
+    public async Task A_fields_allowed_item_types_can_come_from_a_setting_read_at_run_time()
+    {
+        // The page's blocks field allows what its data type's configuration lists, as a Block List does.
+        var page = await _site.Pages.GetSchemaAsync(null);
+        var blocks = page.Root.Fields.Single(f => f.Alias == "blocks").ItemTypeGroup!;
+        Assert.Equal(["cardGrid", "hero"], _site.ItemTypes.InGroup(blocks).Select(t => t.Alias).Order());
+
+        // An editor removes the card grid from the data type: it is no longer offered, and can't be added.
+        _site.Pages.AllowedBlocks.Remove(typeof(CardGrid));
+        Assert.Equal(["hero"], _site.ItemTypes.InGroup(blocks).Select(t => t.Alias));
+
+        await _agent.StartChangeSetAsync("Page");
+        var key = (await _agent.OkAsync("entity_create", """{ "entityType": "document" }""")).GetProperty("key").GetGuid();
+        await _agent.FailAsync("entity_addItem", $$"""{ "entityType": "document", "key": "{{key}}", "fieldPath": "blocks", "itemType": "cardGrid" }""");
+    }
+
     private sealed record UnmarkedInput(Guid Discount);
 
     [Ability("test.unmarked", "Unmarked", Kind = AbilityKind.Write)]

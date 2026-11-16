@@ -234,6 +234,7 @@ public sealed class ItemTypeRegistry
 {
     private readonly Dictionary<(string Group, string Alias), ItemTypeDefinition> _types = [];
     private readonly List<IItemTypeSource> _sources = [];
+    private readonly Dictionary<string, Func<IEnumerable<string>>> _allowed = [];
 
     /// <summary>Adds a plugin seam's item types, read from the product's registry whenever they're needed.</summary>
     public ItemTypeRegistry AddSource(IItemTypeSource source)
@@ -294,6 +295,16 @@ public sealed class ItemTypeRegistry
         return this;
     }
 
+    /// <summary>
+    /// Limits a group to the item types a setting allows, read each time the group is used: a Block List data type's
+    /// allowed blocks, for example. Types not in the list are not offered, and can't be added.
+    /// </summary>
+    public ItemTypeRegistry Allow(string group, Func<IEnumerable<string>> aliases)
+    {
+        _allowed[group] = aliases;
+        return this;
+    }
+
     /// <summary>Adds the type unless one is already registered for its group and alias.</summary>
     public ItemTypeRegistry AddIfMissing(ItemTypeDefinition itemType)
     {
@@ -314,8 +325,16 @@ public sealed class ItemTypeRegistry
         => InGroup(group).FirstOrDefault(t => t.Alias == alias);
 
     public IReadOnlyList<ItemTypeDefinition> InGroup(string group)
-        => _types.Values.Where(t => t.Group == group || t.AlsoIn.Contains(group))
-            .Concat(_sources.Where(s => s.Group == group).SelectMany(s => s.GetItemTypes()))
-            .ToList();
+    {
+        var types = _types.Values.Where(t => t.Group == group || t.AlsoIn.Contains(group))
+            .Concat(_sources.Where(s => s.Group == group).SelectMany(s => s.GetItemTypes()));
+        if (_allowed.TryGetValue(group, out var allowed))
+        {
+            var aliases = allowed().ToHashSet(StringComparer.Ordinal);
+            types = types.Where(t => aliases.Contains(t.Alias));
+        }
+
+        return types.ToList();
+    }
 }
 

@@ -157,7 +157,8 @@ is not built yet:
    starting point, so both share one handler model. It moves the ~260 lines of block code and the ~90 lines of error
    paths out of the adapter and next to each editor. The handler also owns what an editor allows, since that is
    editor configuration: a Block List's allowed blocks come from its data type's configuration, not from a type
-   hierarchy, so the handler reads the list per data type and offers only those blocks.
+   hierarchy, so the handler reads the list per data type and offers only those blocks. The registry's run-time allow
+   list (`ItemTypeRegistry.Allow`, which typed adapters reach through `AllowItems`) is the seam it would use.
 2. **A base class for "types are data".** The product lists its type definitions (document types, media types,
    member types, forms) and each property's editor. The framework builds the schema, using the value handlers for
    each editor's inner structure. The product still loads and saves. This covers the ~270 lines of schema building.
