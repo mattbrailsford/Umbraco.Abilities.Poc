@@ -78,6 +78,19 @@ public sealed class ValueHandlerAttribute(Type handlerType) : Attribute
     public Type HandlerType { get; } = handlerType;
 }
 
+/// <summary>
+/// An optional base class for entity models: the key and the stored version, so a model declares only its fields. A
+/// model that can't derive from it marks its own <c>[Key]</c> and <c>[EntityVersion]</c> properties instead.
+/// </summary>
+public abstract class EntityModel
+{
+    [System.ComponentModel.DataAnnotations.Key]
+    public Guid Key { get; set; }
+
+    [EntityVersion]
+    public long? Version { get; set; }
+}
+
 /// <summary>The base class for item models. The key identifies the item within its field; leave it empty for a new item.</summary>
 public abstract class EntityItemModel
 {

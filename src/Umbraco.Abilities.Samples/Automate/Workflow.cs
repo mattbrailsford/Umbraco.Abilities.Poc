@@ -11,14 +11,8 @@ namespace Umbraco.Abilities.Samples.Automate;
 
 /// <summary>An Automate workflow's editing contract: one trigger, then steps whose item types are plugins and abilities.</summary>
 [Entity("umbraco-automate-workflow", "Workflow", Description = "An automation: a trigger, then steps.")]
-public sealed class WorkflowEditModel
+public sealed class WorkflowEditModel : EntityModel
 {
-    [Key]
-    public Guid Key { get; set; }
-
-    [EntityVersion]
-    public long? Version { get; set; }
-
     [EntityName, Required, Description("Workflow name.")]
     public string? Name { get; set; }
 

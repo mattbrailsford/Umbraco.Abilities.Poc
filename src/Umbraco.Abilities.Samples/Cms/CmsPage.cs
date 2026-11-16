@@ -18,14 +18,8 @@ namespace Umbraco.Abilities.Samples.Cms;
 /// </list>
 /// </summary>
 [Entity("document", "Page", Description = "A content page.")]
-public sealed class Page
+public sealed class Page : EntityModel
 {
-    [Key]
-    public Guid Key { get; set; }
-
-    [EntityVersion]
-    public long? Version { get; set; }
-
     [EntityName, Required, Description("Page name.")]
     public Varying<string> Title { get; set; } = [];
 

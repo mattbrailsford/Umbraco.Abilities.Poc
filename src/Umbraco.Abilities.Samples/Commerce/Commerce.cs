@@ -17,27 +17,15 @@ namespace Umbraco.Abilities.Samples.Commerce;
 // AI and change sets need is derived from them; the adapter maps them to and from the domain. ─────────────
 
 [Entity("umbraco-commerce-collection", "Collection", Description = "A product collection.")]
-public sealed class Collection
+public sealed class Collection : EntityModel
 {
-    [Key]
-    public Guid Key { get; set; }
-
-    [EntityVersion]
-    public long? Version { get; set; }
-
     [EntityName, Required, Description("Collection name.")]
     public string? Name { get; set; }
 }
 
 [Entity("umbraco-commerce-discount", "Discount", Description = "A discount applied when all its rules match.")]
-public sealed class DiscountEditModel
+public sealed class DiscountEditModel : EntityModel
 {
-    [Key]
-    public Guid Key { get; set; }
-
-    [EntityVersion]
-    public long? Version { get; set; }
-
     [EntityName, Required, Description("Name shown to editors.")]
     public string? Name { get; set; }
 
