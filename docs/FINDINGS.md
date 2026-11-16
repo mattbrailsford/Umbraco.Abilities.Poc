@@ -223,6 +223,8 @@ package code found these costs:
 | Descriptions are written as `[Description]`, next to doc comments | Fall back to `/// <summary>` | Not done. Needs the XML doc file shipped, or a source generator |
 | A missing `[Key]` or an unsupported property type fails at start-up | Build-time checks from a source generator, which could also replace the reflection in `ModelSchemas` | Not done. Start-up errors now say what to add |
 | Testing an adapter needs the framework's own test harness | Ship `ScriptedAgent` and a "load, change, save and compare" check | Not done |
+| Load, save, find and list are written by hand for every product | Point a base adapter at the product's storage. Going straight to the database (EF Core) skips the product's services, so its business rules, notifications, caches and audit too. Safer: name the service methods that load and save, and the base calls them | Not done. An idea to track. First check which products store data with EF Core and which save through services |
+| Permissions are written by hand | Declare the backoffice section on the model, and generate the section check. Finer rules stay by hand | Not done. An idea to track |
 
 Measured on the Commerce sample, the item types, mapper and domain rules went from about 55 statement lines to about
 30. The editing contract lost its key and version lines. Automate's workflow lost its hand-written schema, and its
