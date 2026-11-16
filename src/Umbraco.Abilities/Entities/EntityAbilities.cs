@@ -1,0 +1,306 @@
+using System.ComponentModel;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+
+using Umbraco.Abilities.ChangeSets;
+
+namespace Umbraco.Abilities.Entities;
+
+// The generic entity abilities. They work for every registered entity definition, so no package writes
+// create_discount, add_discount_rule and so on. Edits only run inside a change set.
+
+public interface IEntityEditInput
+{
+    string EntityType { get; }
+
+    Guid? Key { get; }
+
+    /// <summary>The variant to edit, e.g. <c>{ "culture": "da-DK" }</c>. Values that don't vary ignore it.</summary>
+    Dictionary<string, string>? Variant { get; }
+}
+
+/// <summary>Base for entity edits: recorded into a change set, applied to a working copy on replay.</summary>
+public abstract class EntityEditAbilityBase<TInput> : AbilityBase<TInput, object>, IEntityEditAbility
+    where TInput : IEntityEditInput
+{
+    protected virtual bool Creates => false;
+
+    public EntityEditTarget Prepare(JsonObject input)
+    {
+        FillKeys(input);
+        var typed = Read(input);
+        if (string.IsNullOrWhiteSpace(typed.EntityType))
+        {
+            throw new AbilityInputException("entityType is required.", [new Problem("entityType", "Required.")]);
+        }
+
+        var key = typed.Key ?? throw new AbilityInputException("key is required.", [new Problem("key", "Required.")]);
+        return new EntityEditTarget(typed.EntityType, key, Creates, (typed as CreateEntityInput)?.Subtype);
+    }
+
+    public object? Apply(EntityDocument document, JsonObject input, EntityEditContext context) => Apply(document, Read(input), context);
+
+    /// <summary>Writes new keys into the recorded input so replay always produces the same result.</summary>
+    protected virtual void FillKeys(JsonObject input)
+    {
+    }
+
+    protected abstract object? Apply(EntityDocument document, TInput input, EntityEditContext context);
+
+    protected override Task<AbilityResult> ExecuteAsync(TInput input, AbilityContext context, CancellationToken cancellationToken)
+        => Task.FromResult(AbilityResult.Fail(
+            AbilityOperationStatus.InvalidInput,
+            "Entity edits are recorded in a change set. Call changeSet_create first and run with its id as the active change set."));
+
+    private static TInput Read(JsonObject input)
+        => input.Deserialize<TInput>(AbilityJson.Options) ?? throw new AbilityInputException("Input is required.");
+
+    protected static EditTarget Target(EntityDocument document, TInput input, EntityEditContext context)
+        => new(document, context.Structure, context.ItemTypes, new VariantId(input.Variant?.Select(v => KeyValuePair.Create(v.Key, (string?)v.Value))));
+
+    protected static void EnsureKey(JsonObject input, string property)
+    {
+        if (input[property] is null || string.IsNullOrWhiteSpace(input[property]!.ToString()))
+        {
+            input[property] = Guid.NewGuid().ToString();
+        }
+    }
+}
+
+public sealed record GetEntitySchemaInput(
+    [property: Description("Entity type, e.g. 'umbraco-commerce-discount' (a UDI entity type).")] string EntityType,
+    [property: Description("Optional item type aliases (from an items field's x-item-types) to get the full schema for. Use group:alias when an alias appears in several groups.")] string[]? ItemTypes = null,
+    [property: Description("The subtype, for entity types that have them, e.g. a document's content type alias.")] string? Subtype = null);
+
+[Ability("entity.getSchema", "Get entity schema", Kind = AbilityKind.Read,
+    Description = "Returns an entity type's fields as JSON Schema. An items field lists its item types (x-item-types). " +
+                  "Call it first. Call again with itemTypes to get the fields of the item types you will add.")]
+public sealed class GetEntitySchemaAbility(EntityDefinitionRegistry definitions, ItemTypeRegistry itemTypes)
+    : AbilityBase<GetEntitySchemaInput, JsonObject>
+{
+    protected override async Task<AbilityResult> ExecuteAsync(GetEntitySchemaInput input, AbilityContext context, CancellationToken cancellationToken)
+    {
+        var definition = definitions.Get(input.EntityType);
+        var subtypes = await definition.GetSubtypesAsync(cancellationToken);
+        if (subtypes.Count > 0 && input.Subtype is null)
+        {
+            return Success(new JsonObject
+            {
+                ["entityType"] = input.EntityType,
+                ["subtypes"] = new JsonArray(subtypes.Select(s => (JsonNode?)new JsonObject { ["alias"] = s.Alias, ["name"] = s.Name }).ToArray()),
+                ["next"] = "Call again with a subtype to get its fields.",
+            });
+        }
+
+        var structure = await definition.DescribeAsync(input.Subtype, cancellationToken);
+        var output = new JsonObject
+        {
+            ["entityType"] = structure.EntityType,
+            ["name"] = structure.Name,
+            ["description"] = structure.Description,
+            ["dimensions"] = new JsonArray(structure.Dimensions.Select(d => (JsonNode?)new JsonObject
+            {
+                ["name"] = d.Name,
+                ["description"] = d.Description,
+                ["values"] = d.Values is { } values ? new JsonArray(values.Select(v => (JsonNode?)v).ToArray()) : null,
+            }).ToArray()),
+            ["fields"] = SchemaWriter.Fields(structure.Shape, itemTypes, context.UserKey),
+        };
+
+        if (input.ItemTypes is { Length: > 0 })
+        {
+            var details = new JsonObject();
+            foreach (var alias in input.ItemTypes)
+            {
+                var itemType = itemTypes.Find(alias) is { } found && found.IsAvailableTo(context.UserKey) ? found
+                    : throw new AbilityInputException($"Unknown item type '{alias}'.", [new Problem("itemTypes", $"Unknown: {alias}.")]);
+                details[alias] = new JsonObject
+                {
+                    ["name"] = itemType.Name,
+                    ["fields"] = SchemaWriter.Fields(itemType.Shape, itemTypes, context.UserKey),
+                };
+            }
+
+            output["itemTypes"] = details;
+        }
+
+        return Success(output);
+    }
+}
+
+public sealed record FindEntityInput(
+    [property: Description("Entity type to search, e.g. 'umbraco-commerce-collection'.")] string EntityType,
+    [property: Description("Words in the entity's name.")] string Query);
+
+[Ability("entity.find", "Find entities", Kind = AbilityKind.Read,
+    Description = "Finds entities by name, live and in the active change set. Use it to turn a name the person used into a key.")]
+public sealed class FindEntityAbility(EntityDefinitionRegistry definitions, ChangeSetService changeSets)
+    : AbilityBase<FindEntityInput, IReadOnlyList<EntityRef>>
+{
+    protected override async Task<AbilityResult> ExecuteAsync(FindEntityInput input, AbilityContext context, CancellationToken cancellationToken)
+    {
+        var definition = definitions.Get(input.EntityType);
+        var found = (await definition.FindAsync(input.Query, cancellationToken)).ToList();
+
+        if (context.ChangeSetId is { } setId)
+        {
+            // Entities the set touches are matched on their working state, not their live name.
+            var set = changeSets.Get(setId);
+            var touched = set.Changes.Where(c => c.EntityType == input.EntityType).Select(c => c.EntityKey!.Value).Distinct().ToList();
+            found.RemoveAll(r => touched.Contains(r.Key));
+
+            foreach (var key in touched)
+            {
+                var document = await changeSets.GetWorkingStateAsync(set, input.EntityType, key, cancellationToken);
+                var reference = definition.ToRef(document!);
+                if (reference.Name.Contains(input.Query, StringComparison.OrdinalIgnoreCase))
+                {
+                    found.Add(reference);
+                }
+            }
+        }
+
+        // Only what the user may read. (What the set itself touches was checked when it was recorded.)
+        var readable = new List<EntityRef>();
+        var inSet = context.ChangeSetId is { } id ? changeSets.Get(id).Changes.Where(c => c.EntityType == input.EntityType).Select(c => c.EntityKey).ToHashSet() : [];
+        foreach (var reference in found)
+        {
+            if (inSet.Contains(reference.Key)
+                || await EntityAccess.CheckAsync(definition, new EntityAccessRequest(context.UserKey, EntityPermission.Read, reference.Key, null, new HashSet<VariantId>()), cancellationToken) is null)
+            {
+                readable.Add(reference);
+            }
+        }
+
+        return Success(readable);
+    }
+}
+
+public sealed record GetEntityInput(
+    [property: Description("Entity type.")] string EntityType,
+    [property: Description("Entity key.")] Guid Key);
+
+[Ability("entity.get", "Get entity", Kind = AbilityKind.Read,
+    Description = "Returns an entity's fields, items included. Inside a change set this includes the set's edits.")]
+public sealed class GetEntityAbility(EntityDefinitionRegistry definitions, ChangeSetService changeSets)
+    : AbilityBase<GetEntityInput, JsonObject>
+{
+    protected override async Task<AbilityResult> ExecuteAsync(GetEntityInput input, AbilityContext context, CancellationToken cancellationToken)
+    {
+        var definition = definitions.Get(input.EntityType);
+        if (await EntityAccess.CheckAsync(definition, new EntityAccessRequest(context.UserKey, EntityPermission.Read, input.Key, null, new HashSet<VariantId>()), cancellationToken) is { } denied)
+        {
+            return EntityAccess.Denied(denied, "key");
+        }
+
+        var document = context.ChangeSetId is { } setId
+            ? await changeSets.GetWorkingStateAsync(changeSets.Get(setId), input.EntityType, input.Key, cancellationToken)
+            : await definitions.Get(input.EntityType).LoadAsync(input.Key, cancellationToken);
+
+        return document is null
+            ? AbilityResult.Fail(AbilityOperationStatus.InvalidInput, $"No {input.EntityType} with key {input.Key}.", [new Problem("key", "Not found.")])
+            : Success(document.ToJson());
+    }
+}
+
+public sealed record CreateEntityInput(
+    [property: Description("Entity type to create.")] string EntityType,
+    [property: Description("Optional key for the new entity. Choose one when other entities in the set must refer to it.")] Guid? Key = null,
+    [property: Description("Field values, keyed by field alias.")] JsonObject? Fields = null,
+    [property: Description("The subtype to create, for entity types that have them, e.g. a document's content type alias.")] string? Subtype = null,
+    [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }. Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
+
+[Ability("entity.create", "Create entity", Kind = AbilityKind.Write, Reversible = true,
+    Description = "Creates an entity in the active change set. Nothing goes live until the set is applied. " +
+                  "Returns the new key. Add items to items fields afterwards with entity.addItem.")]
+public sealed class CreateEntityAbility : EntityEditAbilityBase<CreateEntityInput>
+{
+    protected override bool Creates => true;
+
+    protected override void FillKeys(JsonObject input) => EnsureKey(input, "key");
+
+    protected override object? Apply(EntityDocument document, CreateEntityInput input, EntityEditContext context)
+    {
+        EntityEditor.SetFields(Target(document, input, context), document.Root, context.Structure.Shape, string.Empty, input.Fields);
+        return context.Definition.ToRef(document);
+    }
+}
+
+public sealed record SetEntityValueInput(
+    [property: Description("Entity type.")] string EntityType,
+    [property: Description("Entity key.")] Guid? Key,
+    [property: Description("Path of the value: a field alias, going down through items by key and objects by field, e.g. \"title\", \"blocks/{itemKey}/heading\" or \"blocks/{itemKey}/settings/theme\".")] string Path,
+    [property: Description("The new value, matching the field's schema. null clears it.")] JsonNode? Value,
+    [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }. Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
+
+[Ability("entity.setValue", "Set entity value", Kind = AbilityKind.Write, Reversible = true,
+    Description = "Sets the value at a path, in the active change set. A path goes down through items by key and objects by " +
+                  "field. Give a culture for values that vary by culture. Problem paths from changeSet.validate have the same form.")]
+public sealed class SetEntityValueAbility : EntityEditAbilityBase<SetEntityValueInput>
+{
+    protected override object? Apply(EntityDocument document, SetEntityValueInput input, EntityEditContext context)
+    {
+        return new { path = EntityEditor.SetValue(Target(document, input, context), input.Path, input.Value) };
+    }
+}
+
+public sealed record AddEntityItemInput(
+    [property: Description("Entity type.")] string EntityType,
+    [property: Description("Entity key.")] Guid? Key,
+    [property: Description("Path of the items field, e.g. \"rules\", or \"blocks/{itemKey}/cards\" for one inside an item.")] string FieldPath,
+    [property: Description("Item type alias, from the field's x-item-types.")] string ItemType,
+    [property: Description("Optional key for the new item. Choose one when another item must refer to it.")] Guid? ItemKey = null,
+    [property: Description("Field values for the new item, keyed by field alias.")] JsonObject? Fields = null,
+    [property: Description("Optional zero-based position. Omit to append.")] int? Position = null,
+    [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }. Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
+
+[Ability("entity.addItem", "Add entity item", Kind = AbilityKind.Write, Reversible = true,
+    Description = "Adds a typed item to an items field, in the active change set. Returns the item's path; set its fields " +
+                  "at '<item path>/<field>', and use '<item path>/<items field>' as fieldPath to add items inside it.")]
+public sealed class AddEntityItemAbility : EntityEditAbilityBase<AddEntityItemInput>
+{
+    protected override void FillKeys(JsonObject input) => EnsureKey(input, "itemKey");
+
+    protected override object? Apply(EntityDocument document, AddEntityItemInput input, EntityEditContext context)
+    {
+        var path = EntityEditor.AddItem(Target(document, input, context), input.FieldPath, input.ItemType, input.ItemKey!.Value, input.Fields, input.Position);
+        return new { itemKey = input.ItemKey, path };
+    }
+}
+
+public sealed record RemoveEntityItemInput(
+    [property: Description("Entity type.")] string EntityType,
+    [property: Description("Entity key.")] Guid? Key,
+    [property: Description("Path of the items field.")] string FieldPath,
+    [property: Description("Key of the item to remove.")] Guid ItemKey,
+    [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }. Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
+
+[Ability("entity.removeItem", "Remove entity item", Kind = AbilityKind.Write, Reversible = true,
+    Description = "Removes an item from an items field, in the active change set.")]
+public sealed class RemoveEntityItemAbility : EntityEditAbilityBase<RemoveEntityItemInput>
+{
+    protected override object? Apply(EntityDocument document, RemoveEntityItemInput input, EntityEditContext context)
+    {
+        EntityEditor.RemoveItem(Target(document, input, context), input.FieldPath, input.ItemKey);
+        return new { removed = input.ItemKey };
+    }
+}
+
+public sealed record MoveEntityItemInput(
+    [property: Description("Entity type.")] string EntityType,
+    [property: Description("Entity key.")] Guid? Key,
+    [property: Description("Path of the items field.")] string FieldPath,
+    [property: Description("Key of the item to move.")] Guid ItemKey,
+    [property: Description("New zero-based position.")] int Position,
+    [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }. Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
+
+[Ability("entity.moveItem", "Move entity item", Kind = AbilityKind.Write, Reversible = true,
+    Description = "Moves an item within its items field, in the active change set.")]
+public sealed class MoveEntityItemAbility : EntityEditAbilityBase<MoveEntityItemInput>
+{
+    protected override object? Apply(EntityDocument document, MoveEntityItemInput input, EntityEditContext context)
+    {
+        EntityEditor.MoveItem(Target(document, input, context), input.FieldPath, input.ItemKey, input.Position);
+        return new { moved = input.ItemKey, position = input.Position };
+    }
+}

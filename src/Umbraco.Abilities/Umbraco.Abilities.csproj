@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The contract and runtime. Its only dependency is Umbraco.Cms.Core, for UDIs: entity identity is a GuidUdi, as in
+    Deploy and the CMS. A real Abilities package is an Umbraco package, so this costs nothing.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Umbraco.Cms.Core" />
+    <PackageReference Include="Polly.Core" />
+  </ItemGroup>
+</Project>
