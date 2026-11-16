@@ -65,12 +65,11 @@ public sealed class SampleSite
         Abilities.Add(sendEmail);
 
         // Automate: its step types are other packages' abilities.
-        Workflows = new WorkflowAdapter(AutomateDatabase);
+        Workflows = new WorkflowAdapter(AutomateDatabase, ItemTypes, Triggers, Actions, ControlFlows, [sendEmail, activateDiscount]);
         Adapters.Add(Workflows);
         Triggers.AddRange([typeof(FormSubmittedTrigger), typeof(ScheduleTrigger)]);
         Actions.Add(typeof(GetContentAction));
         ControlFlows.Add(typeof(IfControlFlow));
-        WorkflowAdapter.RegisterItemTypes(ItemTypes, [sendEmail, activateDiscount], Triggers, Actions, ControlFlows, Access.HasSection);
 
         // Commerce's Automate package adds its trigger and action, as its composer would. No Abilities code.
         Triggers.Add(typeof(OrderCreatedTrigger));

@@ -59,6 +59,14 @@ public sealed class PluginItemTypeSource(
     });
 }
 
+/// <summary>Item types worked out whenever they're needed, such as one per ability that can be a workflow step.</summary>
+public sealed class ItemTypeSource(string group, Func<IEnumerable<ItemTypeDefinition>> itemTypes) : IItemTypeSource
+{
+    public string Group => group;
+
+    public IEnumerable<ItemTypeDefinition> GetItemTypes() => itemTypes();
+}
+
 /// <summary>
 /// Maps a plugin's item to and from the way most products store plugin settings: the plugin's alias plus a string per
 /// setting. Each value is read back as its setting's CLR type, so a number stays a number for the schema and validation.
