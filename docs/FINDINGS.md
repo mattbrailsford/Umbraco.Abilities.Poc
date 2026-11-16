@@ -357,6 +357,54 @@ Risks, from the API docs, not checked in code:
 
 Open question: what the Forms AI add-on does today. Its tools decide which row above applies.
 
+### What doesn't fit the entity approach
+
+Entities fit things you describe and build: configuration and content. They don't fit things that happen. Those are
+abilities, which the design already has as its first layer.
+
+| Case | Example | Why it doesn't fit | Better fit |
+| --- | --- | --- | --- |
+| Actions with side effects | Capture a payment, refund, send an email | Nothing to save. It is something that happens | An ability |
+| Computed values | Order totals, calculated prices | The product works them out. Setting one means nothing | Read-only, or left out |
+| Counters | Stock levels | A set that writes "stock = 10" overwrites sales made since it was started | An "adjust by" ability |
+| Files | A media upload | A file isn't a field value | A separate upload step that returns a reference |
+
+Two more cases depend on the product: rules about the change itself (they need the before and the after), and rules
+that only run when saving (they show up at apply time, after the set looked valid). Commerce handles both, below.
+
+#### Commerce's defensive API
+
+Commerce's models are built to refuse bad writes. Checked against Commerce Core's source (`Models/Discount.cs`,
+`Models/AggregateBase.cs`, `Services/Implement/DiscountService.cs`):
+
+- Each write method (`SetNameAsync`, `SetDateRangeAsync`, `AddCodeAsync`, ...) dispatches a validation event first,
+  such as `ValidateDiscountNameChange`. The event carries the old and new value (`ChangingTo`).
+- Rule classes handle these events. Commerce Core has 75, such as `ValidateUniqueAlias`. Third parties can add their
+  own.
+- A failed rule throws `ValidationException`, and the change is not made.
+- `SaveDiscountAsync` dispatches three more: create or update, and save.
+
+What it means for an adapter:
+
+- **Rules can't be skipped.** The adapter saves by calling the write methods, so every rule runs, a third party's
+  too. A simpler model for the LLM doesn't lose the defensive API: it moves it to apply time.
+- **They can run early too.** The adapter's `ValidateAsync` can call the same methods on a writable copy and not
+  save: a dry run. One "apply these fields to a discount" method serves both validate and save.
+- **Every problem at once.** A failed method leaves the discount unchanged, so the adapter can catch each
+  `ValidationException`, note it, and go on to the next method.
+- **Rules about the change already work,** since each event has the before and the after.
+
+What's still awkward:
+
+- **Errors are plain messages,** with no field. The adapter maps each one to the field of the method that threw it.
+  `SetDateRangeAsync` sets two fields, so its errors point at both.
+- **Save-level rules are missed by a dry run.** The create, update and save events only fire inside
+  `SaveDiscountAsync`. A dry run would have to dispatch them itself. Not checked whether it can.
+- **Order can matter.** A rule that reads another field sees what the adapter has set so far.
+
+Not built: the sample Commerce is an in-memory stand-in, not the real API. Checked on the local Commerce Core
+checkout, branch `topic/19.x/cms-19-upgrade`.
+
 ## What running against Umbraco taught us
 
 `CmsDocumentAdapter` is a real adapter for documents. One entity type, `document`, has a subtype per
