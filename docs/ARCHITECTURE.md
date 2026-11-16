@@ -119,7 +119,8 @@ writes it back. It can also locate Umbraco's errors inside its value, and serve 
 (the block editors: one group per data type). Element values go back through the adapter, so each property inside
 a block goes to its own editor's handler. An editor with no handler is a whole JSON value with Umbraco's value schema.
 This is a different seam from `IValueHandler`: that one adds behaviour inside a value; this one is storage and
-schema. Where the contract should live (CMS core, Umbraco.AI or here) is an open question, written up in
+schema. Documents and media share all of this through one base class, `ContentTypeEntityAdapterBase`, so each is
+only its own loading, saving, permissions and (for documents) drafts. Where the contract should live (CMS core, Umbraco.AI or here) is an open question, written up in
 [FINDINGS](FINDINGS.md#where-property-editor-handlers-should-live).
 
 **What this replaces.** The proof of concept first kept "slots" (lists of items) apart from fields, then folded them into

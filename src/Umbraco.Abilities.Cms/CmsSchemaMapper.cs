@@ -16,40 +16,26 @@ internal sealed record PropertyMap(PropertyEditorContext Context, IPropertyEdito
 internal sealed record SchemaMap(ObjectSchema Schema, ContentVariation Variations, IReadOnlyDictionary<string, PropertyMap> Properties);
 
 /// <summary>
-/// Builds the schema language from Umbraco document types and element types. A document has a name and a parent; every
-/// property is described by its editor's handler (<see cref="IPropertyEditorEntityHandler"/>), so the mapper knows no
-/// editor. Only the property's alias and variation are the CMS's, and set here.
+/// Builds the schema language from Umbraco content types (document, media, member and element types). Every property
+/// is described by its editor's handler (<see cref="IPropertyEditorEntityHandler"/>), so the mapper knows no editor.
+/// Only the property's alias and variation are the CMS's, and set here.
 /// </summary>
 internal sealed class CmsSchemaMapper(
     IContentTypeService contentTypes,
     IDataTypeService dataTypes,
     PropertyEditorHandlerCollection handlers) : IElementSchemas
 {
-    public const string NameField = "name";
-    public const string ParentField = "parent";
-
     public IContentType RequireType(Guid key)
         => contentTypes.Get(key) ?? throw new InvalidOperationException($"No content type with key {key}.");
 
     public async Task<ObjectSchema> SchemaOfAsync(Guid elementTypeKey, CancellationToken cancellationToken = default)
-        => (await MapAsync(RequireType(elementTypeKey), isDocument: false, cancellationToken)).Schema;
+        => (await MapAsync(RequireType(elementTypeKey), [], cancellationToken)).Schema;
 
-    public async Task<SchemaMap> MapAsync(IContentTypeComposition type, bool isDocument, CancellationToken cancellationToken = default)
+    /// <summary>A type's schema: the <paramref name="leading"/> fields (a name, a parent), then each property as its handler describes it.</summary>
+    public async Task<SchemaMap> MapAsync(IContentTypeComposition type, IReadOnlyList<FieldDefinition> leading, CancellationToken cancellationToken = default)
     {
-        var fields = new List<FieldDefinition>();
+        var fields = new List<FieldDefinition>(leading);
         var properties = new Dictionary<string, PropertyMap>(StringComparer.Ordinal);
-
-        if (isDocument)
-        {
-            fields.Add(new FieldDefinition(NameField, "The document's name.", FieldType.String, Required: true)
-            {
-                VariesBy = type.VariesByCulture() ? [VariationDimensions.Culture] : [],
-            });
-            fields.Add(new FieldDefinition(ParentField, "The parent document. Only used when creating; moving is a separate operation.", FieldType.EntityReference)
-            {
-                ReferencesEntityType = CmsDocumentAdapter.Type,
-            });
-        }
 
         foreach (var propertyType in type.CompositionPropertyTypes)
         {

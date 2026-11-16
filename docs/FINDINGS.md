@@ -172,6 +172,31 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
    (`= 1`), read from one instance of the class. If the CMS adds a server-side preset, the handlers would call it
    instead. One effect: a new grid block now starts with a layout holding its default row span, so a missing layout is
    reported at its missing column span, which is the more precise path.
+20. **Types that are data need one base class, not one adapter each.** The document adapter held the schema, reading
+   and writing values, variants and segments, and mapping Umbraco's errors. Media and members need all of it too,
+   since their types are content types with the same property editors. Now `ContentTypeEntityAdapterBase<TType>` holds
+   it, and a product only says what is its own:
+
+   | The base does | The product does |
+   | --- | --- |
+   | Lists types as subtypes, builds the schema (a name, a parent, each property by its editor's handler) | Lists and finds its types (`ListTypes`, `FindType`) |
+   | Reads stored values into an entity (`ToEntityAsync`), and an item from Umbraco in editor format (`ReadStored`) | Loads the item (`LoadStoredAsync`) |
+   | Writes an entity as the editing services take it: names as variants, segments, values (`ToContentAsync`) | Validates and saves through its own editing service |
+   | Maps Umbraco's validation errors to entity paths (`ContentValues.ToProblem`) | Checks access with its own permissions |
+   | Finds the values an edit touched (`TouchedValuesAsync`), for products that stage per value | Drafts, if it has them |
+
+   `CmsMediaAdapter` is the proof: about 130 lines, and it got blocks, nested blocks, error paths inside blocks,
+   defaults and third-party editors with no code of its own. The document adapter went from about 550 lines to 250.
+   Building it taught three things:
+   - **What adapters share has to be made once.** Each adapter registered its own item type source, so two adapters
+     would serve every block group twice. `CmsContentSchemas` now holds the handlers and the schema, and each adapter
+     takes the same one.
+   - **The two apply models sit side by side.** Documents stage into a CMS draft set; media has no drafts, so the
+     change set keeps and replays its edits and calls `SaveAsync` on apply. The base doesn't care which.
+   - **"Types are data" stops at Umbraco's content types.** The handler contract is written against a property type
+     and a data type. Umbraco Forms has field types and their settings instead. Covering it means describing a
+     property in neutral terms (alias, name, mandatory, editor, settings) and letting each product map its own. Not
+     built: there is no Forms adapter to prove it against.
 
 ## Developer experience of adapters
 
@@ -204,7 +229,7 @@ How the CMS document adapter's code splits, and who else has each part:
 
 | Part | Lines (rough) | Who else has it | Generic fix |
 | --- | --- | --- | --- |
-| Building the schema from document types and data types | ~270 | Anything editors define: media types, member types, likely Forms | A base class for "types are data": the product lists its type definitions, and the framework builds the schema |
+| Building the schema from document types and data types | ~270 | Anything editors define: media types, member types, likely Forms | Done for Umbraco's content types: `ContentTypeEntityAdapterBase` (finding 20). Media uses it |
 | Reading and writing block values (layout, contentData, settingsData, expose) | ~260 | Any product storing property editor values: element types, UI Builder | Done: a handler per editor (finding 18). The block code now lives in `BlockEditorHandler` |
 | Turning Umbraco's error paths back into entity paths | ~90 | Any product that validates in its own path format | Done: each handler locates errors in its own value, and hands nested paths on |
 | Plugging into CMS draft sets | ~90 | Any product with its own drafts | Already generic: `IDraftingEntityAdapter` |
@@ -221,12 +246,12 @@ is not built yet:
    describe it, read it into fields and items, write it back, and turn the editor's error paths into entity paths. It
    also owns what the editor allows, since that is editor configuration: the block handler reads a data type's
    allowed blocks per call. Element types and UI Builder could reuse the same handlers. Still open: where they live.
-2. **A base class for "types are data".** The product lists its type definitions (document types, media types,
-   member types, forms) and each property's editor. The framework builds the schema, using the value handlers for
-   each editor's inner structure. The product still loads and saves. This covers the ~270 lines of schema building.
+2. **A base class for "types are data".** Built for Umbraco's content types (finding 20). The product lists its
+   types and loads and saves; the base builds the schema with the value handlers. Forms would need a neutral
+   description of a property first.
 
-With both, a CMS-like adapter would be its load, save, drafts and permissions, as the typed adapters are. The CMS
-behaviour row stays: it is a change for CMS core, not for adapters.
+With both, a CMS-like adapter is its load, save, drafts and permissions, as the typed adapters are: the media adapter
+shows it. The CMS behaviour row stays: it is a change for CMS core, not for adapters.
 
 ### Where property editor handlers should live
 

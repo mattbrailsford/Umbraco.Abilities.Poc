@@ -78,7 +78,8 @@ The details and the lessons are in [docs/FINDINGS.md](docs/FINDINGS.md). The tes
 
 ## What it does not prove
 
-- **Real Commerce and Automate.** Only CMS documents have a real adapter. The Commerce and Automate
+- **Real Commerce and Automate.** Only CMS documents and media have real adapters. Members would use the same base
+  class, but no member adapter is built. The Commerce and Automate
   adapters are still stand-ins.
 - **Every Automate connection.** Each exit leads to one step. Automate can also send one exit to several steps, filter
   a connection, give a step with outcomes an "any result" exit, and build Switch's outcomes from its cases. None has a

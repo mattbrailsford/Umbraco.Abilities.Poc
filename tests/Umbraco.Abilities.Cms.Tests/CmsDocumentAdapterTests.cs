@@ -46,6 +46,7 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
     private IContentType _page = null!;
     private Agent _agent = null!;
     private CmsDocumentAdapter _documents = null!;
+    private CmsMediaAdapter _media = null!;
     private ChangeSetService _changeSets = null!;
     private ChangeSetAccessor _accessor = null!;
     private DraftSetService _draftSets = null!;
@@ -186,22 +187,38 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
             GetRequiredService<ICoreScopeProvider>(),
             GetRequiredService<IEventAggregator>(),
             GetRequiredService<IAuditService>());
-        _documents = new CmsDocumentAdapter(
+        // What documents and media share: the property editor handlers and the schema they build.
+        var contentSchemas = new CmsContentSchemas(
             ContentTypeService,
             GetRequiredService<IDataTypeService>(),
             GetRequiredService<ILanguageService>(),
+            GetRequiredService<IJsonSerializer>(),
+            GetRequiredService<PropertyEditorCollection>(),
+            itemTypes,
+            GetRequiredService<IPropertyEditorSchemaService>(),
+            GetRequiredService<PropertyEditorEntityHandlerCollection>());
+        var scope = new CmsScopeUnitOfWorkProvider(GetRequiredService<ICoreScopeProvider>());
+        _documents = new CmsDocumentAdapter(
+            contentSchemas,
+            ContentTypeService,
             ContentEditingService,
             GetRequiredService<IEntityService>(),
             _draftSets,
             GetRequiredService<IUserService>(),
             GetRequiredService<IContentPermissionService>(),
-            GetRequiredService<IJsonSerializer>(),
-            itemTypes,
-            new CmsScopeUnitOfWorkProvider(GetRequiredService<ICoreScopeProvider>()),
-            () => Constants.Security.SuperUserKey,
-            GetRequiredService<IPropertyEditorSchemaService>(),
-            GetRequiredService<PropertyEditorEntityHandlerCollection>());
+            scope,
+            () => Constants.Security.SuperUserKey);
+        _media = new CmsMediaAdapter(
+            contentSchemas,
+            GetRequiredService<IMediaTypeService>(),
+            GetRequiredService<IMediaEditingService>(),
+            GetRequiredService<IEntityService>(),
+            GetRequiredService<IUserService>(),
+            GetRequiredService<IMediaPermissionService>(),
+            scope,
+            () => Constants.Security.SuperUserKey);
         adapters.Add(_documents);
+        adapters.Add(_media);
 
         abilities
             .Add(new GetEntitySchemaAbility(adapters, itemTypes))
@@ -823,6 +840,58 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
             Assert.That(content.GetValue<int>("featured"), Is.EqualTo(1));
             Assert.That(content.GetValue<int>("priority"), Is.EqualTo(3));
             Assert.That($"{block["alias"]}:{block["value"]}", Is.EqualTo("highlight:1"), block.ToJsonString());
+        });
+    }
+
+    [Test]
+    public async Task Media_is_built_on_the_same_base_with_the_same_editors_blocks_and_defaults()
+    {
+        // A media type with a text, a preset toggle and the page's block list: the same handlers as documents.
+        var toggle = await CreateConfiguredDataTypeAsync(Constants.PropertyEditors.Aliases.Boolean, "Media featured", ValueStorageType.Integer, ("default", true));
+        var brochure = new MediaTypeBuilder().WithAlias("brochure").WithName("Brochure")
+            .AddPropertyGroup().WithAlias("content").WithName("Content")
+                .AddPropertyType().WithAlias("title").WithName("Title")
+                    .WithDataTypeId(Constants.DataTypes.Textbox).WithPropertyEditorAlias(Constants.PropertyEditors.Aliases.TextBox)
+                    .WithValueStorageType(ValueStorageType.Nvarchar).WithMandatory(true).Done()
+                .AddPropertyType().WithAlias("featured").WithName("Featured").WithDataTypeId(toggle.Id)
+                    .WithPropertyEditorAlias(Constants.PropertyEditors.Aliases.Boolean).WithValueStorageType(ValueStorageType.Integer).Done()
+                .AddPropertyType().WithAlias("sections").WithName("Sections").WithDataTypeId(_pageBlocks.Id)
+                    .WithPropertyEditorAlias(Constants.PropertyEditors.Aliases.BlockList).WithValueStorageType(ValueStorageType.Ntext).Done()
+                .Done()
+            .Build();
+        brochure.AllowedAsRoot = true;
+        await GetRequiredService<IMediaTypeService>().CreateAsync(brochure, Constants.Security.SuperUserKey);
+
+        var schema = await _agent.OkAsync("entity_getSchema", """{ "entityType": "media", "subtype": "brochure" }""");
+        var fields = schema.GetProperty("fields").GetProperty("properties");
+        Assert.Multiple(() =>
+        {
+            Assert.That(fields.GetProperty("featured").GetProperty("default").GetBoolean(), Is.True);
+            Assert.That(TypesIn(fields.GetProperty("sections")), Does.Contain("cardGroup"));
+        });
+
+        // A brochure with a card group whose card has no title: the problem is on the card, inside the block.
+        await _agent.StartChangeSetAsync("Brochure");
+        var media = (await _agent.OkAsync("entity_create", """{ "entityType": "media", "subtype": "brochure", "fields": { "name": "Summer brochure", "title": "Summer" } }""")).GetProperty("key").GetGuid();
+        var group = (await _agent.OkAsync("entity_addItem", $$"""{ "entityType": "media", "key": "{{media}}", "fieldPath": "sections", "itemType": "cardGroup" }""")).GetProperty("path").GetString()!;
+        var card = (await _agent.OkAsync("entity_addItem", $$"""{ "entityType": "media", "key": "{{media}}", "fieldPath": "{{group}}/cards", "itemType": "card" }""")).GetProperty("path").GetString()!;
+        var stored = (await _changeSets.GetWorkingStateAsync(_changeSets.Get(_agent.ChangeSetId!.Value), "media", media))!;
+        var problems = (await _media.ValidateAsync(stored)).Select(p => p.Path).ToList();
+        Assert.That(problems, Is.EquivalentTo(new[] { $"{card}/title" }), string.Join(", ", problems));
+
+        // Fixed and applied: saved by Umbraco's media service, and read back the same way.
+        await _agent.OkAsync("entity_setValue", $$"""{ "entityType": "media", "key": "{{media}}", "path": "{{card}}/title", "value": "Beach" }""");
+        await _agent.OkAsync("changeSet_apply", SetJson());
+
+        var saved = GetRequiredService<IMediaService>().GetById(media)!;
+        var loaded = (await _media.LoadAsync(media))!;
+        var cards = loaded.Fields["sections"]![0]!["cards"]!;
+        Assert.Multiple(() =>
+        {
+            Assert.That(saved.Name, Is.EqualTo("Summer brochure"));
+            Assert.That(saved.GetValue<string>("title"), Is.EqualTo("Summer"));
+            Assert.That(saved.GetValue<int>("featured"), Is.EqualTo(1));
+            Assert.That(cards[0]!["title"]!.GetValue<string>(), Is.EqualTo("Beach"), loaded.Fields.ToJsonString());
         });
     }
 

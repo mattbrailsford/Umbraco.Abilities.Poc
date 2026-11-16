@@ -171,8 +171,35 @@ paper over.
 
 ## Entities whose schema is data
 
-A CMS document type is defined in the backoffice. It has no class to describe, so `CmsDocumentAdapter` implements
-`IEntityAdapter` over the typed `Entity`. An Automate workflow looked like the same case, since its step types are
+A CMS document type is defined in the backoffice. It has no class to describe, so its adapter works over the typed
+`Entity`. Umbraco's media and member types are the same kind of thing, so the shared part is a base class,
+`ContentTypeEntityAdapterBase<TType>`: it builds the schema from the type, reads and writes values through each
+property editor's handler, and maps Umbraco's errors. A product implements only its own part:
+
+```csharp
+public sealed class CmsMediaAdapter(CmsContentSchemas schemas, IMediaTypeService mediaTypes, IMediaEditingService editing /* ... */)
+    : ContentTypeEntityAdapterBase<IMediaType>(schemas)
+{
+    public override string EntityType => "media";
+    protected override IEnumerable<IMediaType> ListTypes() => mediaTypes.GetAll();
+    protected override IMediaType? FindType(string alias) => mediaTypes.Get(alias);
+    protected override IMediaType? FindType(Guid key) => mediaTypes.Get(key);
+    protected override async Task<StoredContent?> LoadStoredAsync(Guid key, CancellationToken ct)
+        => await editing.GetAsync(key) is { } media ? ReadStored(media) : null;
+
+    public override async Task<EntitySummary> SaveAsync(Entity media, CancellationToken ct = default)
+    {
+        var content = await ToContentAsync(media, ct);   // names, variants and values, ready for the editing service
+        // ... CreateAsync or UpdateAsync with content.Variants and content.Properties
+    }
+
+    // ValidateAsync (map errors with content.ToProblem), FindAsync, AuthorizeAsync, EditUrl, UnitOfWork
+}
+```
+
+Give every such adapter the same `CmsContentSchemas`, so each block group's item types are served once.
+
+An Automate workflow looked like the same case, since its step types are
 other packages' abilities and plugins. But only its steps vary, so it is a model class with `List<DynamicItem>` steps,
 as a discount's rules are. In the CMS adapter there is still no `JsonObject` digging: they use `item.Settings` or `item.Layout`, not
 `item["settings"]["fields"]`. The block editor's handler builds Umbraco's own `BlockListValue`, `BlockGridValue`,
