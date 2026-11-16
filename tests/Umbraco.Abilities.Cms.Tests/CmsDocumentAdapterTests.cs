@@ -133,7 +133,7 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
 
         // Editors the mapper has no rule for. Umbraco describes each one's value with a schema.
         var accent = await CreateEditorDataTypeAsync(Constants.PropertyEditors.Aliases.ColorPickerEyeDropper, "Accent colour");
-        var rating = await CreateEditorDataTypeAsync(StarRatingPropertyEditor.Alias, "Star rating");
+        var rating = await CreateEditorDataTypeAsync(StarRatingPropertyEditor.EditorAlias, "Star rating");
 
         _page = new ContentTypeBuilder()
             .WithAlias("landingPage")
@@ -164,7 +164,7 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
                 .Done()
             .AddPropertyType()
                 .WithAlias("rating").WithName("Rating").WithDataTypeId(rating.Id)
-                .WithPropertyEditorAlias(StarRatingPropertyEditor.Alias).WithVariations(ContentVariation.Nothing)
+                .WithPropertyEditorAlias(StarRatingPropertyEditor.EditorAlias).WithVariations(ContentVariation.Nothing)
                 .Done()
             .Build();
         _page.AllowedAsRoot = true;

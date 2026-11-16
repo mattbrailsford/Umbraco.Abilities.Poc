@@ -114,7 +114,7 @@ public sealed class GridPlacement
     public int? ColumnSpan { get; set; }
 
     [Description("Rows the block spans.")]
-    public int? RowSpan { get; set; }
+    public int? RowSpan { get; set; } = 1;
 }
 
 /// <summary>A layout block whose areas are items fields; area limits are their Min and Max.</summary>

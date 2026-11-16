@@ -126,7 +126,7 @@ public class CmsContentTests
         var text = (await AddItemAsync(page, "grid", "richText", """{ "text": "Root" }""", "en-US")).GetProperty("path").GetString()!;
 
         var paths = JsonAssert.ProblemPaths(await ValidateAsync());
-        Assert.Contains($"{text}/layout", paths);             // required, missing
+        Assert.Contains($"{text}/layout/columnSpan", paths);  // required, missing: the layout starts with its default row span only
         Assert.Contains($"{row}/layout/columnSpan", paths);   // 13 is wider than the grid
 
         await SetAsync(page, $"{row}/layout", "columnSpan", "12");

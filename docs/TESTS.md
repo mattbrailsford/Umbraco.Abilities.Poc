@@ -67,6 +67,8 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
   - `TypedModelTests.Commerce_keeps_its_own_model_and_the_definition_maps_to_it`
 - A new entity starts with its model's `[DefaultValue]`s, which the schema shows
   - `TypedModelTests.A_new_entity_starts_with_its_models_default_values`
+- A property's C# initializer is a default too, filled inside a new item's objects (a grid block's row span)
+  - `TypedModelTests.A_property_initializer_is_a_default_too_inside_a_new_items_objects`
 - The schema (types, required, allowed values, references, items fields, variation, settings, placement, JSON Schema) comes from model classes and attributes
   - `TypedModelTests.The_structure_comes_from_the_model_class_and_its_attributes`
   - `TypedModelTests.Varying_values_settings_layout_and_json_values_are_described_too`

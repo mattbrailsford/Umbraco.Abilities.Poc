@@ -12,10 +12,10 @@ namespace Umbraco.Abilities.Cms.Tests;
 /// A third-party property editor, as a package would ship it: a star rating, stored as JSON,
 /// <c>{ "stars": 4, "of": 5 }</c>. Umbraco knows nothing about its value beyond that it is JSON.
 /// </summary>
-[DataEditor(StarRatingPropertyEditor.Alias, ValueType = ValueTypes.Json)]
+[DataEditor(StarRatingPropertyEditor.EditorAlias, ValueType = ValueTypes.Json)]
 public sealed class StarRatingPropertyEditor(IDataValueEditorFactory dataValueEditorFactory) : DataEditor(dataValueEditorFactory)
 {
-    public const string Alias = "Acme.StarRating";
+    public const string EditorAlias = "Acme.StarRating";
 }
 
 /// <summary>
@@ -27,7 +27,7 @@ public sealed class StarRatingHandler : IPropertyEditorEntityHandler
 {
     private const int Stars = 5;
 
-    public bool Handles(string editorAlias) => editorAlias == StarRatingPropertyEditor.Alias;
+    public bool Handles(string editorAlias) => editorAlias == StarRatingPropertyEditor.EditorAlias;
 
     public Task<FieldDefinition> DescribeAsync(PropertyEditorContext context, CancellationToken cancellationToken = default)
         => Task.FromResult(context.Field(FieldType.Integer) with

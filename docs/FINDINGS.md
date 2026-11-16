@@ -168,8 +168,10 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
    `Default`. It is in the schema as JSON Schema's `default`, and filled in when an entity is created or an item
    added, inside object fields too (a block's settings). A varying field gets it only in the call's variant. The
    property editor handler is where a CMS default belongs: the core toggle and number handlers read the same
-   settings the backoffice presets read. A typed model uses `[DefaultValue]`. If the CMS adds a server-side preset,
-   the handlers would call it instead.
+   settings the backoffice presets read. A typed model uses `[DefaultValue]` or a plain C# initializer
+   (`= 1`), read from one instance of the class. If the CMS adds a server-side preset, the handlers would call it
+   instead. One effect: a new grid block now starts with a layout holding its default row span, so a missing layout is
+   reported at its missing column span, which is the more precise path.
 
 ## Developer experience of adapters
 

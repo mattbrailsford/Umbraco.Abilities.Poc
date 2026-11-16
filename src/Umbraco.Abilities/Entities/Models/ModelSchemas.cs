@@ -62,6 +62,7 @@ public static class ModelSchemas
         var typeConfig = ModelConfiguration.Find(type);
         var fields = new List<FieldMember>();
         PropertyInfo? key = null, name = null, version = null;
+        var initial = NewInstance(type);
 
         foreach (var property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
         {
@@ -100,9 +101,17 @@ public static class ModelSchemas
                     ? FieldDefinition.ObjectOf(alias, description, SchemaOf(valueType)) with { Required = config.Required ?? false }
                     : FieldFor(config, alias, description, valueType);
             field = field with { VariesBy = varying ? property.GetCustomAttribute<VariesByAttribute>()?.Dimensions ?? [VariationDimensions.Culture] : [] };
-            if (property.GetCustomAttribute<DefaultValueAttribute>() is { } preset && !field.IsItems && field.Type != FieldType.Object)
+            if (!field.IsItems && field.Type != FieldType.Object)
             {
-                field = field with { Default = JsonSerializer.SerializeToNode(preset.Value, AbilityJson.Options) };
+                // [DefaultValue] wins; otherwise the property's initializer (public int Stars { get; set; } = 3;). A
+                // varying property's initializer is its container (= []), not a default.
+                var preset = property.GetCustomAttribute<DefaultValueAttribute>() is { } attribute ? attribute.Value
+                    : varying ? null
+                    : InitialValue(initial, property);
+                if (preset is not null)
+                {
+                    field = field with { Default = JsonSerializer.SerializeToNode(preset, AbilityJson.Options) };
+                }
             }
 
             if (property.GetCustomAttribute<ValueHandlerAttribute>() is { } handled)
@@ -167,6 +176,46 @@ public static class ModelSchemas
         // [Required] and [AllowedValues] are part of the schema, which the generic validator checks per variant.
         config.Rules.AddRange(property.GetCustomAttributes<ValidationAttribute>().Where(a => a is not RequiredAttribute and not AllowedValuesAttribute));
         return config;
+    }
+
+    /// <summary>An instance of a model class, to read its properties' initializers. Null when it has no parameterless constructor.</summary>
+    private static object? NewInstance(Type type)
+    {
+        try
+        {
+            return type.IsAbstract || type.GetConstructor(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, Type.EmptyTypes) is null
+                ? null
+                : Activator.CreateInstance(type, nonPublic: true);
+        }
+        catch (Exception)
+        {
+            // A constructor that needs more than the class itself: no initializers to read.
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// What a property starts at, if set by an initializer: not null, not a non-nullable type's own default (0, false),
+    /// and not an empty string or list, which are starting containers rather than defaults.
+    /// </summary>
+    private static object? InitialValue(object? instance, PropertyInfo property)
+    {
+        if (instance is null)
+        {
+            return null;
+        }
+
+        var value = property.GetValue(instance);
+        return value switch
+        {
+            null => null,
+            string text => text.Length == 0 ? null : text,
+            System.Collections.IEnumerable list when !list.GetEnumerator().MoveNext() => null,
+            // A plain int or bool can't say "not set", so its type's default is no default. A nullable one can.
+            _ when property.PropertyType.IsValueType && Nullable.GetUnderlyingType(property.PropertyType) is null
+                && value.Equals(Activator.CreateInstance(property.PropertyType)) => null,
+            _ => value,
+        };
     }
 
     /// <summary>Attribute configuration with fluent configuration laid over it.</summary>

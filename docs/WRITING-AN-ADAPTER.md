@@ -138,7 +138,10 @@ What the package no longer writes:
 | An ability that edits an entity, both directly and inside a change set | `ModelEditAbilityBase<TInput, TModel>`: one `Edit(model, input)` method, or `EditAsync` when it has to look something up. The key is the input's `[EntityKey]` property |
 
 `[Required]` and `[AllowedValues]` become part of the schema, so the generic validator checks them per culture.
-`[DefaultValue]` is the value a new entity or item starts with when it isn't given one.
+A new entity or item starts with each property's default when it isn't given a value: `[DefaultValue]`, or the
+property's initializer (`public int? RowSpan { get; set; } = 1;`). An initializer that is only a starting container
+(`= []`, an empty string) or a plain `int` or `bool`'s own `0` or `false` isn't a default. A class with no
+parameterless constructor needs `[DefaultValue]`.
 Every other rule runs on the contract. Each problem is reported once. A renamed property is a compile error, not a
 wrong string key at run time.
 

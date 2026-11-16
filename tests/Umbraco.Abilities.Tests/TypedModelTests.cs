@@ -208,6 +208,25 @@ public class TypedModelTests
     }
 
     [Fact]
+    public async Task A_property_initializer_is_a_default_too_inside_a_new_items_objects()
+    {
+        // GridPlacement's RowSpan { get; set; } = 1: a grid block spans one row unless told otherwise.
+        var page = await _site.Pages.GetSchemaAsync(null);
+        var grid = page.Root.Fields.Single(f => f.Alias == "grid").ItemTypeGroup!;
+        var layout = (await TypesAsync(_site.Pages)).Find(grid, "richText")!.Schema.Find("layout")!.Schema!;
+        Assert.Equal(1, layout.Find("rowSpan")!.Default!.GetValue<int>());
+        Assert.Null(layout.Find("columnSpan")!.Default);
+
+        // Added without one, the block's layout gets it.
+        await _agent.StartChangeSetAsync("Page");
+        var key = (await _agent.OkAsync("entity_create", """{ "entityType": "document" }""")).GetProperty("key").GetGuid();
+        var block = (await _agent.OkAsync("entity_addItem", $$"""{ "entityType": "document", "key": "{{key}}", "fieldPath": "grid", "itemType": "richText", "fields": { "layout": { "columnSpan": 6 } } }""")).GetProperty("itemKey").GetGuid();
+        var entity = await _agent.OkAsync("entity_get", $$"""{ "entityType": "document", "key": "{{key}}" }""");
+        var added = entity.GetProperty("fields").GetProperty("grid").EnumerateArray().Single(i => i.GetProperty("key").GetGuid() == block);
+        Assert.Equal(1, added.GetProperty("layout").GetProperty("rowSpan").GetInt32());
+    }
+
+    [Fact]
     public void An_edit_ability_finds_its_key_from_the_inputs_entity_key_property()
     {
         // ActivateDiscountAbility writes no KeyOf: its input's [EntityKey("umbraco-commerce-discount")] property is the key.
