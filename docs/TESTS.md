@@ -76,6 +76,8 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
   - `TypedModelTests.Item_types_come_from_the_lists_element_type_and_can_be_narrowed_by_naming_classes`
 - A field's allowed item types can come from a setting read at run time, as a Block List's data type does: types left out aren't offered and can't be added
   - `TypedModelTests.A_fields_allowed_item_types_can_come_from_a_setting_read_at_run_time`
+- Item type sources, allow lists and availability can wait, and are read once per call
+  - `EntityTests.Sources_allow_lists_and_availability_can_wait_and_are_read_once_per_call`
 - An edit ability finds the entity's key from its input's `[EntityKey]` property, and says what to add when there is none
   - `TypedModelTests.An_edit_ability_finds_its_key_from_the_inputs_entity_key_property`
 

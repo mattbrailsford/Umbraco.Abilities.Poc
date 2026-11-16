@@ -135,7 +135,8 @@ public abstract class EntityAdapterBase<TModel> : IAuthorizingEntityAdapter
         return new EntitySchema(EntityType, _entity.Name, _entity.Description, _info.Schema) { Dimensions = dimensions };
     }
 
-    public Entity New(Guid key, string? subtype) => new() { EntityType = EntityType, Key = key };
+    public virtual Task<Entity> NewAsync(Guid key, string? subtype, CancellationToken cancellationToken = default)
+        => Task.FromResult(new Entity { EntityType = EntityType, Key = key });
 
     public async Task<Entity?> LoadAsync(Guid key, CancellationToken cancellationToken = default)
         => await LoadModelAsync(key, cancellationToken) is { } model ? ToEntity(model) : null;
@@ -282,16 +283,27 @@ public abstract class ModelEditAbilityBase<TInput, TModel>(EntityAdapterBase<TMo
         return (Guid)property.GetValue(input)!;
     }
 
-    /// <summary>Changes the model. Throw <see cref="AbilityInputException"/> for a correctable problem.</summary>
-    protected abstract void Edit(TModel model, TInput input);
+    /// <summary>
+    /// Changes the model. Throw <see cref="AbilityInputException"/> for a correctable problem. Override this, or
+    /// <see cref="EditAsync"/> when the edit has to look something up.
+    /// </summary>
+    protected virtual void Edit(TModel model, TInput input)
+        => throw new NotImplementedException($"{GetType().Name} must override Edit or EditAsync.");
+
+    /// <summary>Changes the model, when that means waiting for something. By default, calls <see cref="Edit"/>.</summary>
+    protected virtual Task EditAsync(TModel model, TInput input, CancellationToken cancellationToken)
+    {
+        Edit(model, input);
+        return Task.CompletedTask;
+    }
 
     public EntityEditTarget Prepare(JsonObject input)
         => new(adapter.EntityType, KeyOf(Read(input)), Creates: false);
 
-    public object? Apply(Entity entity, JsonObject input, EntityEditContext context)
+    public async Task<object?> ApplyAsync(Entity entity, JsonObject input, EntityEditContext context, CancellationToken cancellationToken = default)
     {
         var model = adapter.ToModel(entity);
-        Edit(model, Read(input));
+        await EditAsync(model, Read(input), cancellationToken);
         entity.Fields = adapter.ToEntity(model).Fields;
         return adapter.ToSummary(entity);
     }
@@ -302,7 +314,7 @@ public abstract class ModelEditAbilityBase<TInput, TModel>(EntityAdapterBase<TMo
         var model = await adapter.LoadModelAsync(key, cancellationToken)
             ?? throw new AbilityInputException($"No {adapter.EntityType} with key {key}.", [new Problem("key", "Not found.")]);
         var before = adapter.ToEntity(model);
-        Edit(model, input);
+        await EditAsync(model, input, cancellationToken);
 
         // Run directly, the ability saves: the user must be allowed to change the entity, as inside a change set.
         var after = adapter.ToEntity(model);

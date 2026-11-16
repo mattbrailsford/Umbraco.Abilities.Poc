@@ -105,6 +105,22 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
    as the escape hatch for a schema that is data. But only its steps vary; its name, switch and trigger don't. As a
    model class with `List<DynamicItem>` steps it lost its hand-written schema, and its save and load now map typed
    connections. The escape hatch is for models where the whole shape is data, such as a document type.
+16. **Anything a product looks up has to be able to wait.** The samples keep everything in memory, so several seams
+   were synchronous and nothing showed it. A real product reads data types, users and plugin settings from a database.
+   These are now asynchronous:
+
+   | Seam | Why a product would wait | Now |
+   | --- | --- | --- |
+   | Item type sources, allow lists, who may use a type | Reading a data type's allowed blocks, a user's sections | Read once at the start of each call (`ItemTypeRegistry.ResolveAsync`). The rest of the call looks types up in the result, `ItemTypes`, without waiting, so walking, diffing and validating values stay simple |
+   | A product's edit (`ModelEditAbilityBase`) | Looking up a price or a related entity | `EditAsync`, beside `Edit` |
+   | A new entity | Default values from a document type | `NewAsync` |
+   | A product's transaction | EF Core's transactions are asynchronous | `BeginAsync`, `CompleteAsync`, `IAsyncDisposable` |
+
+   Still synchronous, on purpose: `ToSummary` (it reads the name from the entity; an edit URL that needs a lookup, such
+   as one with a store in it, would need it too), value handlers (they rearrange a value; settings they need could come
+   with the resolved item types), `Prepare` (it only picks keys), and the optional hooks that have an async twin
+   (`Validate`, `ListModels`). Resolving item types on every call reads every source each time; a real product would
+   cache them and clear the cache when a plugin or data type changes.
 
 ## Developer experience of adapters
 
@@ -158,10 +174,8 @@ is not built yet:
    paths out of the adapter and next to each editor. The handler also owns what an editor allows, since that is
    editor configuration: a Block List's allowed blocks come from its data type's configuration, not from a type
    hierarchy, so the handler reads the list per data type and offers only those blocks. The registry's run-time allow
-   list (`ItemTypeRegistry.Allow`, which typed adapters reach through `AllowItems`) is the seam it would use. One gap:
-   the list is read synchronously, from deep inside walking and validating values, while Umbraco reads data types
-   with `IDataTypeService.GetAsync`. Item type sources have the same limit. The fix is to read every allowed list and
-   source once, asynchronously, at the start of each call (get schema, add item, validate), and hand the result down.
+   list (`ItemTypeRegistry.Allow`, which typed adapters reach through `AllowItems`) is the seam it would use. It can
+   wait, so it can read a data type with `IDataTypeService.GetAsync`: see finding 16.
 2. **A base class for "types are data".** The product lists its type definitions (document types, media types,
    member types, forms) and each property's editor. The framework builds the schema, using the value handlers for
    each editor's inner structure. The product still loads and saves. This covers the ~270 lines of schema building.

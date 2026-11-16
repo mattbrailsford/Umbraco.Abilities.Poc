@@ -117,7 +117,8 @@ public sealed class CmsDocumentAdapter : IDraftingEntityAdapter, IAuthorizingEnt
         };
     }
 
-    public Entity New(Guid key, string? subtype) => new() { EntityType = Type, Key = key, Subtype = subtype };
+    public Task<Entity> NewAsync(Guid key, string? subtype, CancellationToken cancellationToken = default)
+        => Task.FromResult(new Entity { EntityType = Type, Key = key, Subtype = subtype });
 
     public async Task<Entity?> LoadAsync(Guid key, CancellationToken cancellationToken = default)
         => await _draftSets.GetLiveAsync(EntityUdis.For(Type, key)) is { } live ? await ToEntityAsync(live) : null;
@@ -732,12 +733,21 @@ public sealed class CmsScopeUnitOfWorkProvider(ICoreScopeProvider scopes) : IUni
 {
     public string Name => "Content";
 
-    public IUnitOfWork Begin() => new Scope(scopes.CreateCoreScope());
+    // Umbraco scopes are synchronous; the interface is asynchronous for products whose transactions aren't.
+    public Task<IUnitOfWork> BeginAsync(CancellationToken cancellationToken = default) => Task.FromResult<IUnitOfWork>(new Scope(scopes.CreateCoreScope()));
 
     private sealed class Scope(ICoreScope scope) : IUnitOfWork
     {
-        public void Complete() => scope.Complete();
+        public Task CompleteAsync(CancellationToken cancellationToken = default)
+        {
+            scope.Complete();
+            return Task.CompletedTask;
+        }
 
-        public void Dispose() => scope.Dispose();
+        public ValueTask DisposeAsync()
+        {
+            scope.Dispose();
+            return ValueTask.CompletedTask;
+        }
     }
 }

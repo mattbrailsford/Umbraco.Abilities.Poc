@@ -158,7 +158,7 @@ public sealed class ChangeSetService(
                         [new Problem("subtype", "Required, and must be one of the listed subtypes.")]);
                 }
 
-                working = adapter.New(target.EntityKey, target.Subtype);
+                working = await adapter.NewAsync(target.EntityKey, target.Subtype, cancellationToken);
             }
             else if (working is null)
             {
@@ -181,7 +181,7 @@ public sealed class ChangeSetService(
             }
 
             var schema = await adapter.GetSchemaAsync(working.Subtype, cancellationToken);
-            var output = edit.Apply(working, recorded, new EntityEditContext(adapter, schema, itemTypes));
+            var output = await edit.ApplyAsync(working, recorded, new EntityEditContext(adapter, schema, itemTypes), cancellationToken);
 
             // The user the edit is made for must be allowed to make it, in the cultures it touches.
             var permission = working.Version is null ? EntityPermission.Create : EntityPermission.Update;
@@ -280,7 +280,7 @@ public sealed class ChangeSetService(
         var calls = set.Changes.Where(c => c.EntityType == entityType && c.EntityKey == key).ToList();
         if (calls.FirstOrDefault() is { Creates: true } create)
         {
-            return State(await ReplayAsync(adapter, adapter.New(key, create.Subtype), calls, skipUnder: [], cancellationToken));
+            return State(await ReplayAsync(adapter, await adapter.NewAsync(key, create.Subtype, cancellationToken), calls, skipUnder: [], cancellationToken));
         }
 
         if (calls.Count == 0)
@@ -402,7 +402,7 @@ public sealed class ChangeSetService(
         {
             try
             {
-                ((IEntityEditAbility)abilities.Find(call.AbilityId)!).Apply(entity, call.Input, context);
+                await ((IEntityEditAbility)abilities.Find(call.AbilityId)!).ApplyAsync(entity, call.Input, context, cancellationToken);
             }
             catch (AbilityInputException ex) when (ex.Problems.Any(p => skipUnder.Any(t => p.Path == t.Path || p.Path.StartsWith(t.Path + "/", StringComparison.Ordinal))))
             {
@@ -558,7 +558,7 @@ public sealed class ChangeSetService(
             {
                 if (step.UnitOfWork is { } unitOfWork)
                 {
-                    using var transaction = unitOfWork.Begin();
+                    await using var transaction = await unitOfWork.BeginAsync(cancellationToken);
                     var entities = state.Entities.Where(e => step.Entities.Contains((e.EntityType, e.Key))).ToList();
                     if (set.Drafts.TryGetValue(step.Key, out var draftId))
                     {
@@ -574,7 +574,7 @@ public sealed class ChangeSetService(
                         }
                     }
 
-                    transaction.Complete();
+                    await transaction.CompleteAsync(cancellationToken);
                 }
                 else if (abilities.Find(step.Call!.AbilityId)! is { Descriptor.Retries: > 0 } retried && background is not null)
                 {

@@ -66,7 +66,9 @@ protected override void AllowItems(ItemAllowList<Page> allow)
     => allow.Field(x => x.Blocks, () => AllowedBlocks);
 ```
 
-A type not in the list isn't offered in the schema, and adding one is refused. `AllowItems` also takes aliases, for a
+A type not in the list isn't offered in the schema, and adding one is refused. Items saved before the list changed
+still load, and validation reports them. When reading the setting means a database or service call, pass an
+asynchronous list instead: `allow.Field(x => x.Blocks, async cancellationToken => ...)`. It's read once per call. `AllowItems` also takes aliases, for a
 plugin seam's `DynamicItem` field, and fields of item classes inside the model. The real `CmsDocumentAdapter` builds
 its schema from data types, so it reads each data type's list itself (`CmsSchemaMapper`), with one item type group per
 data type.
@@ -131,7 +133,7 @@ What the package no longer writes:
 | A path for a domain problem | `problems.At(x => x.EndDate, ...)`, or `problems.At(item, r => r.Percent, ...)` for an item |
 | Item type groups and registering each item class | The list's element type, or the classes named in `[Items(...)]` |
 | An item type source and a settings mapper per plugin seam | `PluginItemTypeSource` and `PluginSettings`: the product only describes one plugin |
-| An ability that edits an entity, both directly and inside a change set | `ModelEditAbilityBase<TInput, TModel>`: one `Edit(model, input)` method. The key is the input's `[EntityKey]` property |
+| An ability that edits an entity, both directly and inside a change set | `ModelEditAbilityBase<TInput, TModel>`: one `Edit(model, input)` method, or `EditAsync` when it has to look something up. The key is the input's `[EntityKey]` property |
 
 `[Required]` and `[AllowedValues]` become part of the schema, so the generic validator checks them per culture.
 Every other rule runs on the contract. Each problem is reported once. A renamed property is a compile error, not a
@@ -245,7 +247,8 @@ How the framework uses them:
   missing. The type is named by its alias, and its description tells the model so.
 - **Bindings.** A setting that supports bindings accepts `${trigger.orderId}` in place of a value. The schema marks it
   with `x-bindings`, and type and reference checks wait until it resolves.
-- **Availability.** An item type can say who may use it (`AvailableTo`, here from required sections). The schema offers
+- **Availability.** An item type can say who may use it (`AvailableTo`, here from required sections). It can wait,
+  since a product usually looks the user up. The schema offers
   a user only those, and adding one they may not use is refused when it's recorded.
 - **In a typed contract** the field is `List<DynamicItem>`: items with a type and JSON fields, items fields included.
   `PluginSettings` turns them into the most common stored form (provider alias plus string settings), using each

@@ -23,7 +23,11 @@ public interface IEntityAdapter
     /// <summary>The schema of a subtype (null when there are none). May depend on what is installed.</summary>
     Task<EntitySchema> GetSchemaAsync(string? subtype, CancellationToken cancellationToken = default);
 
-    Entity New(Guid key, string? subtype);
+    /// <summary>
+    /// A new entity, before any values are set: where a product fills in defaults. Asynchronous, since defaults can
+    /// depend on the subtype, such as a document type's default values.
+    /// </summary>
+    Task<Entity> NewAsync(Guid key, string? subtype, CancellationToken cancellationToken = default);
 
     Task<Entity?> LoadAsync(Guid key, CancellationToken cancellationToken = default);
 

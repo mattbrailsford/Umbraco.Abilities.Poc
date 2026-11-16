@@ -97,7 +97,7 @@ public class AuthorizationTests
 
         public Task<EntitySchema> GetSchemaAsync(string? subtype, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
-        public Entity New(Guid key, string? subtype) => throw new NotSupportedException();
+        public Task<Entity> NewAsync(Guid key, string? subtype, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public Task<Entity?> LoadAsync(Guid key, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 

@@ -38,7 +38,8 @@ public abstract class EntityEditAbilityBase<TInput> : AbilityBase<TInput, object
         return new EntityEditTarget(typed.EntityType, key, Creates, (typed as CreateEntityInput)?.Subtype);
     }
 
-    public object? Apply(Entity entity, JsonObject input, EntityEditContext context) => Apply(entity, Read(input), context);
+    public Task<object?> ApplyAsync(Entity entity, JsonObject input, EntityEditContext context, CancellationToken cancellationToken = default)
+        => Task.FromResult(Apply(entity, Read(input), context));
 
     /// <summary>Writes new keys into the recorded input so replay always produces the same result.</summary>
     protected virtual void FillKeys(JsonObject input)

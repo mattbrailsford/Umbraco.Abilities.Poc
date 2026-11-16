@@ -51,7 +51,7 @@ public sealed class InMemoryDatabase(string name) : IUnitOfWorkProvider
         _history.Clear();
     }
 
-    public IUnitOfWork Begin() => new Transaction(this, Snapshot());
+    public Task<IUnitOfWork> BeginAsync(CancellationToken cancellationToken = default) => Task.FromResult<IUnitOfWork>(new Transaction(this, Snapshot()));
 
     private Dictionary<string, Dictionary<Guid, Row>> Snapshot()
         => _tables.ToDictionary(t => t.Key, t => t.Value.ToDictionary(r => r.Key, r => r.Value with { Root = (JsonObject)r.Value.Root.DeepClone() }));
@@ -60,14 +60,20 @@ public sealed class InMemoryDatabase(string name) : IUnitOfWorkProvider
     {
         private bool _completed;
 
-        public void Complete() => _completed = true;
+        public Task CompleteAsync(CancellationToken cancellationToken = default)
+        {
+            _completed = true;
+            return Task.CompletedTask;
+        }
 
-        public void Dispose()
+        public ValueTask DisposeAsync()
         {
             if (!_completed)
             {
                 database._tables = snapshot;
             }
+
+            return ValueTask.CompletedTask;
         }
     }
 }

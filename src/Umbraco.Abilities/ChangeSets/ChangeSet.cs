@@ -116,12 +116,14 @@ public interface IUnitOfWorkProvider
     /// <summary>Names the product's step when a set is applied, e.g. "Content" or "Commerce".</summary>
     string Name { get; }
 
-    IUnitOfWork Begin();
+    /// <summary>Starts the product's transaction. Asynchronous, as most database transactions are (EF Core's included).</summary>
+    Task<IUnitOfWork> BeginAsync(CancellationToken cancellationToken = default);
 }
 
-public interface IUnitOfWork : IDisposable
+/// <summary>One product transaction. Disposing it without completing rolls back.</summary>
+public interface IUnitOfWork : IAsyncDisposable
 {
-    void Complete();
+    Task CompleteAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>An entity edit: it says which entity it edits, and how its recorded input changes a working copy.</summary>
@@ -133,8 +135,11 @@ public interface IEntityEditAbility : IAbility
     /// </summary>
     EntityEditTarget Prepare(JsonObject input);
 
-    /// <summary>Applies a recorded input to a working copy. Throws <see cref="AbilityInputException"/> when invalid.</summary>
-    object? Apply(Entity entity, JsonObject input, EntityEditContext context);
+    /// <summary>
+    /// Applies a recorded input to a working copy. Throws <see cref="AbilityInputException"/> when invalid. Asynchronous,
+    /// since a product's edit may need to look something up, such as a price or a related entity.
+    /// </summary>
+    Task<object?> ApplyAsync(Entity entity, JsonObject input, EntityEditContext context, CancellationToken cancellationToken = default);
 }
 
 public sealed record EntityEditTarget(string EntityType, Guid EntityKey, bool Creates, string? Subtype = null);
