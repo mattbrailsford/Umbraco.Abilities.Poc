@@ -211,6 +211,9 @@ public class TypedModelTests
         var blocks = page.Root.Fields.Single(f => f.Alias == "blocks").ItemTypeGroup!;
         Assert.Equal(["cardGrid", "hero"], _site.ItemTypes.InGroup(blocks).Select(t => t.Alias).Order());
 
+        var saved = new Page { Key = Guid.NewGuid(), Blocks = [new CardGrid()] };
+        await _site.Pages.SaveModelAsync(saved);
+
         // An editor removes the card grid from the data type: it is no longer offered, and can't be added.
         _site.Pages.AllowedBlocks.Remove(typeof(CardGrid));
         Assert.Equal(["hero"], _site.ItemTypes.InGroup(blocks).Select(t => t.Alias));
@@ -218,6 +221,11 @@ public class TypedModelTests
         await _agent.StartChangeSetAsync("Page");
         var key = (await _agent.OkAsync("entity_create", """{ "entityType": "document" }""")).GetProperty("key").GetGuid();
         await _agent.FailAsync("entity_addItem", $$"""{ "entityType": "document", "key": "{{key}}", "fieldPath": "blocks", "itemType": "cardGrid" }""");
+
+        // A page saved with a card grid before the change still loads it, and validation reports it.
+        Assert.IsType<CardGrid>(Assert.Single((await _site.Pages.LoadModelAsync(saved.Key))!.Blocks));
+        var problems = await SchemaValidator.ValidateAsync((await _site.Pages.LoadAsync(saved.Key))!, page, _site.ItemTypes, (_, _) => Task.FromResult(true));
+        Assert.Contains(problems, p => p.Path == $"blocks/{saved.Blocks[0].Key}");
     }
 
     private sealed record UnmarkedInput(Guid Discount);

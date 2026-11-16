@@ -297,7 +297,8 @@ public sealed class ItemTypeRegistry
 
     /// <summary>
     /// Limits a group to the item types a setting allows, read each time the group is used: a Block List data type's
-    /// allowed blocks, for example. Types not in the list are not offered, and can't be added.
+    /// allowed blocks, for example. Types not in the list are not offered, can't be added, and are reported by
+    /// validation. Items already saved still load: <see cref="Find(string, string)"/> ignores the list.
     /// </summary>
     public ItemTypeRegistry Allow(string group, Func<IEnumerable<string>> aliases)
     {
@@ -321,13 +322,14 @@ public sealed class ItemTypeRegistry
             : All.FirstOrDefault(t => t.Alias == alias);
     }
 
+    /// <summary>Finds a type in a group, allowed or not, so items saved before a setting changed still read.</summary>
     public ItemTypeDefinition? Find(string group, string alias)
-        => InGroup(group).FirstOrDefault(t => t.Alias == alias);
+        => AllInGroup(group).FirstOrDefault(t => t.Alias == alias);
 
+    /// <summary>The types a group allows now: the ones offered in the schema, and the only ones that can be added.</summary>
     public IReadOnlyList<ItemTypeDefinition> InGroup(string group)
     {
-        var types = _types.Values.Where(t => t.Group == group || t.AlsoIn.Contains(group))
-            .Concat(_sources.Where(s => s.Group == group).SelectMany(s => s.GetItemTypes()));
+        var types = AllInGroup(group);
         if (_allowed.TryGetValue(group, out var allowed))
         {
             var aliases = allowed().ToHashSet(StringComparer.Ordinal);
@@ -336,5 +338,9 @@ public sealed class ItemTypeRegistry
 
         return types.ToList();
     }
+
+    private IEnumerable<ItemTypeDefinition> AllInGroup(string group)
+        => _types.Values.Where(t => t.Group == group || t.AlsoIn.Contains(group))
+            .Concat(_sources.Where(s => s.Group == group).SelectMany(s => s.GetItemTypes()));
 }
 
