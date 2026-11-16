@@ -12,7 +12,7 @@ public static class SchemaValidator
     private sealed record Context(
         Entity Entity,
         EntitySchema Schema,
-        ItemTypeRegistry ItemTypes,
+        ItemTypes ItemTypes,
         Func<string, Guid, Task<bool>> EntityExists,
         List<Problem> Problems);
 
@@ -20,7 +20,7 @@ public static class SchemaValidator
     public static async Task<IReadOnlyList<Problem>> ValidateAsync(
         Entity entity,
         EntitySchema schema,
-        ItemTypeRegistry itemTypes,
+        ItemTypes itemTypes,
         Func<string, Guid, Task<bool>> entityExists)
     {
         var problems = new List<Problem>();
@@ -217,7 +217,7 @@ public static class SchemaWriter
     /// The JSON Schema of an object schema's fields. An items field lists the item types it holds, offering only those
     /// <paramref name="userKey"/> may use, when given; an item type's own fields are fetched in a second step.
     /// </summary>
-    public static JsonObject Fields(ObjectSchema schema, ItemTypeRegistry? itemTypes = null, Guid? userKey = null)
+    public static JsonObject Fields(ObjectSchema schema, ItemTypes? itemTypes = null, Guid? userKey = null)
     {
         var properties = new JsonObject();
         foreach (var field in schema.Fields)
@@ -261,7 +261,7 @@ public static class SchemaWriter
         };
     }
 
-    private static JsonObject Items(FieldDefinition field, ItemTypeRegistry? itemTypes, Guid? userKey)
+    private static JsonObject Items(FieldDefinition field, ItemTypes? itemTypes, Guid? userKey)
     {
         var schema = new JsonObject
         {
@@ -269,7 +269,7 @@ public static class SchemaWriter
             ["description"] = field.Description,
             ["x-edit"] = "Items: each has a key and a type. Add, remove and move them with entity.addItem, removeItem and moveItem at this field's path; set their fields at '<this path>/{key}/<field>'.",
             ["x-item-types"] = new JsonArray((itemTypes?.InGroup(field.ItemTypeGroup!) ?? [])
-                .Where(t => userKey is null || t.IsAvailableTo(userKey.Value))
+                .Where(t => userKey is null || itemTypes!.IsAvailable(t))
                 .Select(t => (JsonNode?)new JsonObject { ["alias"] = t.Alias, ["group"] = t.Group, ["name"] = t.Name, ["description"] = t.Description })
                 .ToArray()),
         };

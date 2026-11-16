@@ -108,7 +108,7 @@ public sealed class DiscountAdapter(
         new PluginItemTypeSource(RewardGroup, () => rewardProviders.Select(p => Describe(p) with { AvailableTo = HasCommerce }), Editors),
     ];
 
-    private bool HasCommerce(Guid user) => Access?.HasSection(user, "commerce") ?? true;
+    private ValueTask<bool> HasCommerce(Guid user, CancellationToken cancellationToken) => ValueTask.FromResult(Access?.HasSection(user, "commerce") ?? true);
 
     /// <summary>
     /// A Commerce provider, as the framework describes a plugin: the only thing Commerce writes per seam. A group rule

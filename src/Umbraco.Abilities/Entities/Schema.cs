@@ -208,33 +208,36 @@ public sealed record ItemTypeDefinition(string Group, string Alias, string Name,
     /// <summary>The model class for items of this type, when it was registered from one.</summary>
     public Type? ClrType { get; init; }
 
-    /// <summary>Whether a user may use this type, e.g. an Automate action that needs the Commerce section. Null: everyone.</summary>
-    public Func<Guid, bool>? AvailableTo { get; init; }
-
-    public bool IsAvailableTo(Guid userKey) => AvailableTo?.Invoke(userKey) ?? true;
+    /// <summary>
+    /// Whether a user may use this type, e.g. an Automate action that needs the Commerce section. Null: everyone.
+    /// Asynchronous, since a product usually has to look the user up.
+    /// </summary>
+    public Func<Guid, CancellationToken, ValueTask<bool>>? AvailableTo { get; init; }
 }
 
 /// <summary>
 /// The item types of a plugin seam, read from the product's own registry each time they're needed: Commerce's discount
 /// rule providers, Automate's triggers and actions. A product writes one source per seam; plugins write nothing, and one
-/// installed later just shows up.
+/// installed later just shows up. Read once per call, asynchronously, so a source can query a database.
 /// </summary>
 public interface IItemTypeSource
 {
     string Group { get; }
 
-    IEnumerable<ItemTypeDefinition> GetItemTypes();
+    Task<IEnumerable<ItemTypeDefinition>> GetItemTypesAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>
-/// Item types by group. An alias is unique within a group, but the same alias can appear in several groups,
-/// as one element type can be used by several block editors with different settings and areas.
+/// Where item types are registered: classes and definitions added at start-up, plugin seams' sources, and groups
+/// limited by a setting. Sources, allow lists and availability can be asynchronous, so they're read once at the start of
+/// each call with <see cref="ResolveAsync"/>. What that returns, <see cref="ItemTypes"/>, is what the rest of the call
+/// looks types up in.
 /// </summary>
 public sealed class ItemTypeRegistry
 {
     private readonly Dictionary<(string Group, string Alias), ItemTypeDefinition> _types = [];
     private readonly List<IItemTypeSource> _sources = [];
-    private readonly Dictionary<string, Func<IEnumerable<string>>> _allowed = [];
+    private readonly Dictionary<string, Func<CancellationToken, Task<IEnumerable<string>>>> _allowed = [];
 
     /// <summary>Adds a plugin seam's item types, read from the product's registry whenever they're needed.</summary>
     public ItemTypeRegistry AddSource(IItemTypeSource source)
@@ -242,8 +245,6 @@ public sealed class ItemTypeRegistry
         _sources.Add(source);
         return this;
     }
-
-    private IEnumerable<ItemTypeDefinition> All => _types.Values.Concat(_sources.SelectMany(s => s.GetItemTypes()));
 
     public ItemTypeRegistry Add(ItemTypeDefinition itemType)
     {
@@ -295,17 +296,6 @@ public sealed class ItemTypeRegistry
         return this;
     }
 
-    /// <summary>
-    /// Limits a group to the item types a setting allows, read each time the group is used: a Block List data type's
-    /// allowed blocks, for example. Types not in the list are not offered, can't be added, and are reported by
-    /// validation. Items already saved still load: <see cref="Find(string, string)"/> ignores the list.
-    /// </summary>
-    public ItemTypeRegistry Allow(string group, Func<IEnumerable<string>> aliases)
-    {
-        _allowed[group] = aliases;
-        return this;
-    }
-
     /// <summary>Adds the type unless one is already registered for its group and alias.</summary>
     public ItemTypeRegistry AddIfMissing(ItemTypeDefinition itemType)
     {
@@ -313,13 +303,81 @@ public sealed class ItemTypeRegistry
         return this;
     }
 
+    /// <summary>
+    /// Limits a group to the item types a setting allows, read once per call: a Block List data type's allowed blocks,
+    /// for example. Types not in the list are not offered, can't be added, and are reported by validation. Items already
+    /// saved still load: <see cref="ItemTypes.Find(string, string)"/> ignores the list.
+    /// </summary>
+    public ItemTypeRegistry Allow(string group, Func<CancellationToken, Task<IEnumerable<string>>> aliases)
+    {
+        _allowed[group] = aliases;
+        return this;
+    }
+
+    /// <summary>
+    /// Reads every source, allow list and availability check once, for one call made for <paramref name="userKey"/>
+    /// (null: no user, such as start-up or a system task, which may use every type).
+    /// </summary>
+    public async Task<ItemTypes> ResolveAsync(Guid? userKey, CancellationToken cancellationToken = default)
+    {
+        var types = _types.Values.ToList();
+        foreach (var source in _sources)
+        {
+            types.AddRange(await source.GetItemTypesAsync(cancellationToken));
+        }
+
+        var allowed = new Dictionary<string, IReadOnlySet<string>>();
+        foreach (var (group, aliases) in _allowed)
+        {
+            allowed[group] = (await aliases(cancellationToken)).ToHashSet(StringComparer.Ordinal);
+        }
+
+        var unavailable = new HashSet<ItemTypeDefinition>(ReferenceEqualityComparer.Instance);
+        if (userKey is { } user)
+        {
+            foreach (var type in types.Where(t => t.AvailableTo is not null))
+            {
+                if (!await type.AvailableTo!(user, cancellationToken))
+                {
+                    unavailable.Add(type);
+                }
+            }
+        }
+
+        return new ItemTypes(types, allowed, unavailable);
+    }
+
+    /// <summary>
+    /// The registered classes and definitions only, without sources, allow lists or availability: enough to read a
+    /// model's class items, which never come from a source.
+    /// </summary>
+    internal ItemTypes Registered => new(_types.Values.ToList(), new Dictionary<string, IReadOnlySet<string>>(), new HashSet<ItemTypeDefinition>());
+}
+
+/// <summary>
+/// The item types for one call, read from the <see cref="ItemTypeRegistry"/> at its start. Looking a type up here never
+/// waits, so walking, diffing and validating values stay simple.
+/// </summary>
+public sealed class ItemTypes
+{
+    private readonly IReadOnlyList<ItemTypeDefinition> _types;
+    private readonly IReadOnlyDictionary<string, IReadOnlySet<string>> _allowed;
+    private readonly IReadOnlySet<ItemTypeDefinition> _unavailable;
+
+    /// <summary>A fixed set of item types, with no sources or limits: for tests, and for code that builds its own.</summary>
+    public static ItemTypes Of(params ItemTypeDefinition[] types)
+        => new(types, new Dictionary<string, IReadOnlySet<string>>(), new HashSet<ItemTypeDefinition>());
+
+    internal ItemTypes(IReadOnlyList<ItemTypeDefinition> types, IReadOnlyDictionary<string, IReadOnlySet<string>> allowed, IReadOnlySet<ItemTypeDefinition> unavailable)
+        => (_types, _allowed, _unavailable) = (types, allowed, unavailable);
+
     /// <summary>Finds a type by alias, or by <c>group:alias</c> when the alias is used in several groups.</summary>
     public ItemTypeDefinition? Find(string alias)
     {
         var separator = alias.LastIndexOf(':');
         return separator > 0
             ? Find(alias[..separator], alias[(separator + 1)..])
-            : All.FirstOrDefault(t => t.Alias == alias);
+            : _types.FirstOrDefault(t => t.Alias == alias);
     }
 
     /// <summary>Finds a type in a group, allowed or not, so items saved before a setting changed still read.</summary>
@@ -328,19 +386,13 @@ public sealed class ItemTypeRegistry
 
     /// <summary>The types a group allows now: the ones offered in the schema, and the only ones that can be added.</summary>
     public IReadOnlyList<ItemTypeDefinition> InGroup(string group)
-    {
-        var types = AllInGroup(group);
-        if (_allowed.TryGetValue(group, out var allowed))
-        {
-            var aliases = allowed().ToHashSet(StringComparer.Ordinal);
-            types = types.Where(t => aliases.Contains(t.Alias));
-        }
+        => _allowed.TryGetValue(group, out var allowed)
+            ? AllInGroup(group).Where(t => allowed.Contains(t.Alias)).ToList()
+            : AllInGroup(group).ToList();
 
-        return types.ToList();
-    }
+    /// <summary>Whether the call's user may use the type.</summary>
+    public bool IsAvailable(ItemTypeDefinition itemType) => !_unavailable.Contains(itemType);
 
     private IEnumerable<ItemTypeDefinition> AllInGroup(string group)
-        => _types.Values.Where(t => t.Group == group || t.AlsoIn.Contains(group))
-            .Concat(_sources.Where(s => s.Group == group).SelectMany(s => s.GetItemTypes()));
+        => _types.Where(t => t.Group == group || t.AlsoIn.Contains(group));
 }
-

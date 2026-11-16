@@ -76,7 +76,7 @@ public sealed record GetEntitySchemaInput(
 [Ability("entity.getSchema", "Get entity schema", Kind = AbilityKind.Read, UsesChangeSet = false,
     Description = "Returns an entity type's fields as JSON Schema. An items field lists its item types (x-item-types). " +
                   "Call it first. Call again with itemTypes to get the fields of the item types you will add.")]
-public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemTypeRegistry itemTypes)
+public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemTypeRegistry registry)
     : AbilityBase<GetEntitySchemaInput, JsonObject>
 {
     protected override async Task<AbilityResult> ExecuteAsync(GetEntitySchemaInput input, AbilityContext context, CancellationToken cancellationToken)
@@ -94,6 +94,7 @@ public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemT
         }
 
         var schema = await adapter.GetSchemaAsync(input.Subtype, cancellationToken);
+        var itemTypes = await registry.ResolveAsync(context.UserKey, cancellationToken);
         var output = new JsonObject
         {
             ["entityType"] = schema.EntityType,
@@ -113,7 +114,7 @@ public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemT
             var details = new JsonObject();
             foreach (var alias in input.ItemTypes)
             {
-                var itemType = itemTypes.Find(alias) is { } found && found.IsAvailableTo(context.UserKey) ? found
+                var itemType = itemTypes.Find(alias) is { } found && itemTypes.IsAvailable(found) ? found
                     : throw new AbilityInputException($"Unknown item type '{alias}'.", [new Problem("itemTypes", $"Unknown: {alias}.")]);
                 details[alias] = new JsonObject
                 {

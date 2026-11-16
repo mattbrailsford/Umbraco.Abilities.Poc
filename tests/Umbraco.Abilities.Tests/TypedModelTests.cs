@@ -20,6 +20,7 @@ public class TypedModelTests
     [Fact]
     public async Task The_structure_comes_from_the_model_class_and_its_attributes()
     {
+        var types = await _site.ItemTypes.ResolveAsync(null);
         var discount = await _site.Discounts.GetSchemaAsync(null);
         var fields = discount.Root.Fields.ToDictionary(f => f.Alias);
 
@@ -31,7 +32,7 @@ public class TypedModelTests
         Assert.DoesNotContain("key", fields.Keys);
         Assert.DoesNotContain("version", fields.Keys);
 
-        var customerGroup = _site.ItemTypes.Find(DiscountAdapter.RuleGroup, "customerGroup")!;
+        var customerGroup = types.Find(DiscountAdapter.RuleGroup, "customerGroup")!;
         Assert.Equal(["VIP", "Wholesale", "Retail"], customerGroup.Schema.Fields.Single().Allowed);
         Assert.Null(customerGroup.ClrType); // from Commerce's provider collection, not a class
     }
@@ -39,6 +40,7 @@ public class TypedModelTests
     [Fact]
     public async Task Varying_values_settings_layout_and_json_values_are_described_too()
     {
+        var types = await _site.ItemTypes.ResolveAsync(null);
         var page = await _site.Pages.GetSchemaAsync(null);
         var fields = page.Root.Fields.ToDictionary(f => f.Alias);
 
@@ -47,12 +49,12 @@ public class TypedModelTests
         Assert.True(fields["tags"].Many);
         Assert.Equal(["document", "media"], fields["related"].ReferencesAnyOf);
         Assert.Equal(["culture"], page.Root.Fields.Single(f => f.Alias == "promos").VariesBy);
-        Assert.Equal("columnSpan", _site.ItemTypes.Find(fields["grid"].ItemTypeGroup!, "richText")!.Schema.Find("layout")!.Schema!.Fields[0].Alias);
+        Assert.Equal("columnSpan", types.Find(fields["grid"].ItemTypeGroup!, "richText")!.Schema.Find("layout")!.Schema!.Fields[0].Alias);
 
-        var hero = _site.ItemTypes.Find(fields["blocks"].ItemTypeGroup!, "hero")!;
+        var hero = types.Find(fields["blocks"].ItemTypeGroup!, "hero")!;
         Assert.Equal(["light", "dark"], hero.Schema.Find("settings")!.Schema!.Find("theme")!.Allowed);
 
-        var focalPoint = _site.ItemTypes.Find(fields["image"].ItemTypeGroup!, "mediaEntry")!.Schema.Fields.Single(f => f.Alias == "focalPoint");
+        var focalPoint = types.Find(fields["image"].ItemTypeGroup!, "mediaEntry")!.Schema.Fields.Single(f => f.Alias == "focalPoint");
         Assert.Equal(FieldType.Json, focalPoint.Type);
         Assert.NotNull(focalPoint.JsonSchema!["properties"]!["left"]);
     }
@@ -99,7 +101,7 @@ public class TypedModelTests
 
         IReadOnlyList<Problem> problems =
         [
-            .. await SchemaValidator.ValidateAsync(entity, schema, _site.ItemTypes, (_, _) => Task.FromResult(true)),
+            .. await SchemaValidator.ValidateAsync(entity, schema, await _site.ItemTypes.ResolveAsync(null), (_, _) => Task.FromResult(true)),
             .. await _site.Discounts.ValidateAsync(entity),
         ];
 
@@ -111,23 +113,25 @@ public class TypedModelTests
     [Fact]
     public async Task Item_types_come_from_the_lists_element_type_and_can_be_narrowed_by_naming_classes()
     {
+        var types = await _site.ItemTypes.ResolveAsync(null);
         var page = await _site.Pages.GetSchemaAsync(null);
         var fields = page.Root.Fields.ToDictionary(f => f.Alias);
-        string[] Aliases(string group) => _site.ItemTypes.InGroup(group).Select(t => t.Alias).Order().ToArray();
+        string[] Aliases(string group) => types.InGroup(group).Select(t => t.Alias).Order().ToArray();
 
         // Nothing was registered by hand: every [ItemType] class that extends the list's element type is found.
         Assert.Equal(["cardGrid", "hero"], Aliases(fields["blocks"].ItemTypeGroup!));
         Assert.Equal(["richText", "twoColumn"], Aliases(fields["grid"].ItemTypeGroup!));
 
         // Item types inside item types are found too, and a list can be narrowed to the classes it names.
-        var twoColumn = _site.ItemTypes.Find(fields["grid"].ItemTypeGroup!, "twoColumn")!;
+        var twoColumn = types.Find(fields["grid"].ItemTypeGroup!, "twoColumn")!;
         Assert.Equal(["richText"], Aliases(twoColumn.Schema.Find("left")!.ItemTypeGroup!));
-        Assert.Equal(["card"], Aliases(_site.ItemTypes.Find(fields["blocks"].ItemTypeGroup!, "cardGrid")!.Schema.Find("cards")!.ItemTypeGroup!));
+        Assert.Equal(["card"], Aliases(types.Find(fields["blocks"].ItemTypeGroup!, "cardGrid")!.Schema.Find("cards")!.ItemTypeGroup!));
     }
 
     [Fact]
     public async Task A_class_with_no_attributes_or_base_class_is_described_fluently()
     {
+        var types = await _site.ItemTypes.ResolveAsync(null);
         var media = await _site.Media.GetSchemaAsync(null);
         var fields = media.Root.Fields.ToDictionary(f => f.Alias);
 
@@ -136,7 +140,7 @@ public class TypedModelTests
         Assert.Equal(["name", "altText", "crops"], fields.Keys); // the key, version and server-side UpdateDate are not fields
         var crops = Assert.Single(media.Root.ItemFields);
 
-        var crop = _site.ItemTypes.Find(crops.ItemTypeGroup!, "crop")!;
+        var crop = types.Find(crops.ItemTypeGroup!, "crop")!;
         Assert.Equal(typeof(MediaCropRequestModel), crop.ClrType);
         Assert.All(crop.Schema.Fields, f => Assert.True(f.Required));
 
@@ -209,14 +213,14 @@ public class TypedModelTests
         // The page's blocks field allows what its data type's configuration lists, as a Block List does.
         var page = await _site.Pages.GetSchemaAsync(null);
         var blocks = page.Root.Fields.Single(f => f.Alias == "blocks").ItemTypeGroup!;
-        Assert.Equal(["cardGrid", "hero"], _site.ItemTypes.InGroup(blocks).Select(t => t.Alias).Order());
+        Assert.Equal(["cardGrid", "hero"], (await _site.ItemTypes.ResolveAsync(null)).InGroup(blocks).Select(t => t.Alias).Order());
 
         var saved = new Page { Key = Guid.NewGuid(), Blocks = [new CardGrid()] };
         await _site.Pages.SaveModelAsync(saved);
 
         // An editor removes the card grid from the data type: it is no longer offered, and can't be added.
         _site.Pages.AllowedBlocks.Remove(typeof(CardGrid));
-        Assert.Equal(["hero"], _site.ItemTypes.InGroup(blocks).Select(t => t.Alias));
+        Assert.Equal(["hero"], (await _site.ItemTypes.ResolveAsync(null)).InGroup(blocks).Select(t => t.Alias));
 
         await _agent.StartChangeSetAsync("Page");
         var key = (await _agent.OkAsync("entity_create", """{ "entityType": "document" }""")).GetProperty("key").GetGuid();
@@ -224,7 +228,7 @@ public class TypedModelTests
 
         // A page saved with a card grid before the change still loads it, and validation reports it.
         Assert.IsType<CardGrid>(Assert.Single((await _site.Pages.LoadModelAsync(saved.Key))!.Blocks));
-        var problems = await SchemaValidator.ValidateAsync((await _site.Pages.LoadAsync(saved.Key))!, page, _site.ItemTypes, (_, _) => Task.FromResult(true));
+        var problems = await SchemaValidator.ValidateAsync((await _site.Pages.LoadAsync(saved.Key))!, page, await _site.ItemTypes.ResolveAsync(null), (_, _) => Task.FromResult(true));
         Assert.Contains(problems, p => p.Path == $"blocks/{saved.Blocks[0].Key}");
     }
 

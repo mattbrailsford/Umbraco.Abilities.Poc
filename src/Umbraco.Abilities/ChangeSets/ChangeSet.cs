@@ -139,7 +139,7 @@ public interface IEntityEditAbility : IAbility
 
 public sealed record EntityEditTarget(string EntityType, Guid EntityKey, bool Creates, string? Subtype = null);
 
-public sealed record EntityEditContext(IEntityAdapter Adapter, EntitySchema Schema, ItemTypeRegistry ItemTypes);
+public sealed record EntityEditContext(IEntityAdapter Adapter, EntitySchema Schema, ItemTypes ItemTypes);
 
 /// <summary>
 /// An entity adapter whose product keeps its own drafts, such as CMS Draft Sets. A change set then holds one of the

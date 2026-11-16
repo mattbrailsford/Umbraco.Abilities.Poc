@@ -140,10 +140,10 @@ public static class EntityValues
     /// variant of the value holding it, with what it varies by itself on top (a heading that varies inside an invariant
     /// block list).
     /// </summary>
-    public static IEnumerable<EntityValue> Walk(JsonObject root, ObjectSchema schema, ItemTypeRegistry itemTypes)
+    public static IEnumerable<EntityValue> Walk(JsonObject root, ObjectSchema schema, ItemTypes itemTypes)
         => Walk(root, schema, itemTypes, string.Empty, VariantId.Invariant);
 
-    private static IEnumerable<EntityValue> Walk(JsonObject owner, ObjectSchema schema, ItemTypeRegistry itemTypes, string path, VariantId context)
+    private static IEnumerable<EntityValue> Walk(JsonObject owner, ObjectSchema schema, ItemTypes itemTypes, string path, VariantId context)
     {
         foreach (var field in schema.Fields)
         {
@@ -172,7 +172,7 @@ public static class EntityValues
     }
 
     /// <summary>The variants an entity has values in: every one that appears anywhere in it.</summary>
-    public static IReadOnlyList<VariantId> VariantsIn(JsonObject root, ObjectSchema schema, ItemTypeRegistry itemTypes)
+    public static IReadOnlyList<VariantId> VariantsIn(JsonObject root, ObjectSchema schema, ItemTypes itemTypes)
         => Walk(root, schema, itemTypes).Select(v => v.Variant).Where(v => !v.IsInvariant).Distinct().ToList();
 
     /// <summary>The variants values directly on this object are in, not counting objects and items inside it.</summary>
@@ -186,7 +186,7 @@ public static class EntityValues
     /// <paramref name="create"/> creates missing objects and item arrays, for writing. Throws
     /// <see cref="AbilityInputException"/> with a problem on the path when it doesn't resolve.
     /// </summary>
-    public static PathTarget Find(JsonObject root, ObjectSchema schema, ItemTypeRegistry itemTypes, string path, Func<FieldDefinition, string, VariantId> variantFor, bool create)
+    public static PathTarget Find(JsonObject root, ObjectSchema schema, ItemTypes itemTypes, string path, Func<FieldDefinition, string, VariantId> variantFor, bool create)
     {
         var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (segments.Length == 0)

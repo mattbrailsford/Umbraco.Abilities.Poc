@@ -278,7 +278,7 @@ public static class ModelSchemas
     }
 
     /// <summary>Reads a model of <paramref name="type"/> from an object in an entity. Items are created as their registered item type classes.</summary>
-    public static object Read(Type type, JsonObject json, ItemTypeRegistry itemTypes, string path)
+    public static object Read(Type type, JsonObject json, ItemTypes itemTypes, string path)
     {
         var model = Activator.CreateInstance(type)!;
         foreach (var member in Info(type).Fields)
@@ -317,7 +317,7 @@ public static class ModelSchemas
         _ => ToNode(value),
     };
 
-    private static object? ReadValue(FieldMember member, JsonNode node, Type type, ItemTypeRegistry itemTypes, string path) => member.Field.Type switch
+    private static object? ReadValue(FieldMember member, JsonNode node, Type type, ItemTypes itemTypes, string path) => member.Field.Type switch
     {
         FieldType.Items => ReadItems(node as JsonArray ?? [], member.Field, type, itemTypes, path),
         FieldType.Object => Read(type, node.AsObject(), itemTypes, path),
@@ -355,7 +355,7 @@ public static class ModelSchemas
         return item;
     }
 
-    private static IList ReadItems(JsonArray items, FieldDefinition field, Type listType, ItemTypeRegistry itemTypes, string fieldPath)
+    private static IList ReadItems(JsonArray items, FieldDefinition field, Type listType, ItemTypes itemTypes, string fieldPath)
     {
         var list = (IList)Activator.CreateInstance(listType)!;
         var dynamic = ElementTypeOf(listType) is { } elementType && typeof(DynamicItem).IsAssignableFrom(elementType);

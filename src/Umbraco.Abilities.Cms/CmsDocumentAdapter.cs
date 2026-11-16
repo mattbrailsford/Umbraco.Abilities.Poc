@@ -266,7 +266,7 @@ public sealed class CmsDocumentAdapter : IDraftingEntityAdapter, IAuthorizingEnt
         var type = DocumentType(after.Subtype);
         var map = await _mapper.MapAsync(type, isDocument: true);
         var touched = new HashSet<(string Alias, string? Culture, string? Segment)>();
-        foreach (var change in EntityDiff.Compare(before.Fields, after.Fields, map.Schema, _itemTypes))
+        foreach (var change in EntityDiff.Compare(before.Fields, after.Fields, map.Schema, await _itemTypes.ResolveAsync(null)))
         {
             var alias = change.Path.Split('/')[0];
             if (alias == CmsSchemaMapper.NameField)
@@ -438,7 +438,7 @@ public sealed class CmsDocumentAdapter : IDraftingEntityAdapter, IAuthorizingEnt
         var type = DocumentType(document.Subtype);
         var map = await _mapper.MapAsync(type, isDocument: true);
         var root = document.Fields;
-        var cultures = EntityValues.VariantsIn(root, map.Schema, _itemTypes).Select(v => v.Culture).OfType<string>().Distinct().ToList();
+        var cultures = EntityValues.VariantsIn(root, map.Schema, await _itemTypes.ResolveAsync(null)).Select(v => v.Culture).OfType<string>().Distinct().ToList();
         var nameField = map.Schema.Find(CmsSchemaMapper.NameField)!;
         var index = new ErrorIndex();
 

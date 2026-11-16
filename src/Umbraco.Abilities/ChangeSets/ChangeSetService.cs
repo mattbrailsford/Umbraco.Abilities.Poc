@@ -25,7 +25,7 @@ public sealed class ChangeSetService(
     IChangeSetStore store,
     AbilityRegistry abilities,
     EntityAdapterRegistry adapters,
-    ItemTypeRegistry itemTypes,
+    ItemTypeRegistry registry,
     IChangeSetAccessor accessor,
     IEventAggregator? events = null,
     IBackgroundTaskQueue? background = null,
@@ -107,6 +107,7 @@ public sealed class ChangeSetService(
 
     public async Task<AbilityResult> RecordAsync(Guid setId, IAbility ability, JsonObject input, AbilityContext context, CancellationToken cancellationToken = default)
     {
+        var itemTypes = await registry.ResolveAsync(context.UserKey, cancellationToken);
         try
         {
             var set = Get(setId);
@@ -190,7 +191,7 @@ public sealed class ChangeSetService(
             }
 
             // And to use every item type it adds: a plugin's type can need access the entity doesn't.
-            if (EntityAccess.NewItemTypesNotAvailable(before, working, schema.Root, itemTypes, context.UserKey) is { Count: > 0 } unavailable)
+            if (EntityAccess.NewItemTypesNotAvailable(before, working, schema.Root, itemTypes) is { Count: > 0 } unavailable)
             {
                 return EntityAccess.Denied($"You may not use {string.Join(", ", unavailable)}.");
             }
@@ -263,6 +264,7 @@ public sealed class ChangeSetService(
 
     private async Task<EntityState> ComputeAsync(ChangeSet set, string entityType, Guid key, CancellationToken cancellationToken)
     {
+        var itemTypes = await registry.ResolveAsync(null, cancellationToken);
         var adapter = adapters.Get(entityType);
         var live = await adapter.LoadAsync(key, cancellationToken);
         EntityState State(Entity? working, RebasedEntity? rebased = null) => new(entityType, key, adapter, live, working, rebased);
@@ -395,7 +397,7 @@ public sealed class ChangeSetService(
             return entity;
         }
 
-        var context = new EntityEditContext(adapter, await adapter.GetSchemaAsync(entity.Subtype, cancellationToken), itemTypes);
+        var context = new EntityEditContext(adapter, await adapter.GetSchemaAsync(entity.Subtype, cancellationToken), await registry.ResolveAsync(null, cancellationToken));
         foreach (var call in calls)
         {
             try
@@ -421,6 +423,7 @@ public sealed class ChangeSetService(
 
     private async Task<IReadOnlyList<EntityProblems>> ValidateAsync(ChangeSet set, SetState state, CancellationToken cancellationToken)
     {
+        var itemTypes = await registry.ResolveAsync(null, cancellationToken);
         var result = new List<EntityProblems>();
         foreach (var entity in state.Entities)
         {
@@ -484,6 +487,7 @@ public sealed class ChangeSetService(
     /// </summary>
     public async Task<AbilityResult> ApplyAsync(Guid setId, AbilityContext context, CancellationToken cancellationToken = default)
     {
+        var itemTypes = await registry.ResolveAsync(context.UserKey, cancellationToken);
         ChangeSet set;
         try
         {

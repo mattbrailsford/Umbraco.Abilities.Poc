@@ -15,7 +15,7 @@ public sealed record PluginDescriptor(string Alias, string? Name, string? Descri
     public IReadOnlyList<FieldDefinition> ExtraFields { get; init; } = [];
 
     /// <summary>Whether a user may use the plugin, e.g. only users with its required sections. Null: everyone.</summary>
-    public Func<Guid, bool>? AvailableTo { get; init; }
+    public Func<Guid, CancellationToken, ValueTask<bool>>? AvailableTo { get; init; }
 
     /// <summary>The CLR type a setting holds, or null for a setting the plugin doesn't declare.</summary>
     public Type? SettingType(string key) => Settings.FirstOrDefault(s => s.Key == key)?.ClrType;
@@ -25,21 +25,34 @@ public sealed record PluginDescriptor(string Alias, string? Name, string? Descri
 /// The item types of a plugin seam, read from the product's registry each time they're needed. This is all a product
 /// writes per seam: it says where its plugins are and how to describe one. Plugins, third parties' included, write nothing.
 /// </summary>
-/// <param name="group">The item type group the seam's items field names.</param>
-/// <param name="plugins">The plugins registered now. Called whenever the item types are needed, so later plugins show up.</param>
-/// <param name="editorReferences">The product's table from an editor UI alias to the entity types it picks.</param>
-public sealed class PluginItemTypeSource(
-    string group,
-    Func<IEnumerable<PluginDescriptor>> plugins,
-    IReadOnlyDictionary<string, string[]>? editorReferences = null) : IItemTypeSource
+public sealed class PluginItemTypeSource : IItemTypeSource
 {
     private static readonly IReadOnlyDictionary<string, string[]> NoEditors = new Dictionary<string, string[]>();
 
-    public string Group => group;
+    private readonly string _group;
+    private readonly Func<CancellationToken, Task<IEnumerable<PluginDescriptor>>> _plugins;
+    private readonly IReadOnlyDictionary<string, string[]> _editorReferences;
 
-    public IEnumerable<ItemTypeDefinition> GetItemTypes() => plugins().Select(plugin =>
+    /// <param name="group">The item type group the seam's items field names.</param>
+    /// <param name="plugins">The plugins registered now. Read once per call, so later plugins show up.</param>
+    /// <param name="editorReferences">The product's table from an editor UI alias to the entity types it picks.</param>
+    public PluginItemTypeSource(string group, Func<CancellationToken, Task<IEnumerable<PluginDescriptor>>> plugins, IReadOnlyDictionary<string, string[]>? editorReferences = null)
+        => (_group, _plugins, _editorReferences) = (group, plugins, editorReferences ?? NoEditors);
+
+    /// <summary>For plugins held in memory, such as a DI collection.</summary>
+    public PluginItemTypeSource(string group, Func<IEnumerable<PluginDescriptor>> plugins, IReadOnlyDictionary<string, string[]>? editorReferences = null)
+        : this(group, _ => Task.FromResult(plugins()), editorReferences)
     {
-        var fields = plugin.Settings.OrderBy(s => s.SortOrder).Select(s => ItemTypeFields.For(s, editorReferences ?? NoEditors)).ToList();
+    }
+
+    public string Group => _group;
+
+    public async Task<IEnumerable<ItemTypeDefinition>> GetItemTypesAsync(CancellationToken cancellationToken = default)
+        => (await _plugins(cancellationToken)).Select(Describe).ToList();
+
+    private ItemTypeDefinition Describe(PluginDescriptor plugin)
+    {
+        var fields = plugin.Settings.OrderBy(s => s.SortOrder).Select(s => ItemTypeFields.For(s, _editorReferences)).ToList();
         if (plugin.ExtraFields.FirstOrDefault(e => fields.Any(f => f.Alias == e.Alias)) is { } clash)
         {
             throw new InvalidOperationException($"{plugin.Alias} has a setting called '{clash.Alias}', which is a field its product adds.");
@@ -47,7 +60,7 @@ public sealed class PluginItemTypeSource(
 
         fields.AddRange(plugin.ExtraFields);
         return new ItemTypeDefinition(
-            group,
+            _group,
             plugin.Alias,
             ItemTypeFields.Text(plugin.Name) ?? plugin.Alias,
             ItemTypeFields.Text(plugin.Description)
@@ -56,15 +69,26 @@ public sealed class PluginItemTypeSource(
         {
             AvailableTo = plugin.AvailableTo,
         };
-    });
+    }
 }
 
-/// <summary>Item types worked out whenever they're needed, such as one per ability that can be a workflow step.</summary>
-public sealed class ItemTypeSource(string group, Func<IEnumerable<ItemTypeDefinition>> itemTypes) : IItemTypeSource
+/// <summary>Item types worked out once per call, such as one per ability that can be a workflow step.</summary>
+public sealed class ItemTypeSource : IItemTypeSource
 {
-    public string Group => group;
+    private readonly Func<CancellationToken, Task<IEnumerable<ItemTypeDefinition>>> _itemTypes;
 
-    public IEnumerable<ItemTypeDefinition> GetItemTypes() => itemTypes();
+    public ItemTypeSource(string group, Func<CancellationToken, Task<IEnumerable<ItemTypeDefinition>>> itemTypes)
+        => (Group, _itemTypes) = (group, itemTypes);
+
+    /// <summary>For item types worked out from what's in memory.</summary>
+    public ItemTypeSource(string group, Func<IEnumerable<ItemTypeDefinition>> itemTypes)
+        : this(group, _ => Task.FromResult(itemTypes()))
+    {
+    }
+
+    public string Group { get; }
+
+    public Task<IEnumerable<ItemTypeDefinition>> GetItemTypesAsync(CancellationToken cancellationToken = default) => _itemTypes(cancellationToken);
 }
 
 /// <summary>

@@ -135,7 +135,7 @@ public sealed class WorkflowAdapter(
         plugin.Fields.Select(f => new SettingDescriptor(f.Key, f.Field.Label, f.Field.Description, f.PropertyType, f.Rules, f.Field.EditorUiAlias, f.Field.SortOrder, f.Field.SupportsBindings)).ToList())
     {
         ExtraFields = withExits ? Exits(plugin.Outcomes) : [],
-        AvailableTo = user => Access is not { } access || plugin.RequiredSections.All(section => access.HasSection(user, section)),
+        AvailableTo = (user, _) => ValueTask.FromResult(Access is not { } access || plugin.RequiredSections.All(section => access.HasSection(user, section))),
     };
 
     /// <summary>A step's exits: <c>next</c>, or an <c>outcomes</c> object when the step names outcomes.</summary>

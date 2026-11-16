@@ -22,7 +22,7 @@ public static class EntityDiff
 {
     public const string Order = "@order";
 
-    public static IReadOnlyCollection<ChangedPath> Compare(JsonObject before, JsonObject after, ObjectSchema schema, ItemTypeRegistry itemTypes)
+    public static IReadOnlyCollection<ChangedPath> Compare(JsonObject before, JsonObject after, ObjectSchema schema, ItemTypes itemTypes)
     {
         var changes = new HashSet<ChangedPath>();
         CompareObject(before, after, schema, itemTypes, string.Empty, VariantId.Invariant, changes);
@@ -41,7 +41,7 @@ public static class EntityDiff
     }
 
     /// <summary>The value at a path, for showing a conflict: a value, an item, a list's item keys in order, or null when absent.</summary>
-    public static JsonNode? ValueAt(JsonObject root, ObjectSchema schema, ItemTypeRegistry itemTypes, ChangedPath change)
+    public static JsonNode? ValueAt(JsonObject root, ObjectSchema schema, ItemTypes itemTypes, ChangedPath change)
         => Find(root, schema, itemTypes, change, create: false) switch
         {
             null => null,
@@ -51,7 +51,7 @@ public static class EntityDiff
         };
 
     /// <summary>Makes <paramref name="change"/>'s path in <paramref name="target"/> the same as in <paramref name="source"/>: keeping theirs.</summary>
-    public static void CopyPath(JsonObject source, JsonObject target, ObjectSchema schema, ItemTypeRegistry itemTypes, ChangedPath change)
+    public static void CopyPath(JsonObject source, JsonObject target, ObjectSchema schema, ItemTypes itemTypes, ChangedPath change)
     {
         var from = Find(source, schema, itemTypes, change, create: false);
         if (Find(target, schema, itemTypes, change, create: true) is not { } to)
@@ -93,7 +93,7 @@ public static class EntityDiff
 
     private static bool Inside(string path, string container) => path.StartsWith(container + "/", StringComparison.Ordinal);
 
-    private static void CompareObject(JsonObject? a, JsonObject? b, ObjectSchema schema, ItemTypeRegistry itemTypes, string path, VariantId context, HashSet<ChangedPath> changes)
+    private static void CompareObject(JsonObject? a, JsonObject? b, ObjectSchema schema, ItemTypes itemTypes, string path, VariantId context, HashSet<ChangedPath> changes)
     {
         foreach (var field in schema.Fields)
         {
@@ -124,7 +124,7 @@ public static class EntityDiff
         }
     }
 
-    private static void CompareItems(JsonArray? a, JsonArray? b, FieldDefinition field, ItemTypeRegistry itemTypes, string fieldPath, VariantId variant, HashSet<ChangedPath> changes)
+    private static void CompareItems(JsonArray? a, JsonArray? b, FieldDefinition field, ItemTypes itemTypes, string fieldPath, VariantId variant, HashSet<ChangedPath> changes)
     {
         var itemsA = (a ?? []).OfType<JsonObject>().ToDictionary(EntityValues.KeyOf);
         var itemsB = (b ?? []).OfType<JsonObject>().ToDictionary(EntityValues.KeyOf);
@@ -153,7 +153,7 @@ public static class EntityDiff
         => owner is null ? [] : EntityValues.Values(owner, field).Select(v => v.Variant);
 
     // Where a change is, in an entity: its own variant for each varying value on the way.
-    private static PathTarget? Find(JsonObject root, ObjectSchema schema, ItemTypeRegistry itemTypes, ChangedPath change, bool create)
+    private static PathTarget? Find(JsonObject root, ObjectSchema schema, ItemTypes itemTypes, ChangedPath change, bool create)
     {
         var path = change.Structural && !change.Path.EndsWith("/" + Order, StringComparison.Ordinal) && create
             ? change.Path[..change.Path.LastIndexOf('/')] // the items field, to put their item back into

@@ -167,7 +167,8 @@ public abstract class EntityAdapterBase<TModel> : IAuthorizingEntityAdapter
     /// <summary>The model an entity describes.</summary>
     public TModel ToModel(Entity entity)
     {
-        var model = (TModel)ModelSchemas.Read(typeof(TModel), entity.Fields, ItemTypes, string.Empty);
+        // Class items never come from a source, so the registered types are enough to read them without waiting.
+        var model = (TModel)ModelSchemas.Read(typeof(TModel), entity.Fields, ItemTypes.Registered, string.Empty);
         _info.Key!.SetValue(model, entity.Key);
         _info.Version?.SetValue(model, entity.Version);
         return model;
@@ -187,26 +188,38 @@ public abstract class EntityAdapterBase<TModel> : IAuthorizingEntityAdapter
     }
 }
 
-/// <summary>Limits items fields to the item types a run-time setting allows. See <c>AllowItems</c> on the adapter.</summary>
+/// <summary>
+/// Limits items fields to the item types a run-time setting allows. See <c>AllowItems</c> on the adapter. Each list is
+/// read once per call; pass an asynchronous one (taking a <see cref="CancellationToken"/>) when reading the setting
+/// means a database or service call, such as Umbraco's <c>IDataTypeService.GetAsync</c>.
+/// </summary>
 public sealed class ItemAllowList<TModel>(ItemTypeRegistry itemTypes)
     where TModel : class
 {
     /// <summary>Allows only these item classes in a field of the model.</summary>
     public ItemAllowList<TModel> Field<TValue>(Expression<Func<TModel, TValue>> field, Func<IEnumerable<Type>> itemClasses)
+        => Field<TModel, TValue>(field, _ => Task.FromResult(itemClasses()));
+
+    /// <summary>Allows only these item classes in a field of the model, read asynchronously.</summary>
+    public ItemAllowList<TModel> Field<TValue>(Expression<Func<TModel, TValue>> field, Func<CancellationToken, Task<IEnumerable<Type>>> itemClasses)
         => Field<TModel, TValue>(field, itemClasses);
 
     /// <summary>Allows only the item types with these aliases in a field of the model, e.g. a plugin seam's <c>DynamicItem</c> field.</summary>
     public ItemAllowList<TModel> Field<TValue>(Expression<Func<TModel, TValue>> field, Func<IEnumerable<string>> aliases)
+        => Field<TModel, TValue>(field, _ => Task.FromResult(aliases()));
+
+    /// <summary>Allows only the item types with these aliases in a field of the model, read asynchronously.</summary>
+    public ItemAllowList<TModel> Field<TValue>(Expression<Func<TModel, TValue>> field, Func<CancellationToken, Task<IEnumerable<string>>> aliases)
         => Field<TModel, TValue>(field, aliases);
 
-    /// <summary>Allows only these item classes in a field of an item class inside the model.</summary>
-    public ItemAllowList<TModel> Field<TOwner, TValue>(Expression<Func<TOwner, TValue>> field, Func<IEnumerable<Type>> itemClasses)
+    /// <summary>Allows only these item classes in a field of an item class inside the model, read asynchronously.</summary>
+    public ItemAllowList<TModel> Field<TOwner, TValue>(Expression<Func<TOwner, TValue>> field, Func<CancellationToken, Task<IEnumerable<Type>>> itemClasses)
         where TOwner : class
-        => Field(field, () => itemClasses().Select(c => ModelSchemas.Info(c).ItemType?.Alias
+        => Field(field, async cancellationToken => (await itemClasses(cancellationToken)).Select(c => ModelSchemas.Info(c).ItemType?.Alias
             ?? throw new InvalidOperationException($"{c.Name} is not an item type: add [ItemType] or configure it with IsItemType.")));
 
-    /// <summary>Allows only the item types with these aliases in a field of an item class inside the model.</summary>
-    public ItemAllowList<TModel> Field<TOwner, TValue>(Expression<Func<TOwner, TValue>> field, Func<IEnumerable<string>> aliases)
+    /// <summary>Allows only the item types with these aliases in a field of an item class inside the model, read asynchronously.</summary>
+    public ItemAllowList<TModel> Field<TOwner, TValue>(Expression<Func<TOwner, TValue>> field, Func<CancellationToken, Task<IEnumerable<string>>> aliases)
         where TOwner : class
     {
         var alias = ModelSchemas.AliasOf(ModelBuilder<TOwner>.PropertyOf(field));
@@ -293,7 +306,7 @@ public abstract class ModelEditAbilityBase<TInput, TModel>(EntityAdapterBase<TMo
 
         // Run directly, the ability saves: the user must be allowed to change the entity, as inside a change set.
         var after = adapter.ToEntity(model);
-        if (await EntityAccess.CheckAsync(adapter, new EntityAccessRequest(context.UserKey, EntityPermission.Update, key, after, EntityAccess.VariantsChanged(before, after, ModelSchemas.SchemaOf(typeof(TModel)), adapter.ItemTypes)), cancellationToken) is { } denied)
+        if (await EntityAccess.CheckAsync(adapter, new EntityAccessRequest(context.UserKey, EntityPermission.Update, key, after, EntityAccess.VariantsChanged(before, after, ModelSchemas.SchemaOf(typeof(TModel)), await adapter.ItemTypes.ResolveAsync(context.UserKey, cancellationToken))), cancellationToken) is { } denied)
         {
             return EntityAccess.Denied(denied);
         }

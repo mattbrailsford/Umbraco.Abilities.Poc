@@ -33,7 +33,7 @@ public static class EntityAccess
         => adapter is IAuthorizingEntityAdapter authorizing ? await authorizing.AuthorizeAsync(request, cancellationToken) : null;
 
     /// <summary>The variants whose values differ between two versions of an entity.</summary>
-    public static IReadOnlySet<VariantId> VariantsChanged(Entity? before, Entity after, ObjectSchema schema, ItemTypeRegistry itemTypes)
+    public static IReadOnlySet<VariantId> VariantsChanged(Entity? before, Entity after, ObjectSchema schema, ItemTypes itemTypes)
         => EntityDiff.Compare(before?.Fields ?? [], after.Fields, schema, itemTypes)
             .Select(c => c.Variant)
             .Where(v => !v.IsInvariant)
@@ -42,20 +42,21 @@ public static class EntityAccess
     /// <summary>
     /// Item types the change adds that the user may not use, such as an Automate action that needs a section they don't
     /// have. Items the entity already had are left alone. Each item's type is looked up in its own field's group, since
-    /// the same alias can be a different type in another group.
+    /// the same alias can be a different type in another group. The item types say who may use what: resolve them for the
+    /// user making the change.
     /// </summary>
-    public static IReadOnlyList<string> NewItemTypesNotAvailable(Entity? before, Entity after, ObjectSchema schema, ItemTypeRegistry itemTypes, Guid userKey)
+    public static IReadOnlyList<string> NewItemTypesNotAvailable(Entity? before, Entity after, ObjectSchema schema, ItemTypes itemTypes)
     {
         var existing = before is null ? [] : Items(before.Fields, schema, itemTypes).Select(i => i.Key).ToHashSet();
         return Items(after.Fields, schema, itemTypes)
-            .Where(i => !existing.Contains(i.Key) && i.Type is { } type && !type.IsAvailableTo(userKey))
+            .Where(i => !existing.Contains(i.Key) && i.Type is { } type && !itemTypes.IsAvailable(type))
             .Select(i => i.Type!.Alias)
             .Distinct()
             .ToList();
     }
 
     // Every item in the entity, at any depth, with its item type.
-    private static IEnumerable<(Guid Key, ItemTypeDefinition? Type)> Items(JsonObject root, ObjectSchema schema, ItemTypeRegistry itemTypes)
+    private static IEnumerable<(Guid Key, ItemTypeDefinition? Type)> Items(JsonObject root, ObjectSchema schema, ItemTypes itemTypes)
         => EntityValues.Walk(root, schema, itemTypes)
             .Where(v => v.Field.IsItems)
             .SelectMany(v => (v.Value as JsonArray ?? []).OfType<JsonObject>()

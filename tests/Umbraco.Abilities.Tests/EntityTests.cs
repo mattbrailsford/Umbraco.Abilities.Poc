@@ -7,8 +7,8 @@ namespace Umbraco.Abilities.Tests;
 /// <summary>The value tree and the checks on it that need no product.</summary>
 public class EntityTests
 {
-    private static readonly ItemTypeRegistry ItemTypes = new ItemTypeRegistry()
-        .Add(new ItemTypeDefinition("blocks", "hero", "Hero", "A hero.", ObjectSchema.Of(
+    private static readonly ItemTypes ItemTypes = ItemTypes.Of(
+        new ItemTypeDefinition("blocks", "hero", "Hero", "A hero.", ObjectSchema.Of(
             new FieldDefinition("heading", "Heading.", FieldType.String) { VariesBy = ["culture"] },
             FieldDefinition.ObjectOf("settings", "Settings.", ObjectSchema.Of(new FieldDefinition("theme", "Theme.", FieldType.String))))));
 
@@ -36,7 +36,7 @@ public class EntityTests
     public void Variation_is_any_dimension_a_product_names_not_only_culture()
     {
         // A price per currency inside a reward item: the schema lists the dimension and its values.
-        var itemTypes = new ItemTypeRegistry().Add(new ItemTypeDefinition("rewards", "amountOff", "Amount off", "A fixed amount off.", ObjectSchema.Of(
+        var itemTypes = ItemTypes.Of(new ItemTypeDefinition("rewards", "amountOff", "Amount off", "A fixed amount off.", ObjectSchema.Of(
             new FieldDefinition("amount", "The amount, per currency.", FieldType.Number, Required: true) { VariesBy = ["currency"] })));
         var schema = new EntitySchema("discount", "Discount", "A discount.", ObjectSchema.Of(FieldDefinition.ItemsOf("rewards", "Rewards.", "rewards")))
         {
@@ -70,7 +70,7 @@ public class EntityTests
     };
 
     private static EditTarget In(Entity entity, string? culture, string? segment)
-        => new(entity, SegmentedPage, new ItemTypeRegistry(), VariantId.Of("culture", culture).With("segment", segment));
+        => new(entity, SegmentedPage, ItemTypes.Of(), VariantId.Of("culture", culture).With("segment", segment));
 
     [Fact]
     public void A_value_can_vary_by_two_dimensions_and_each_segment_keeps_its_own_value()
@@ -126,7 +126,7 @@ public class EntityTests
         // The Danish VIP variant exists (it has a subtitle) but has no heading.
         EntityEditor.SetValue(In(entity, "da-DK", "vip"), "subtitle", JsonValue.Create("Kun for VIP"));
 
-        var problems = await SchemaValidator.ValidateAsync(entity, SegmentedPage, new ItemTypeRegistry(), (_, _) => Task.FromResult(true));
+        var problems = await SchemaValidator.ValidateAsync(entity, SegmentedPage, ItemTypes.Of(), (_, _) => Task.FromResult(true));
 
         var problem = Assert.Single(problems);
         Assert.Equal("heading", problem.Path);
@@ -145,20 +145,21 @@ public class EntityTests
     }
 
     [Fact]
-    public void An_item_type_is_checked_in_its_own_fields_group_when_its_alias_is_in_several()
+    public async Task An_item_type_is_checked_in_its_own_fields_group_when_its_alias_is_in_several()
     {
         var restricted = Guid.NewGuid();
-        var itemTypes = new ItemTypeRegistry()
-            .Add(new ItemTypeDefinition("grid", "text", "Text", "Text in a grid.", ObjectSchema.Of()) { AvailableTo = user => user != restricted })
-            .Add(new ItemTypeDefinition("list", "text", "Text", "Text in a list.", ObjectSchema.Of()));
+        var itemTypes = await new ItemTypeRegistry()
+            .Add(new ItemTypeDefinition("grid", "text", "Text", "Text in a grid.", ObjectSchema.Of()) { AvailableTo = (user, _) => ValueTask.FromResult(user != restricted) })
+            .Add(new ItemTypeDefinition("list", "text", "Text", "Text in a list.", ObjectSchema.Of()))
+            .ResolveAsync(restricted);
         var schema = ObjectSchema.Of(FieldDefinition.ItemsOf("blocks", "Blocks.", "list"), FieldDefinition.ItemsOf("grid", "Grid.", "grid"));
 
         var after = new Entity { EntityType = "page", Key = Guid.NewGuid() };
         after.Fields["blocks"] = new JsonArray(EntityValues.NewItem(Guid.NewGuid(), "text"));
-        Assert.Empty(EntityAccess.NewItemTypesNotAvailable(null, after, schema, itemTypes, restricted));
+        Assert.Empty(EntityAccess.NewItemTypesNotAvailable(null, after, schema, itemTypes));
 
         after.Fields["grid"] = new JsonArray(EntityValues.NewItem(Guid.NewGuid(), "text"));
-        Assert.Equal(["text"], EntityAccess.NewItemTypesNotAvailable(null, after, schema, itemTypes, restricted));
+        Assert.Equal(["text"], EntityAccess.NewItemTypesNotAvailable(null, after, schema, itemTypes));
     }
 
     [Fact]
@@ -178,5 +179,32 @@ public class EntityTests
 
         // A field that takes no bindings checks the same text as a literal.
         Assert.NotNull(FieldChecker.Check(quantity with { AcceptsBindings = false }, JsonValue.Create("${trigger.quantity}"), "quantity"));
+    }
+
+    [Fact]
+    public async Task Sources_allow_lists_and_availability_can_wait_and_are_read_once_per_call()
+    {
+        var reads = 0;
+        var registry = new ItemTypeRegistry()
+            .AddSource(new ItemTypeSource("blocks", async cancellationToken =>
+            {
+                await Task.Delay(1, cancellationToken); // a database or service call
+                reads++;
+                return (IEnumerable<ItemTypeDefinition>)
+                [
+                    new ItemTypeDefinition("blocks", "hero", "Hero", "A hero.", ObjectSchema.Of()),
+                    new ItemTypeDefinition("blocks", "quote", "Quote", "A quote.", ObjectSchema.Of())
+                    {
+                        AvailableTo = async (user, cancellationToken) => { await Task.Delay(1, cancellationToken); return false; },
+                    },
+                ];
+            }))
+            .Allow("blocks", async cancellationToken => { await Task.Delay(1, cancellationToken); return ["hero", "quote"]; });
+
+        var itemTypes = await registry.ResolveAsync(Guid.NewGuid());
+
+        Assert.Equal(["hero", "quote"], itemTypes.InGroup("blocks").Select(t => t.Alias));
+        Assert.False(itemTypes.IsAvailable(itemTypes.Find("blocks", "quote")!));
+        Assert.Equal(1, reads);
     }
 }

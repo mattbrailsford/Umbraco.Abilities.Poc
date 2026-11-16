@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 namespace Umbraco.Abilities.Entities;
 
 /// <summary>What an edit works on: the entity, its schema, the item types, and the variant being edited.</summary>
-public sealed record EditTarget(Entity Entity, EntitySchema Schema, ItemTypeRegistry ItemTypes, VariantId Variant);
+public sealed record EditTarget(Entity Entity, EntitySchema Schema, ItemTypes ItemTypes, VariantId Variant);
 
 /// <summary>
 /// Edits an entity by path. A path goes down through values: in an object a step is a field alias, in an items field a
