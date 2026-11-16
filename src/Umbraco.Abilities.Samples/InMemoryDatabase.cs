@@ -140,7 +140,7 @@ public abstract class InMemoryEntityAdapter(InMemoryDatabase database, string en
 
     public Entity New(Guid key, string? subtype) => new() { EntityType = EntityType, Key = key };
 
-    public Task<Entity?> LoadAsync(Guid key, CancellationToken cancellationToken = default)
+    public virtual Task<Entity?> LoadAsync(Guid key, CancellationToken cancellationToken = default)
         => Task.FromResult(Database.Get(EntityType, key) is { } row
             ? new Entity { EntityType = EntityType, Key = key, Version = row.Version, Fields = row.Root }
             : null);

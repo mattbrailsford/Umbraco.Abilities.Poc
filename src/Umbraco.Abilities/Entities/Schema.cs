@@ -145,7 +145,7 @@ public sealed record FieldDefinition(string Alias, string Description, FieldType
     /// </summary>
     public IReadOnlyList<System.ComponentModel.DataAnnotations.ValidationAttribute>? Rules { get; init; }
 
-    /// <summary>The value can be a binding to an earlier step's output, e.g. <c>{{trigger.orderId}}</c>, instead of a literal.</summary>
+    /// <summary>The value can be a binding to an earlier step's output, e.g. <c>${trigger.orderId}</c>, instead of a literal.</summary>
     public bool AcceptsBindings { get; init; }
 
     /// <summary>

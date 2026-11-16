@@ -160,8 +160,10 @@ Removing a culture is an operation (a CMS ability), not a value.
   dimension with listed values needs one of them; an open one, such as a segment, may be left out for its default.
 
 **References** are values holding a key (`x-references`), so an entity stays a tree of values it owns, and graphs are
-references between items or between entities. A workflow's steps are items, and each step's `next` is a reference to
-another step.
+references between items or between entities. A workflow's steps are items, and each step's exits are references to
+other steps: `next` for a step with one exit, or one per outcome in an `outcomes` object for a step that names
+outcomes (an If's `true` and `false`). Automate stores them as a list of connections; the adapter converts. A wrong
+outcome name is refused like any field the step doesn't have, with no Automate-only check.
 
 ### What a package implements
 
@@ -260,7 +262,7 @@ How the framework uses them:
 - **Fields** use the same type mapping as model classes. Required and allowed values become part of the schema, and other rules (a range) are checked on the field's path.
 - **Editor UI aliases** map to references through a small table per product (Commerce's collection picker → a collection). An unmapped editor stays a plain value whose description names it.
 - **Localization-key labels** (Commerce's default `#uc…Label`) are treated as missing: the type is named by its alias, and its description tells the model so.
-- **Bindings** (`{{trigger.orderId}}`) are accepted where a setting supports them, marked in the schema, and checked when they resolve.
+- **Bindings** (`${trigger.orderId}`) are accepted where a setting supports them, marked in the schema, and checked when they resolve.
 - **Availability:** a user is only offered item types they may use, and adding one they may not is refused when it's recorded.
 - **In a typed contract** the field is a list of dynamic items (a type, JSON fields, nested items). One mapper per seam turns them into the product's stored form.
 
@@ -508,9 +510,10 @@ A standalone [proof of concept](../) implements all three layers, with stand-ins
 | Every read must see the set's changes | Finding an entity by name inside a set first missed one renamed in the set, and a product's own Read ability showed only live data | Reads go through the change set: the generic reads use the working state, and a product's Read ability runs its own query for what's live, then reads it through `ChangeSetService.ReadAllAsync` (or `ReadModelsAsync`), which adds what the current set changed, created or deleted. The generic form of the CMS Draft Sets read overlay |
 | Keys chosen at record time work | Writing generated keys into the recorded input made replay deterministic. A discount referred to a page created in the same set, and a workflow step to a later step, with no key remapping | Settles the "new items referring to each other" risk in favour of keys chosen when the call is recorded |
 | Which change set a call works in is ambient, and named per call | A real model (Claude Opus 5.5) built a discount from text with only the generic tools, but couldn't validate it: it was never told the set's id. A set the model created itself couldn't be used at all, since nothing passed its id to later calls | As in the CMS Draft Sets PoC, an accessor makes one set current per call (per request over HTTP, from the `Umb-Change-Set` header), and no ability input carries the id. The AI adapter adds an optional `changeSetId` to every tool that uses a set (an ability that can't depend on one, like getting a schema, says `UsesChangeSet = false`); without it a call uses the only set open in the conversation, and with two or more open it must name one. Every result reports the set used, and an unknown set is refused |
+| A step's exits are fields, one per outcome | Automate stores links as connections with an optional outcome, and any action can name its outcomes. As a list of connections, checking an outcome is one the step has needs Automate-only code, and the schema can only describe outcomes in text | A step with one exit has `next`; a step that names outcomes has an `outcomes` object with one exit per outcome, and no `next`. The generic checks refuse a wrong name and report an exit to a missing step by path. The adapter converts to and from Automate's connections. Fan-out, connection filters, the "any result" exit and Switch's cases are not covered |
 | Typing moves the work, not the line count | Moving the samples to model classes left their size about the same: Commerce went from 74 to 62 statement lines, and the real CMS adapter from 621 to 599 lines. But a discount's structure was previously written twice, as field definitions and as string-keyed JSON reads. Now it is written once. Typed values also exposed a validator bug that only parsed JSON had hidden | Make EntityAdapterBase\<TModel> the default for package developers, with IEntityAdapter over a typed document as the escape hatch for a schema that is data |
 
-Not yet proven: the real Commerce and Automate models, persistence, opening a set in an editor, and how reliably real models use the tools beyond a few runs.
+Not yet proven: the real Commerce and Automate models (including every kind of Automate connection), persistence, opening a set in an editor, and how reliably real models use the tools beyond a few runs.
 
 ## Checked against the real models
 

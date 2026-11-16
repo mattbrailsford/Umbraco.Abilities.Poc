@@ -1,10 +1,11 @@
 # Example flows
 
-Three requests, built with the same generic tools:
+Four requests, built with the same generic tools:
 
 1. [A CMS page with a Block Grid](#flow-1-a-cms-page-with-a-block-grid)
 2. [An Automate automation with different kinds of action](#flow-2-an-automate-automation)
 3. [A Commerce discount with nested rules](#flow-3-a-commerce-discount)
+4. [An Automate automation that branches with an If](#flow-4-an-automate-automation-that-branches)
 
 No tool here is specific to CMS, Automate or Commerce. Each product only describes its entities (an entity adapter),
 and the tools work from that.
@@ -394,23 +395,29 @@ Before this flow, a live discount called "Repeat customer 5%" was created with k
 // result (trimmed): name, enabled, a trigger, and the steps
 "steps": {
   "type": "array",
-  "description": "The steps. Each step names the next one.",
+  "description": "The steps. Each step names the step to run next, once per exit.",
   "x-item-types": [
     { "alias": "email.send", "group": "automate.step", "name": "Send email", "description": "Sends an email." },
     { "alias": "commerce.activateDiscount", "group": "automate.step", "name": "Activate discount", "description": "Switches a discount on so customers get it." },
-    { "alias": "umbracoCommerce.changeOrderStatus", "group": "automate.step", "name": "Change Order Status", "description": "Changes the status of a Commerce order." }
+    { "alias": "umbracoAutomate.getContent", "group": "automate.step", "name": "Get Content", "description": "Fetches a published content item and exposes its properties for use in later steps." },
+    { "alias": "umbracoCommerce.changeOrderStatus", "group": "automate.step", "name": "Change Order Status", "description": "Changes the status of a Commerce order." },
+    { "alias": "umbracoAutomate.if", "group": "automate.step", "name": "If", "description": "Evaluates conditions and routes to the true or false branch." }
   ],
   "minItems": 1
 }
 ```
 
-The step types come from three places, and none of them wrote code for this:
+The step types come from four places, and none of them wrote code for this:
 
 | Step type | Comes from |
 | --- | --- |
 | `umbracoCommerce.changeOrderStatus` | An action in Commerce's Automate package, read from Automate's action collection |
+| `umbracoAutomate.getContent` | One of Automate's own actions, from the same collection |
+| `umbracoAutomate.if` | One of Automate's control flows, read from its control flow collection |
 | `email.send` | An ability in an email package |
 | `commerce.activateDiscount` | An ability in Commerce |
+
+This flow uses three of them. [Flow 4](#flow-4-an-automate-automation-that-branches) uses the If.
 
 The trigger `umbracoCommerce.orderCreated` comes from Commerce's Automate package too. Commerce's trigger and action
 need the Commerce section, so a user without it isn't offered them.
@@ -432,7 +439,7 @@ need the Commerce section, so a user without it isn't offered them.
     "name": "Change Order Status",
     "fields": {
       "properties": {
-        "orderId": { "type": "string", "description": "Order ID The order to update. Can be a binding to an earlier step's output, e.g. {{trigger.orderId}}.", "x-bindings": true },
+        "orderId": { "type": "string", "description": "Order ID The order to update. Can be a binding to an earlier step's output, e.g. ${trigger.orderId}.", "x-bindings": true },
         "orderStatusId": { "type": "string", "description": "Status ID The new order status GUID. Can be a binding …", "x-bindings": true },
         "next": { "type": "string", "format": "uuid", "x-references-item-in": "steps", "description": "The step to run after this one. Omit for the last step." }
       },
@@ -522,7 +529,7 @@ Keys are chosen by the caller, so a step can point at the next one before it exi
   "itemType": "umbracoCommerce.changeOrderStatus",
   "itemKey": "a0000000-0000-4000-8000-000000000003",
   "fields": {
-    "orderId": "{{trigger.orderId}}",
+    "orderId": "${trigger.orderId}",
     "orderStatusId": "5b0f2c1e-8d6a-4c3b-9f4e-2a7d1c9e0b11",
     "next": "a0000000-0000-4000-8000-000000000004"
   }
@@ -542,7 +549,7 @@ Keys are chosen by the caller, so a step can point at the next one before it exi
   "itemKey": "a0000000-0000-4000-8000-000000000004",
   "fields": {
     "to": "warehouse@example.com",
-    "subject": "New order {{trigger.orderId}}",
+    "subject": "New order ${trigger.orderId}",
     "next": "a0000000-0000-4000-8000-000000000005"
   }
 }
@@ -897,18 +904,275 @@ The discount is saved but still switched off. Switching it on is a separate abil
 
 ---
 
-## What was the same in all three
+## Flow 4: an Automate automation that branches
 
-| | CMS page | Automate workflow | Commerce discount |
-| --- | --- | --- | --- |
-| Find a name | — | `entity_find` the discount | `entity_find` the collection |
-| Create | `entity_create` | `entity_create` | `entity_create` |
-| Add items | Grid rows, blocks in areas | Trigger, steps | Rules, rules in a group, rewards |
-| Nesting | `grid/{row}/left` | — (a graph, by `next`) | `rules/{group}/children` |
-| A reference | — | A step to a discount; a step to a step | A rule to a collection |
-| A problem by path | Missing text (per culture), span too wide | A `next` with no step | Percent out of range |
-| Fix | `entity_setValue` at the problem's path | `entity_addItem` the missing step | `entity_setValue` at the problem's path |
-| Review | `changeSet_summarize` | `changeSet_summarize` | `changeSet_summarize` |
+> "When an order is created, if its total is over 1,000, email sales. Otherwise, set its status to Processing."
+
+**What it shows:** a step with two exits, a mistake in an exit's name refused on the spot, an exit that points at a step
+not added yet, and how the exits are saved in Automate's own form.
+
+**How exits work.** A step with one exit has `next`, as in flow 2. A step that names outcomes has an `outcomes` object
+instead, with one exit per outcome, and no `next`. So each step has exactly one way to say where to go, and a model
+can't send every result to a step it meant for only one. The outcomes come from Automate's action outcomes (on its
+`action-outcomes` branch): any action can name its own, like Get Content's `success` and `notFound`.
+
+### 1. Start a change set and read the schema
+
+```jsonc
+// changeSet_create
+{ "name": "Big orders" }
+
+// result
+{ "changeSetId": "432572c0-1c63-49b3-9b90-4e4e759376d7", "name": "Big orders" }
+```
+
+```jsonc
+// entity_getSchema
+{ "entityType": "umbraco-automate-workflow", "itemTypes": ["umbracoAutomate.if", "umbracoAutomate.getContent"] }
+
+// result: the outline, plus (trimmed)
+"itemTypes": {
+  "umbracoAutomate.if": {
+    "name": "If",
+    "fields": {
+      "type": "object",
+      "properties": {
+        "conditions": {
+          "type": ["object", "null"],
+          "properties": { "groups": { "type": "array", "items": { … "conditions": { "type": "array", "items": {
+            "properties": {
+              "leftOperand": { "type": "string" },
+              "operator": { "enum": ["equals", "notEquals", "contains", "notContains", "startsWith", "endsWith", "greaterThan", "lessThan", "greaterThanOrEquals", "lessThanOrEquals", "isEmpty", "isNotEmpty"] },
+              "rightOperand": { "type": "string" }
+            } } } } } },
+          "description": "Conditions Define conditions to determine which branch to follow. Edited with 'UmbracoAutomate.PropertyEditorUi.ConditionBuilder' in the backoffice. Can be a binding to an earlier step's output, e.g. ${trigger.orderId}.",
+          "x-bindings": true
+        },
+        "outcomes": {
+          "type": "object",
+          "properties": {
+            "true": { "type": "string", "format": "uuid", "x-references-item-in": "steps", "description": "The step to run when this step finishes with 'true'. The conditions match." },
+            "false": { "type": "string", "format": "uuid", "x-references-item-in": "steps", "description": "The step to run when this step finishes with 'false'. The conditions don't match." }
+          },
+          "required": [],
+          "description": "Where to go next, by how this step finishes. Omit an outcome to end the run there."
+        }
+      },
+      "required": ["conditions"]
+    }
+  },
+  "umbracoAutomate.getContent": {
+    "name": "Get Content",
+    "fields": {
+      "properties": {
+        "contentKey": { "type": "string", "description": "Content Key The key of the content item to fetch. Can be a binding …", "x-bindings": true },
+        "outcomes": {
+          "type": "object",
+          "properties": {
+            "success": { "type": "string", "format": "uuid", "x-references-item-in": "steps", "description": "The step to run when this step finishes with 'success'." },
+            "notFound": { "type": "string", "format": "uuid", "x-references-item-in": "steps", "description": "The step to run when this step finishes with 'notFound'." }
+          },
+          …
+        }
+      },
+      "required": ["contentKey"]
+    }
+  }
+}
+```
+
+The If's conditions are Automate's own condition set: groups joined by OR, and the conditions in a group joined by AND.
+Its schema comes from the settings class, so nothing was written for it.
+
+Get Content's outcomes have no wording of their own. Automate labels them with localization keys
+(`#uaOutcomes_found`), which tell a model nothing, so only the outcome's name reaches it.
+
+### 2. Create the workflow and its trigger
+
+```jsonc
+// entity_create
+{ "entityType": "umbraco-automate-workflow", "key": "b0000000-0000-4000-8000-000000000001", "fields": { "name": "Big orders", "enabled": true } }
+
+// result
+{ "entityType": "umbraco-automate-workflow", "key": "b0000000-0000-4000-8000-000000000001", "name": "Big orders", "editUrl": "/umbraco/section/automate/workflow/b0000000-0000-4000-8000-000000000001" }
+```
+
+```jsonc
+// entity_addItem
+{
+  "entityType": "umbraco-automate-workflow",
+  "key": "b0000000-0000-4000-8000-000000000001",
+  "fieldPath": "trigger",
+  "itemType": "umbracoCommerce.orderCreated",
+  "itemKey": "b0000000-0000-4000-8000-000000000005",
+  "fields": {}
+}
+
+// result
+{ "itemKey": "b0000000-0000-4000-8000-000000000005", "path": "trigger/b0000000-0000-4000-8000-000000000005" }
+```
+
+### 3. Add the If, with a wrong outcome name first
+
+The If has two exits, so they go in `outcomes`. Here they're named `yes` and `no` by mistake:
+
+```jsonc
+// entity_addItem
+{
+  "entityType": "umbraco-automate-workflow",
+  "key": "b0000000-0000-4000-8000-000000000001",
+  "fieldPath": "steps",
+  "itemType": "umbracoAutomate.if",
+  "itemKey": "b0000000-0000-4000-8000-000000000002",
+  "fields": {
+    "conditions": { "groups": [ { "conditions": [ { "leftOperand": "${trigger.orderTotal}", "operator": "greaterThan", "rightOperand": "1000" } ] } ] },
+    "outcomes": { "yes": "b0000000-0000-4000-8000-000000000003", "no": "b0000000-0000-4000-8000-000000000004" }
+  }
+}
+
+// result
+{
+  "success": false,
+  "status": "InvalidInput",
+  "correctable": true,
+  "message": "Some fields could not be set.",
+  "problems": [
+    {
+      "path": "steps/b0000000-0000-4000-8000-000000000002/outcomes/yes",
+      "errorMessages": ["No field 'yes' here. Fields: true, false."],
+      "variant": null
+    }
+  ],
+  "changeSet": { "id": "432572c0-1c63-49b3-9b90-4e4e759376d7", "name": "Big orders", "open": true }
+}
+```
+
+It's refused before anything is recorded, and the message lists the right names. The same call with `true` and
+`false` works. Both exits point at steps that don't exist yet, which is fine until validate:
+
+```jsonc
+// entity_addItem: the same, with
+"outcomes": { "true": "b0000000-0000-4000-8000-000000000003", "false": "b0000000-0000-4000-8000-000000000004" }
+
+// result
+{ "itemKey": "b0000000-0000-4000-8000-000000000002", "path": "steps/b0000000-0000-4000-8000-000000000002" }
+```
+
+### 4. Add the true branch, then validate
+
+```jsonc
+// entity_addItem
+{
+  "entityType": "umbraco-automate-workflow",
+  "key": "b0000000-0000-4000-8000-000000000001",
+  "fieldPath": "steps",
+  "itemType": "email.send",
+  "itemKey": "b0000000-0000-4000-8000-000000000003",
+  "fields": { "to": "sales@example.com", "subject": "Big order ${trigger.orderId}" }
+}
+
+// result
+{ "itemKey": "b0000000-0000-4000-8000-000000000003", "path": "steps/b0000000-0000-4000-8000-000000000003" }
+```
+
+```jsonc
+// changeSet_validate
+{}
+
+// result
+{
+  "valid": false,
+  "entities": [
+    {
+      "entity": { "entityType": "umbraco-automate-workflow", "key": "b0000000-0000-4000-8000-000000000001", "name": "Big orders", … },
+      "problems": [
+        {
+          "path": "steps/b0000000-0000-4000-8000-000000000002/outcomes/false",
+          "errorMessages": ["No item with key b0000000-0000-4000-8000-000000000004 in 'steps'."],
+          "variant": null
+        }
+      ]
+    }
+  ]
+}
+```
+
+The problem names the exit by its path: the If's `false` outcome.
+
+### 5. Add the false branch
+
+```jsonc
+// entity_addItem
+{
+  "entityType": "umbraco-automate-workflow",
+  "key": "b0000000-0000-4000-8000-000000000001",
+  "fieldPath": "steps",
+  "itemType": "umbracoCommerce.changeOrderStatus",
+  "itemKey": "b0000000-0000-4000-8000-000000000004",
+  "fields": { "orderId": "${trigger.orderId}", "orderStatusId": "5b0f2c1e-8d6a-4c3b-9f4e-2a7d1c9e0b11" }
+}
+
+// result
+{ "itemKey": "b0000000-0000-4000-8000-000000000004", "path": "steps/b0000000-0000-4000-8000-000000000004" }
+
+// changeSet_validate → result
+{ "valid": true, "entities": [] }
+```
+
+### 6. Summarize and apply
+
+```jsonc
+// changeSet_summarize → result (trimmed)
+{
+  "entities": [ { "entity": { "entityType": "umbraco-automate-workflow", "name": "Big orders", … }, "change": "created", "edits": 5 } ],
+  "afterApply": [],
+  "applyPlan": [ { "name": "Automate", "description": "1 entity, saved together: all or nothing.", "applied": false } ]
+}
+
+// changeSet_apply → result
+[ { "entityType": "umbraco-automate-workflow", "key": "b0000000-0000-4000-8000-000000000001", "name": "Big orders", … } ]
+```
+
+### 7. What Automate stores
+
+The adapter saves the workflow in Automate's form: the steps without their exits, and a list of connections, each
+naming its outcome. A step with one exit gets a connection with no outcome.
+
+```jsonc
+{
+  "name": "Big orders",
+  "enabled": true,
+  "trigger": [ { "key": "b0000000-0000-4000-8000-000000000005", "type": "umbracoCommerce.orderCreated" } ],
+  "steps": [
+    { "key": "b0000000-0000-4000-8000-000000000002", "type": "umbracoAutomate.if", "conditions": { … } },
+    { "key": "b0000000-0000-4000-8000-000000000003", "type": "email.send", "to": "sales@example.com", "subject": "Big order ${trigger.orderId}" },
+    { "key": "b0000000-0000-4000-8000-000000000004", "type": "umbracoCommerce.changeOrderStatus", "orderId": "${trigger.orderId}", "orderStatusId": "5b0f2c1e-8d6a-4c3b-9f4e-2a7d1c9e0b11" }
+  ],
+  "connections": [
+    { "sourceStepId": "b0000000-0000-4000-8000-000000000002", "targetStepId": "b0000000-0000-4000-8000-000000000003", "outcome": "true" },
+    { "sourceStepId": "b0000000-0000-4000-8000-000000000002", "targetStepId": "b0000000-0000-4000-8000-000000000004", "outcome": "false" }
+  ]
+}
+```
+
+Read back with `entity_get`, each connection is an exit again: the If step has
+`"outcomes": { "true": "b0000000-…-000000000003", "false": "b0000000-…-000000000004" }`.
+
+---
+
+## What was the same in all four
+
+| | CMS page | Automate workflow | Commerce discount | Branching workflow |
+| --- | --- | --- | --- | --- |
+| Find a name | — | `entity_find` the discount | `entity_find` the collection | — |
+| Create | `entity_create` | `entity_create` | `entity_create` | `entity_create` |
+| Add items | Grid rows, blocks in areas | Trigger, steps | Rules, rules in a group, rewards | Trigger, steps |
+| Nesting | `grid/{row}/left` | — (a graph, by `next`) | `rules/{group}/children` | — (a graph, by `outcomes`) |
+| A reference | — | A step to a discount; a step to a step | A rule to a collection | Two exits to two steps |
+| Refused on the spot | — | — | — | An outcome the If doesn't have |
+| A problem by path | Missing text (per culture), span too wide | A `next` with no step | Percent out of range | An `outcomes/false` with no step |
+| Fix | `entity_setValue` at the problem's path | `entity_addItem` the missing step | `entity_setValue` at the problem's path | `entity_addItem` the missing step |
+| Review | `changeSet_summarize` | `changeSet_summarize` | `changeSet_summarize` | `changeSet_summarize` |
 
 Seven generic tools did all the building. The products supplied a schema and their plugin registries.
 
@@ -919,5 +1183,8 @@ Seven generic tools did all the building. The products supplied a schema and the
 - **Real Commerce and Automate.** These are stand-ins shaped like the real code.
 - **Editing an existing entity, rebasing and conflicts.** See the tests listed under
   [What the tests show](../README.md#what-the-tests-show).
+- **Every Automate connection.** A step's exits each lead to one step. Automate can also send one exit to several
+  steps, put a filter on a connection, give a step with outcomes an extra "any result" exit, and build Switch's
+  outcomes from its cases. None of these has a field yet.
 - **Stable item keys in Commerce.** Commerce stores no ids for rules, so the keys above change once the discount is
   saved. See "What the mapping costs" in the [README](../README.md#what-the-mapping-costs).

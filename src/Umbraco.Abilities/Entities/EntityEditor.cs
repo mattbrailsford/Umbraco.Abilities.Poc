@@ -170,9 +170,9 @@ public static class EntityEditor
 /// <summary>Checks one field value against its definition.</summary>
 public static class FieldChecker
 {
-    /// <summary>A binding to an earlier step's output (<c>{{trigger.orderId}}</c>), where the field accepts one. Resolved when the workflow runs.</summary>
+    /// <summary>A binding to an earlier step's output (<c>${trigger.orderId}</c>), where the field accepts one. Resolved when the workflow runs.</summary>
     public static bool IsBinding(FieldDefinition field, JsonNode? value)
-        => field.AcceptsBindings && value is JsonValue scalar && scalar.TryGetValue<string>(out var text) && text.Contains("{{", StringComparison.Ordinal);
+        => field.AcceptsBindings && value is JsonValue scalar && scalar.TryGetValue<string>(out var text) && text.Contains("${", StringComparison.Ordinal);
 
     /// <summary>The field's own rules (a range, a pattern), on a scalar value. Bindings are checked when they resolve.</summary>
     public static IEnumerable<string> CheckRules(FieldDefinition field, JsonNode? value)
@@ -252,7 +252,33 @@ public static class FieldChecker
 
         if (field.Type == FieldType.Object)
         {
-            return value is JsonObject ? null : new Problem(path, "Expected an object.");
+            if (value is not JsonObject obj)
+            {
+                return new Problem(path, "Expected an object.");
+            }
+
+            if (field.Schema is not { } objectSchema)
+            {
+                return null;
+            }
+
+            // An object set whole is checked like fields set one by one: a name it doesn't have is refused. Values that
+            // vary, and items, are checked where they're set.
+            foreach (var (alias, inner) in obj)
+            {
+                var innerPath = $"{path}/{alias}";
+                if (objectSchema.Find(alias) is not { } innerField)
+                {
+                    return new Problem(innerPath, $"No field '{alias}' here. Fields: {EntityValues.Names(objectSchema.Fields.Select(f => f.Alias))}.");
+                }
+
+                if (!innerField.Varies && !innerField.IsItems && Check(innerField, inner, innerPath) is { } problem)
+                {
+                    return problem;
+                }
+            }
+
+            return null;
         }
 
         if (field.Type == FieldType.EntityReference && field.ReferencesAnyOf is { Count: > 0 } types)

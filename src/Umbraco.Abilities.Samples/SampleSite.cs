@@ -71,7 +71,9 @@ public sealed class SampleSite
         Workflows = new WorkflowAdapter(AutomateDatabase);
         Adapters.Add(Workflows);
         Triggers.AddRange([typeof(FormSubmittedTrigger), typeof(ScheduleTrigger)]);
-        WorkflowAdapter.RegisterItemTypes(ItemTypes, [sendEmail, activateDiscount], Triggers, Actions, Access.HasSection);
+        Actions.Add(typeof(GetContentAction));
+        ControlFlows.Add(typeof(IfControlFlow));
+        WorkflowAdapter.RegisterItemTypes(ItemTypes, [sendEmail, activateDiscount], Triggers, Actions, ControlFlows, Access.HasSection);
 
         // Commerce's Automate package adds its trigger and action, as its composer would. No Abilities code.
         Triggers.Add(typeof(OrderCreatedTrigger));
@@ -97,6 +99,9 @@ public sealed class SampleSite
     public AutomatePluginCollection Triggers { get; } = [];
 
     public AutomatePluginCollection Actions { get; } = [];
+
+    /// <summary>Automate's control flow steps, such as If.</summary>
+    public AutomatePluginCollection ControlFlows { get; } = [];
 
     // Separate databases, as the products can each have their own connection string.
     public InMemoryDatabase ContentDatabase { get; } = new("Content");
