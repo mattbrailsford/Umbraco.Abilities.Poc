@@ -98,6 +98,34 @@ public class DynamicItem : EntityItemModel
     public string Type { get; set; } = string.Empty;
 
     public Dictionary<string, System.Text.Json.Nodes.JsonNode?> Fields { get; init; } = new(StringComparer.Ordinal);
+
+    /// <summary>The items in one of this item's items fields, such as a group rule's children.</summary>
+    public IReadOnlyList<DynamicItem> Items(string alias)
+        => (Fields.GetValueOrDefault(alias) as System.Text.Json.Nodes.JsonArray)?.OfType<System.Text.Json.Nodes.JsonObject>().Select(FromJson).ToList() ?? [];
+
+    /// <summary>Sets one of this item's items fields.</summary>
+    public void SetItems(string alias, IEnumerable<DynamicItem> items)
+        => Fields[alias] = new System.Text.Json.Nodes.JsonArray(items.Select(i => (System.Text.Json.Nodes.JsonNode?)i.ToJson()).ToArray());
+
+    /// <summary>The item as an entity holds it: a keyed, typed object.</summary>
+    public System.Text.Json.Nodes.JsonObject ToJson()
+    {
+        var json = EntityValues.NewItem(Key, Type);
+        foreach (var (alias, value) in Fields)
+        {
+            json[alias] = value?.DeepClone();
+        }
+
+        return json;
+    }
+
+    /// <summary>An item from the keyed, typed object an entity holds.</summary>
+    public static DynamicItem FromJson(System.Text.Json.Nodes.JsonObject json) => new()
+    {
+        Key = EntityValues.KeyOf(json),
+        Type = EntityValues.TypeOf(json),
+        Fields = json.Where(p => p.Key is not (EntityValues.KeyProperty or EntityValues.TypeProperty)).ToDictionary(p => p.Key, p => p.Value?.DeepClone(), StringComparer.Ordinal),
+    };
 }
 
 /// <summary>What a <see cref="Varying{T}"/> property varies by, when not culture: e.g. <c>[VariesBy("currency")]</c>.</summary>

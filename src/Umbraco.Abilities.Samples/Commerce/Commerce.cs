@@ -64,7 +64,7 @@ public sealed class DiscountEditModel
 }
 
 // Rules and rewards are a plugin seam: Commerce and other packages register providers (Providers.cs), so their item
-// types come from the provider collections at run time (DiscountProviderItemTypes below), not from classes here.
+// types come from the provider collections at run time (a PluginItemTypeSource per seam, below), not from classes here.
 
 // ── The adapters: load, save, and the rules attributes can't express. ─────────────────────────────────
 
@@ -102,10 +102,31 @@ public sealed class DiscountAdapter(
     public const string RuleGroup = "commerce.discount.rule";
     public const string RewardGroup = "commerce.discount.reward";
 
+    private const string Children = "children";
+
+    /// <summary>Commerce's table from an editor UI alias to what it picks. Editors not listed stay plain values.</summary>
+    private static readonly IReadOnlyDictionary<string, string[]> Editors = new Dictionary<string, string[]>
+    {
+        ["Uc.PropertyEditorUi.CollectionPicker"] = ["umbraco-commerce-collection"],
+    };
+
     /// <summary>One source per seam. Providers registered later, by any package, show up with no change here.</summary>
     public static void RegisterItemTypes(ItemTypeRegistry itemTypes, DiscountProviderCollection rules, DiscountProviderCollection rewards, Func<Guid, bool> availableTo) => itemTypes
-        .AddSource(new DiscountProviderItemTypes(RuleGroup, rules, availableTo))
-        .AddSource(new DiscountProviderItemTypes(RewardGroup, rewards, availableTo));
+        .AddSource(new PluginItemTypeSource(RuleGroup, () => rules.Select(p => Describe(p) with { AvailableTo = availableTo }), Editors))
+        .AddSource(new PluginItemTypeSource(RewardGroup, () => rewards.Select(p => Describe(p) with { AvailableTo = availableTo }), Editors));
+
+    /// <summary>
+    /// A Commerce provider, as the framework describes a plugin: the only thing Commerce writes per seam. A group rule
+    /// holds child rules, as an items field.
+    /// </summary>
+    private static PluginDescriptor Describe(DiscountProviderBase provider) => new(
+        provider.Alias,
+        provider.Label,
+        provider.Description,
+        provider.SettingDefinitions.Select(s => new SettingDescriptor(s.Key, s.Label, s.Description, s.PropertyType, s.ValidationRules, s.EditorUiAlias, s.SortOrder)).ToList())
+    {
+        ExtraFields = provider.HasChildren ? [FieldDefinition.ItemsOf(Children, "The rules in this group.", RuleGroup) with { Min = 1 }] : [],
+    };
 
     public override Task<DiscountEditModel?> LoadModelAsync(Guid key, CancellationToken cancellationToken = default)
         => Task.FromResult(discounts.GetDiscount(key) is { } discount ? ToEditModel(discount) : null);
@@ -119,8 +140,8 @@ public sealed class DiscountAdapter(
             .SetDates(ToUtc(model.StartDate), ToUtc(model.EndDate))
             .SetActive(model.Active ?? false)
             .SetLandingPage(model.LandingPage)
-            .SetRules(model.Rules.Select(ProviderItems.ToRuleConfig))
-            .SetRewards(model.Rewards.Select(r => new DiscountRewardConfig(r.Type, ProviderItems.Settings(r))));
+            .SetRules(model.Rules.Select(ToRuleConfig))
+            .SetRewards(model.Rewards.Select(r => new DiscountRewardConfig(r.Type, PluginSettings.ToSettings(r))));
         discounts.SaveDiscount(discount);
         return Task.CompletedTask;
     }
@@ -159,9 +180,28 @@ public sealed class DiscountAdapter(
         EndDate = ToDate(discount.ExpiryDate),
         LandingPage = discount.LandingPageId,
         Active = discount.IsActive,
-        Rules = discount.Rules.Select((r, i) => ProviderItems.ToItem(ruleProviders, r, DerivedKey(discount.Id, i, r.RuleProviderAlias))).ToList(),
-        Rewards = discount.Rewards.Select((r, i) => ProviderItems.ToItem(rewardProviders, r.RewardProviderAlias, r.Settings, DerivedKey(discount.Id, i, r.RewardProviderAlias))).ToList(),
+        Rules = discount.Rules.Select((r, i) => ToRuleItem(r, DerivedKey(discount.Id, i, r.RuleProviderAlias))).ToList(),
+        Rewards = discount.Rewards.Select((r, i) => ToItem(rewardProviders, r.RewardProviderAlias, r.Settings, DerivedKey(discount.Id, i, r.RewardProviderAlias))).ToList(),
     };
+
+    // Rules and rewards are a provider alias plus string settings in Commerce; the framework maps those. Commerce adds
+    // only a group rule's children.
+    private static DynamicItem ToItem(DiscountProviderCollection providers, string alias, IReadOnlyDictionary<string, string> settings, Guid key)
+        => PluginSettings.ToItem(key, alias, settings, providers.Find(alias) is { } provider ? Describe(provider) : null);
+
+    private DynamicItem ToRuleItem(DiscountRuleConfig rule, Guid key)
+    {
+        var item = ToItem(ruleProviders, rule.RuleProviderAlias, rule.Settings, key);
+        if (rule.Children is { Count: > 0 } children)
+        {
+            item.SetItems(Children, children.Select((c, i) => ToRuleItem(c, DerivedKey(key, i, c.RuleProviderAlias))));
+        }
+
+        return item;
+    }
+
+    private static DiscountRuleConfig ToRuleConfig(DynamicItem item)
+        => new(item.Type, PluginSettings.ToSettings(item, Children), item.Fields.ContainsKey(Children) ? item.Items(Children).Select(ToRuleConfig).ToList() : null);
 
     private static DateOnly? ToDate(DateTime? utc) => utc is { } value ? DateOnly.FromDateTime(value) : null;
 
@@ -174,104 +214,6 @@ public sealed class DiscountAdapter(
     /// </summary>
     internal static Guid DerivedKey(Guid parent, int index, string alias)
         => new(MD5.HashData(Encoding.UTF8.GetBytes($"{parent:N}/{index}/{alias}")));
-}
-
-/// <summary>
-/// The item types of one provider seam (rules or rewards), read from Commerce's provider collection whenever they're
-/// needed. This is all Commerce writes per seam: providers, including third parties', need no Abilities code.
-/// </summary>
-public sealed class DiscountProviderItemTypes(string group, DiscountProviderCollection providers, Func<Guid, bool> availableTo) : IItemTypeSource
-{
-    /// <summary>Commerce's table from an editor UI alias to what it picks. Editors not listed stay plain values.</summary>
-    public static readonly IReadOnlyDictionary<string, string[]> Editors = new Dictionary<string, string[]>
-    {
-        ["Uc.PropertyEditorUi.CollectionPicker"] = ["umbraco-commerce-collection"],
-    };
-
-    public string Group => group;
-
-    public IEnumerable<ItemTypeDefinition> GetItemTypes() => providers.Select(provider =>
-    {
-        var fields = provider.SettingDefinitions
-            .Select(s => ItemTypeFields.For(new SettingDescriptor(s.Key, s.Label, s.Description, s.PropertyType, s.ValidationRules, s.EditorUiAlias, s.SortOrder), Editors))
-            .ToList();
-        if (provider.HasChildren)
-        {
-            fields.Add(FieldDefinition.ItemsOf("children", "The rules in this group.", group) with { Min = 1 });
-        }
-
-        return new ItemTypeDefinition(
-            group,
-            provider.Alias,
-            ItemTypeFields.Text(provider.Label) ?? provider.Alias,
-            ItemTypeFields.Text(provider.Description)
-                ?? $"Commerce gives this provider no description, only a localization key. Describe it in plain words from its alias, '{provider.Alias}'.",
-            new ObjectSchema(fields))
-        {
-            AvailableTo = availableTo,
-        };
-    });
-}
-
-/// <summary>
-/// Maps rules and rewards between their items and Commerce's provider alias plus string settings, using each provider's
-/// setting types. Written once for every provider-based item, including third parties'.
-/// </summary>
-internal static class ProviderItems
-{
-    private const string Children = "children";
-
-    private static JsonObject ToJson(DynamicItem item)
-    {
-        var json = EntityValues.NewItem(item.Key, item.Type);
-        foreach (var (alias, value) in item.Fields)
-        {
-            json[alias] = value?.DeepClone();
-        }
-
-        return json;
-    }
-
-    private static DynamicItem FromJson(JsonObject json) => new()
-    {
-        Key = EntityValues.KeyOf(json),
-        Type = EntityValues.TypeOf(json),
-        Fields = json.Where(p => p.Key is not (EntityValues.KeyProperty or EntityValues.TypeProperty)).ToDictionary(p => p.Key, p => p.Value?.DeepClone()),
-    };
-
-    public static DynamicItem ToItem(DiscountProviderCollection providers, DiscountRuleConfig rule, Guid key)
-    {
-        var item = ToItem(providers, rule.RuleProviderAlias, rule.Settings, key);
-        if (rule.Children is { Count: > 0 } children)
-        {
-            // A group's child rules are an items field like any other: an array of keyed, typed items.
-            item.Fields[Children] = new JsonArray(children.Select((c, i) => (JsonNode?)ToJson(ToItem(providers, c, DiscountAdapter.DerivedKey(key, i, c.RuleProviderAlias)))).ToArray());
-        }
-
-        return item;
-    }
-
-    public static DynamicItem ToItem(DiscountProviderCollection providers, string alias, IReadOnlyDictionary<string, string> settings, Guid key)
-    {
-        var adapters = providers.Find(alias)?.SettingDefinitions ?? [];
-        var item = new DynamicItem { Key = key, Type = alias };
-        foreach (var (settingKey, text) in settings)
-        {
-            var type = adapters.FirstOrDefault(d => d.Key == settingKey)?.PropertyType ?? typeof(string);
-            var target = Nullable.GetUnderlyingType(type) ?? type;
-            item.Fields[settingKey] = target.IsPrimitive || target == typeof(decimal) ? JsonNode.Parse(text) : JsonValue.Create(text);
-        }
-
-        return item;
-    }
-
-    public static DiscountRuleConfig ToRuleConfig(DynamicItem item)
-        => new(item.Type, Settings(item), (item.Fields.GetValueOrDefault(Children) as JsonArray)?.OfType<JsonObject>().Select(c => ToRuleConfig(FromJson(c))).ToList());
-
-    public static Dictionary<string, string> Settings(DynamicItem item)
-        => item.Fields
-            .Where(f => f.Value is not null && f.Key != Children)
-            .ToDictionary(f => f.Key, f => f.Value is JsonValue scalar && scalar.TryGetValue<string>(out var text) ? text : f.Value!.ToJsonString(), StringComparer.Ordinal);
 }
 
 // ── A product Read ability. Commerce queries what's live; reading through the change set adds the current set's

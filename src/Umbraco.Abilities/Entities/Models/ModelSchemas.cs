@@ -333,13 +333,7 @@ public static class ModelSchemas
                 dynamic.Key = Guid.NewGuid();
             }
 
-            var json = EntityValues.NewItem(dynamic.Key, dynamic.Type);
-            foreach (var (alias, value) in dynamic.Fields)
-            {
-                json[alias] = value?.DeepClone();
-            }
-
-            return json;
+            return dynamic.ToJson();
         }
 
         var info = Info(model.GetType());
@@ -372,8 +366,7 @@ public static class ModelSchemas
             object model;
             if (dynamic)
             {
-                var fields = item.Where(p => p.Key is not (EntityValues.KeyProperty or EntityValues.TypeProperty)).ToDictionary(p => p.Key, p => p.Value?.DeepClone());
-                model = new DynamicItem { Key = key, Type = EntityValues.TypeOf(item), Fields = fields };
+                model = DynamicItem.FromJson(item);
             }
             else
             {

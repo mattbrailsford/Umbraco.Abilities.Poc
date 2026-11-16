@@ -38,15 +38,29 @@ public sealed class WorkflowAdapter(InMemoryDatabase database)
         AutomatePluginCollection controlFlows,
         Func<Guid, string, bool> hasSection)
     {
-        itemTypes.AddSource(new AutomatePluginItemTypes(TriggerGroup, triggers, hasSection, withExits: false));
-        itemTypes.AddSource(new AutomatePluginItemTypes(StepGroup, actions, hasSection, withExits: true));
-        itemTypes.AddSource(new AutomatePluginItemTypes(StepGroup, controlFlows, hasSection, withExits: true));
+        itemTypes.AddSource(new PluginItemTypeSource(TriggerGroup, () => triggers.Plugins.Select(p => Describe(p, hasSection, withExits: false))));
+        itemTypes.AddSource(new PluginItemTypeSource(StepGroup, () => actions.Plugins.Select(p => Describe(p, hasSection, withExits: true))));
+        itemTypes.AddSource(new PluginItemTypeSource(StepGroup, () => controlFlows.Plugins.Select(p => Describe(p, hasSection, withExits: true))));
 
         foreach (var ability in stepAbilities)
         {
             itemTypes.Add(AbilityItemTypes.FromAbility(ability, StepGroup, Exit(Next, "The step to run after this one. Omit for the last step.")));
         }
     }
+
+    /// <summary>
+    /// An Automate plugin, as the framework describes a plugin: the only thing Automate writes per seam. Its required
+    /// sections decide who is offered it, and a step's exits come from the outcomes it names.
+    /// </summary>
+    private static PluginDescriptor Describe(AutomatePlugin plugin, Func<Guid, string, bool> hasSection, bool withExits) => new(
+        plugin.Alias,
+        plugin.Name,
+        plugin.Description ?? plugin.Name,
+        plugin.Fields.Select(f => new SettingDescriptor(f.Key, f.Field.Label, f.Field.Description, f.PropertyType, f.Rules, f.Field.EditorUiAlias, f.Field.SortOrder, f.Field.SupportsBindings)).ToList())
+    {
+        ExtraFields = withExits ? Exits(plugin.Outcomes) : [],
+        AvailableTo = user => plugin.RequiredSections.All(section => hasSection(user, section)),
+    };
 
     /// <summary>A step's exits: <c>next</c>, or an <c>outcomes</c> object when the step names outcomes.</summary>
     public static IReadOnlyList<FieldDefinition> Exits(IReadOnlyList<StepOutcome> outcomes)
@@ -129,39 +143,4 @@ public sealed class WorkflowAdapter(InMemoryDatabase database)
         fields.Remove("connections");
         return Task.FromResult<Entity?>(new Entity { EntityType = EntityType, Key = key, Version = row.Version, Fields = fields });
     }
-}
-
-/// <summary>
-/// The item types of one of Automate's plugin seams (triggers, actions or control flows), read from its collection
-/// whenever they're needed. A plugin's required sections decide who is offered it. Settings that support bindings
-/// accept one. A step's exits come from the outcomes it names.
-/// </summary>
-public sealed class AutomatePluginItemTypes(string group, AutomatePluginCollection plugins, Func<Guid, string, bool> hasSection, bool withExits) : IItemTypeSource
-{
-    /// <summary>Automate's table from an editor UI alias to what it picks. None yet, so pickers stay plain values.</summary>
-    private static readonly IReadOnlyDictionary<string, string[]> Editors = new Dictionary<string, string[]>();
-
-    public string Group => group;
-
-    public IEnumerable<ItemTypeDefinition> GetItemTypes() => plugins.Plugins.Select(plugin =>
-    {
-        var fields = plugin.Fields
-            .Select(f => ItemTypeFields.For(new SettingDescriptor(f.Key, f.Field.Label, f.Field.Description, f.PropertyType, f.Rules, f.Field.EditorUiAlias, f.Field.SortOrder, f.Field.SupportsBindings), Editors))
-            .ToList();
-        if (withExits)
-        {
-            var exits = WorkflowAdapter.Exits(plugin.Outcomes);
-            if (exits.FirstOrDefault(e => fields.Any(f => f.Alias == e.Alias)) is { } clash)
-            {
-                throw new InvalidOperationException($"{plugin.Alias} has a setting called '{clash.Alias}', which is where its exits go.");
-            }
-
-            fields.AddRange(exits);
-        }
-
-        return new ItemTypeDefinition(group, plugin.Alias, plugin.Name, plugin.Description ?? plugin.Name, new ObjectSchema(fields))
-        {
-            AvailableTo = user => plugin.RequiredSections.All(section => hasSection(user, section)),
-        };
-    });
 }
