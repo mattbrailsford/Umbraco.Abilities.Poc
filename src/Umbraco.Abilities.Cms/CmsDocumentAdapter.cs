@@ -7,7 +7,6 @@ using Umbraco.Abilities.Entities;
 using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Actions;
 using Umbraco.Cms.Core.Models;
-using Umbraco.Cms.Core.Models.Blocks;
 using Umbraco.Cms.Core.Models.ContentEditing;
 using Umbraco.Cms.Core.Models.ContentEditing.Validation;
 using Umbraco.Cms.Core.PropertyEditors;
@@ -381,7 +380,7 @@ public sealed class CmsDocumentAdapter : IDraftingEntityAdapter, IAuthorizingEnt
     }
 
     /// <summary>An element's values (a block's, or its settings) into an object, for a handler whose values hold elements.</summary>
-    private async Task ReadElementAsync(JsonObject into, Guid elementTypeKey, IEnumerable<BlockPropertyValue> values)
+    private async Task ReadElementAsync(JsonObject into, Guid elementTypeKey, IEnumerable<ValueModelBase> values)
         => await ReadValuesAsync(into, values.Select(v => (v.Alias, v.Culture, v.Segment, ToNode(v.Value))), await _mapper.MapAsync(_mapper.RequireType(elementTypeKey), isDocument: false));
 
     // ── Writing the working copy as a content model ────────────────────────────────────────────
@@ -457,28 +456,23 @@ public sealed class CmsDocumentAdapter : IDraftingEntityAdapter, IAuthorizingEnt
     }
 
     /// <summary>An element's values (a block's, or its settings) in editor format, for a handler whose values hold elements.</summary>
-    private async Task<ElementValues> WriteElementAsync(JsonObject from, Guid elementTypeKey, string path, string? culture, IReadOnlyList<string> documentCultures)
+    private async Task<WrittenElement> WriteElementAsync(JsonObject from, Guid elementTypeKey, string path, string? culture, IReadOnlyList<string> documentCultures)
     {
         var map = await _mapper.MapAsync(_mapper.RequireType(elementTypeKey), isDocument: false);
         var errors = new PropertyErrorLocators();
-        var values = new List<BlockPropertyValue>();
+        var values = new List<ElementValue>();
         foreach (var property in map.Properties.Values)
         {
             foreach (var (variant, value) in Values(from, property))
             {
-                values.Add(new BlockPropertyValue
-                {
-                    Alias = property.Alias,
-                    Culture = variant.Culture,
-                    Segment = variant.Segment,
-                    Value = ToModelValue(await ToNodeAsync(value, property, variant, documentCultures, variant.Culture ?? culture, $"{path}/{property.Alias}", errors)),
-                });
+                var node = await ToNodeAsync(value, property, variant, documentCultures, variant.Culture ?? culture, $"{path}/{property.Alias}", errors);
+                values.Add(new ElementValue(property.Alias, variant.Culture, variant.Segment, ToModelValue(node)));
             }
         }
 
         var variesByCulture = map.Variations.VariesByCulture();
         var cultures = variesByCulture ? EntityValues.OwnVariants(from, map.Schema).Select(v => v.Culture).OfType<string>().Distinct().ToList() : [];
-        return new ElementValues(values, errors, variesByCulture, cultures);
+        return new WrittenElement(values, errors, variesByCulture, cultures);
     }
 
     private static object? ToModelValue(JsonNode? node)

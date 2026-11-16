@@ -2,7 +2,7 @@ using System.Text.Json.Nodes;
 
 using Umbraco.Abilities.Entities;
 using Umbraco.Cms.Core.Models;
-using Umbraco.Cms.Core.Models.Blocks;
+using Umbraco.Cms.Core.Models.ContentEditing;
 
 namespace Umbraco.Abilities.Cms.PropertyEditors;
 
@@ -77,7 +77,7 @@ public class PropertyEditorContext(IPropertyType property, IDataType? dataType)
 }
 
 /// <summary>What a handler gets to read a stored value: the property, its field, and a way to read element values.</summary>
-public sealed class PropertyValueReader(PropertyEditorContext context, FieldDefinition field, Func<JsonObject, Guid, IEnumerable<BlockPropertyValue>, Task> readElement)
+public sealed class PropertyValueReader(PropertyEditorContext context, FieldDefinition field, Func<JsonObject, Guid, IEnumerable<ValueModelBase>, Task> readElement)
     : PropertyEditorContext(context.Property, context.DataType)
 {
     /// <summary>The field the property became.</summary>
@@ -85,51 +85,81 @@ public sealed class PropertyValueReader(PropertyEditorContext context, FieldDefi
 
     /// <summary>
     /// Reads an element's values (a block's, or its settings) into <paramref name="into"/>, each property by its own
-    /// editor's handler. For editors whose values hold elements.
+    /// editor's handler. For editors whose values hold elements. Any of Umbraco's value models will do, such as a
+    /// block's <c>BlockPropertyValue</c>.
     /// </summary>
-    public Task ReadElementAsync(JsonObject into, Guid elementTypeKey, IEnumerable<BlockPropertyValue> values)
+    public Task ReadElementAsync(JsonObject into, Guid elementTypeKey, IEnumerable<ValueModelBase> values)
         => readElement(into, elementTypeKey, values);
 }
 
 /// <summary>An element's values as written, with what the editor needs to store and expose it.</summary>
+/// <typeparam name="TValue">The editor's own value model, such as a block's <c>BlockPropertyValue</c>.</typeparam>
 /// <param name="Values">The element's property values, in editor format.</param>
 /// <param name="Errors">How to locate Umbraco's errors inside the element's own properties.</param>
 /// <param name="VariesByCulture">Whether the element type varies by culture.</param>
 /// <param name="Cultures">The cultures the element has values in.</param>
-public sealed record ElementValues(IList<BlockPropertyValue> Values, PropertyErrorLocators Errors, bool VariesByCulture, IReadOnlyList<string> Cultures);
+public sealed record ElementValues<TValue>(IReadOnlyList<TValue> Values, PropertyErrorLocators Errors, bool VariesByCulture, IReadOnlyList<string> Cultures)
+    where TValue : ValueModelBase;
+
+/// <summary>One property value of an element, as the adapter writes it, before it becomes an editor's value model.</summary>
+internal sealed record ElementValue(string Alias, string? Culture, string? Segment, object? Value);
+
+/// <summary>An element's values as the adapter writes them.</summary>
+internal sealed record WrittenElement(IReadOnlyList<ElementValue> Values, PropertyErrorLocators Errors, bool VariesByCulture, IReadOnlyList<string> Cultures);
 
 /// <summary>What a handler gets to write a value: the property, where the value is, and a way to write element values.</summary>
-public sealed class PropertyValueWriter(
-    PropertyEditorContext context,
-    FieldDefinition field,
-    string path,
-    string? culture,
-    IReadOnlyList<string> documentCultures,
-    Action<ValueErrorLocator> locateErrors,
-    Func<JsonObject, Guid, string, string?, Task<ElementValues>> writeElement)
-    : PropertyEditorContext(context.Property, context.DataType)
+public sealed class PropertyValueWriter : PropertyEditorContext
 {
+    private readonly Action<ValueErrorLocator> _locateErrors;
+    private readonly Func<JsonObject, Guid, string, string?, Task<WrittenElement>> _writeElement;
+
+    internal PropertyValueWriter(
+        PropertyEditorContext context,
+        FieldDefinition field,
+        string path,
+        string? culture,
+        IReadOnlyList<string> documentCultures,
+        Action<ValueErrorLocator> locateErrors,
+        Func<JsonObject, Guid, string, string?, Task<WrittenElement>> writeElement)
+        : base(context.Property, context.DataType)
+    {
+        EntityField = field;
+        Path = path;
+        Culture = culture;
+        DocumentCultures = documentCultures;
+        _locateErrors = locateErrors;
+        _writeElement = writeElement;
+    }
+
     /// <summary>The field the property became.</summary>
-    public FieldDefinition EntityField { get; } = field;
+    public FieldDefinition EntityField { get; }
 
     /// <summary>The entity path of the value, e.g. <c>blocks</c> or <c>blocks/{key}/cards</c>.</summary>
-    public string Path { get; } = path;
+    public string Path { get; }
 
     /// <summary>The culture the value is in: its own, or the culture of the block value it is inside. Null when invariant.</summary>
-    public string? Culture { get; } = culture;
+    public string? Culture { get; }
 
     /// <summary>The cultures the document has values in.</summary>
-    public IReadOnlyList<string> DocumentCultures { get; } = documentCultures;
+    public IReadOnlyList<string> DocumentCultures { get; }
 
-    /// <summary>Writes an element's values from an item (or its settings), each property by its own editor's handler.</summary>
-    public Task<ElementValues> WriteElementAsync(JsonObject from, Guid elementTypeKey, string path)
-        => writeElement(from, elementTypeKey, path, Culture);
+    /// <summary>
+    /// Writes an element's values from an item (or its settings), each property by its own editor's handler, as the
+    /// value model the editor stores, such as a block's <c>BlockPropertyValue</c>.
+    /// </summary>
+    public async Task<ElementValues<TValue>> WriteElementAsync<TValue>(JsonObject from, Guid elementTypeKey, string path)
+        where TValue : ValueModelBase, new()
+    {
+        var written = await _writeElement(from, elementTypeKey, path, Culture);
+        var values = written.Values.Select(v => new TValue { Alias = v.Alias, Culture = v.Culture, Segment = v.Segment, Value = v.Value }).ToList();
+        return new ElementValues<TValue>(values, written.Errors, written.VariesByCulture, written.Cultures);
+    }
 
     /// <summary>
     /// Tells the adapter how to turn Umbraco's validation errors inside this value (a JSON path into the stored value)
     /// into entity paths. Without it, such an error is reported on the property, with the JSON path.
     /// </summary>
-    public void LocateErrorsWith(ValueErrorLocator locator) => locateErrors(locator);
+    public void LocateErrorsWith(ValueErrorLocator locator) => _locateErrors(locator);
 }
 
 /// <summary>Where an error is in the entity: a path, and the variant it is in.</summary>

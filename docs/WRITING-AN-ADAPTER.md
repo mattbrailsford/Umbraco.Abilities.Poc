@@ -258,7 +258,9 @@ What the adapter does, so a handler doesn't:
 - **The property.** The field's alias and variation come from the property, after the handler describes it.
 - **Cultures and segments.** A handler reads and writes one value; the adapter calls it once per variant.
 - **Elements.** An editor whose values hold elements (blocks) asks the adapter to read or write them
-  (`reader.ReadElementAsync`, `writer.WriteElementAsync`). Each of the element's properties goes to its own handler.
+  (`reader.ReadElementAsync`, `writer.WriteElementAsync<TValue>`). Each of the element's properties goes to its own
+  handler. Values are Umbraco's own `ValueModelBase`, and the editor picks its value model: the block handler asks for
+  `BlockPropertyValue`, so nothing in the contract is about blocks.
 - **Saving and validating.** Through `IContentEditingService`, as before.
 
 Two optional parts, for editors that need them:

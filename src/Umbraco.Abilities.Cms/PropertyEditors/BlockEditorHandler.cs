@@ -214,9 +214,9 @@ public sealed class BlockEditorHandler(IContentTypeService contentTypes, IDataTy
             var key = EntityValues.KeyOf(item);
             var block = blocks.FirstOrDefault(b => b.ContentAlias == EntityValues.TypeOf(item)) ?? UnconfiguredBlock(item);
 
-            var element = await writer.WriteElementAsync(item, block.ContentElementTypeKey, path);
-            contentData.Add(new BlockItemData { Key = key, ContentTypeKey = block.ContentElementTypeKey, ContentTypeAlias = block.ContentAlias, Values = element.Values });
-            written.Content.Add(new WrittenElement(key, path, element));
+            var element = await writer.WriteElementAsync<BlockPropertyValue>(item, block.ContentElementTypeKey, path);
+            contentData.Add(new BlockItemData { Key = key, ContentTypeKey = block.ContentElementTypeKey, ContentTypeAlias = block.ContentAlias, Values = [.. element.Values] });
+            written.Content.Add(new WrittenBlock(key, path, element));
 
             // An element that varies by culture is exposed in each culture it has values for (or every culture
             // of the document when it has none yet); an invariant element is exposed once.
@@ -239,9 +239,9 @@ public sealed class BlockEditorHandler(IContentTypeService contentTypes, IDataTy
             {
                 settingsKey = item[SettingsKeyProperty] is { } stored ? Guid.Parse(stored.ToString()) : DerivedKey(key, "settings");
                 var settingsPath = $"{path}/{SettingsField}";
-                var settings = await writer.WriteElementAsync(item[SettingsField] as JsonObject ?? [], settingsType, settingsPath);
-                settingsData.Add(new BlockItemData { Key = settingsKey.Value, ContentTypeKey = settingsType, Values = settings.Values });
-                written.Settings.Add(new WrittenElement(key, settingsPath, settings));
+                var settings = await writer.WriteElementAsync<BlockPropertyValue>(item[SettingsField] as JsonObject ?? [], settingsType, settingsPath);
+                settingsData.Add(new BlockItemData { Key = settingsKey.Value, ContentTypeKey = settingsType, Values = [.. settings.Values] });
+                written.Settings.Add(new WrittenBlock(key, settingsPath, settings));
             }
 
             if (!isGrid)
@@ -325,7 +325,7 @@ public sealed class BlockEditorHandler(IContentTypeService contentTypes, IDataTy
     private sealed record AreaMap(Guid Key, string Alias);
 
     /// <summary>A block element as written, at its entity path.</summary>
-    private sealed record WrittenElement(Guid ContentKey, string Path, ElementValues Element);
+    private sealed record WrittenBlock(Guid ContentKey, string Path, ElementValues<BlockPropertyValue> Element);
 
     /// <summary>
     /// What was written into one block value, to turn Umbraco's errors inside it back into entity paths. Umbraco indexes
@@ -334,9 +334,9 @@ public sealed class BlockEditorHandler(IContentTypeService contentTypes, IDataTy
     /// </summary>
     private sealed class WrittenBlocks
     {
-        public List<WrittenElement> Content { get; } = [];
+        public List<WrittenBlock> Content { get; } = [];
 
-        public List<WrittenElement> Settings { get; } = [];
+        public List<WrittenBlock> Settings { get; } = [];
 
         public List<(Guid Key, string? Culture)> Exposed { get; } = [];
 
