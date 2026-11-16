@@ -85,6 +85,26 @@ public static class ModelConfiguration
     internal static TypeConfig? Find(Type type) => Configs.GetValueOrDefault(type);
 }
 
+/// <summary>An entity adapter's fluent configuration: its entity model, and the other classes it uses, such as item types.</summary>
+public sealed class ModelConfigurator<TModel>
+    where TModel : class
+{
+    internal ModelConfigurator()
+    {
+    }
+
+    /// <summary>Configures the adapter's entity model.</summary>
+    public ModelConfigurator<TModel> Entity(Action<ModelBuilder<TModel>> configure) => Model(configure);
+
+    /// <summary>Configures another class the model uses, such as an item type.</summary>
+    public ModelConfigurator<TModel> Model<T>(Action<ModelBuilder<T>> configure)
+        where T : class
+    {
+        ModelConfiguration.Configure(configure);
+        return this;
+    }
+}
+
 /// <summary>Configures a model class: its role as an entity or item type, and its properties.</summary>
 public sealed class ModelBuilder<T>
     where T : class

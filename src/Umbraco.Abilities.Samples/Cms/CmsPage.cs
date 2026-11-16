@@ -214,22 +214,19 @@ public sealed class CmsPageAdapter(InMemoryDatabase database, ItemTypeRegistry i
 public sealed class CmsMediaAdapter(InMemoryDatabase database, ItemTypeRegistry itemTypes)
     : InMemoryModelAdapter<MediaRequestModel>(database, itemTypes, "/umbraco/section/media/workspace/media/edit")
 {
-    static CmsMediaAdapter()
-    {
-        ModelConfiguration.Configure<MediaRequestModel>(media => media
+    protected override void Configure(ModelConfigurator<MediaRequestModel> models) => models
+        .Entity(media => media
             .IsEntity("media", "Media", "An image or file.")
             .HasKey(x => x.Id)
             .HasVersion(x => x.Version)
             .Ignore(x => x.UpdateDate)
             .Field(x => x.Name).IsName().Required().Description("Media name.")
             .Field(x => x.AltText).Description("Alternative text.")
-            .Items(x => x.Crops).Description("Named crops of the image."));
-
-        ModelConfiguration.Configure<MediaCropRequestModel>(crop => crop
+            .Items(x => x.Crops).Description("Named crops of the image."))
+        .Model<MediaCropRequestModel>(crop => crop
             .IsItemType("crop", "Crop", "A named crop.")
             .HasKey(x => x.Id)
             .Field(x => x.Alias).Required().Description("Crop alias, e.g. thumbnail.")
             .Field(x => x.Width).Required().Rule(new RangeAttribute(1, 10000)).Description("Width in pixels.")
             .Field(x => x.Height).Required().Rule(new RangeAttribute(1, 10000)).Description("Height in pixels."));
-    }
 }

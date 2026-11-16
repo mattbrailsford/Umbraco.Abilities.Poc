@@ -22,6 +22,7 @@ public abstract class EntityAdapterBase<TModel> : IAuthorizingEntityAdapter
     {
         ItemTypes = itemTypes;
         UnitOfWork = unitOfWork;
+        Configure(new ModelConfigurator<TModel>());
         _info = ModelSchemas.Info(typeof(TModel));
         _entity = _info.Entity
             ?? throw new InvalidOperationException($"{typeof(TModel).Name} is not an entity: add [Entity] or configure it with IsEntity.");
@@ -31,6 +32,10 @@ public abstract class EntityAdapterBase<TModel> : IAuthorizingEntityAdapter
         }
 
         itemTypes.AddModel(typeof(TModel));
+        foreach (var source in ItemTypeSources())
+        {
+            itemTypes.AddSource(source);
+        }
     }
 
     public string EntityType => _entity.EntityType;
@@ -42,6 +47,21 @@ public abstract class EntityAdapterBase<TModel> : IAuthorizingEntityAdapter
     protected internal ItemTypeRegistry ItemTypes { get; }
 
     // ── What a package implements ──────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Describes, fluently, model classes the package can't put attributes on, such as Management API request models.
+    /// Called once, before the model is first described. Optional.
+    /// </summary>
+    protected virtual void Configure(ModelConfigurator<TModel> models)
+    {
+    }
+
+    /// <summary>
+    /// The plugin seams the model's items fields name by group: one source per group, such as a
+    /// <see cref="PluginItemTypeSource"/> over the product's provider collection. Called once, when the adapter is
+    /// created. Item types that are classes need nothing here. Optional.
+    /// </summary>
+    protected virtual IEnumerable<IItemTypeSource> ItemTypeSources() => [];
 
     /// <summary>Loads the model, or null if there is none with this key. Set its [EntityVersion] if it has one.</summary>
     public abstract Task<TModel?> LoadModelAsync(Guid key, CancellationToken cancellationToken = default);

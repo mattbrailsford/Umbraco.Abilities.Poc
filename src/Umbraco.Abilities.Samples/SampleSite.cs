@@ -52,7 +52,6 @@ public sealed class SampleSite
         Adapters.Add(Collections).Add(Discounts);
         RuleProviders.AddRange([new OrderTotalRuleProvider(), new CustomerGroupRuleProvider(), new ProductCollectionRuleProvider(), new GroupRuleProvider()]);
         RewardProviders.AddRange([new PercentageOffRewardProvider(), new FreeShippingRewardProvider()]);
-        DiscountAdapter.RegisterItemTypes(ItemTypes, RuleProviders, RewardProviders, user => Access.HasSection(user, "commerce"));
         var activateDiscount = new ActivateDiscountAbility(Discounts);
         Abilities.Add(activateDiscount).Add(new ListDiscountsAbility(DiscountService, Discounts, ChangeSets));
         SummerCollection = Collections.Seed("Summer collection");

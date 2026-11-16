@@ -110,10 +110,17 @@ public sealed class DiscountAdapter(
         ["Uc.PropertyEditorUi.CollectionPicker"] = ["umbraco-commerce-collection"],
     };
 
-    /// <summary>One source per seam. Providers registered later, by any package, show up with no change here.</summary>
-    public static void RegisterItemTypes(ItemTypeRegistry itemTypes, DiscountProviderCollection rules, DiscountProviderCollection rewards, Func<Guid, bool> availableTo) => itemTypes
-        .AddSource(new PluginItemTypeSource(RuleGroup, () => rules.Select(p => Describe(p) with { AvailableTo = availableTo }), Editors))
-        .AddSource(new PluginItemTypeSource(RewardGroup, () => rewards.Select(p => Describe(p) with { AvailableTo = availableTo }), Editors));
+    /// <summary>
+    /// One source per seam. Providers registered later, by any package, show up with no change here. Only users with the
+    /// Commerce section are offered them.
+    /// </summary>
+    protected override IEnumerable<IItemTypeSource> ItemTypeSources() =>
+    [
+        new PluginItemTypeSource(RuleGroup, () => ruleProviders.Select(p => Describe(p) with { AvailableTo = HasCommerce }), Editors),
+        new PluginItemTypeSource(RewardGroup, () => rewardProviders.Select(p => Describe(p) with { AvailableTo = HasCommerce }), Editors),
+    ];
+
+    private bool HasCommerce(Guid user) => Access?.HasSection(user, "commerce") ?? true;
 
     /// <summary>
     /// A Commerce provider, as the framework describes a plugin: the only thing Commerce writes per seam. A group rule
