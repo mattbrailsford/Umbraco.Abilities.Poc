@@ -20,7 +20,7 @@ public sealed class SampleSite
 {
     private SampleSite(IBackgroundTaskQueue? background, IEventAggregator? events)
     {
-        ChangeSets = new ChangeSetService(new InMemoryChangeSetStore(), Abilities, Adapters, ItemTypes, events, background, TimeSpan.Zero);
+        ChangeSets = new ChangeSetService(new InMemoryChangeSetStore(), Abilities, Adapters, ItemTypes, ChangeSetAccessor, events, background, TimeSpan.Zero);
         Invoker = new AbilityInvoker(Abilities, ChangeSets);
 
         // Framework: the generic entity and change set abilities.
@@ -56,7 +56,7 @@ public sealed class SampleSite
         RewardProviders.AddRange([new PercentageOffRewardProvider(), new FreeShippingRewardProvider()]);
         DiscountAdapter.RegisterItemTypes(ItemTypes, RuleProviders, RewardProviders, user => Access.HasSection(user, "commerce"));
         var activateDiscount = new ActivateDiscountAbility(Discounts);
-        Abilities.Add(activateDiscount);
+        Abilities.Add(activateDiscount).Add(new ListDiscountsAbility(DiscountService, Discounts, ChangeSets));
         SummerCollection = Collections.Seed("Summer collection");
         Collections.Seed("Winter coats");
 
@@ -84,6 +84,9 @@ public sealed class SampleSite
     }
 
     public SampleAccess Access { get; } = new();
+
+    /// <summary>The change set the current call works in. A site registers one; a header middleware or a surface sets it.</summary>
+    public ChangeSetAccessor ChangeSetAccessor { get; } = ChangeSetAccessor.Ambient();
 
     /// <summary>Commerce's discount rule and reward provider collections, which packages add to.</summary>
     public DiscountProviderCollection RuleProviders { get; } = [];

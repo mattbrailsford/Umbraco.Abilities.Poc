@@ -4,6 +4,8 @@
 > what to question. The design itself is in
 > [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 > [README.md](README.md) has the findings.
+> [docs/EXAMPLE-FLOWS.md](docs/EXAMPLE-FLOWS.md) shows the tools in use: every call and result for a page, a workflow
+> and a discount.
 
 ## What you are reviewing
 
@@ -17,7 +19,7 @@ The code is about 7,400 lines of source and 2,500 lines of tests in seven projec
 A first pass over the story and the contracts (passes 1 to 3 below) takes about 45 minutes.
 
 ```bash
-dotnet test   # 57 in-memory tests (seconds) and 22 against a real Umbraco 18 on SQLite (about 30 seconds)
+dotnet test   # in-memory tests (seconds), then tests against a real Umbraco 18 on SQLite (about 30 seconds)
 ```
 
 ## The map
@@ -46,8 +48,10 @@ does the same against a real Umbraco.
 A model calls a tool. Here is everything it passes through, and where each piece lives:
 
 ```
-model calls entity_setValue (JSON arguments)
+model calls entity_setValue (JSON arguments, optionally a changeSetId)
   → AbilityAIFunction                     Umbraco.Abilities.AI: JSON in, result JSON out
+      picks the change set                → the changeSetId given, or the only one open in the conversation (AbilityToolSession)
+      makes it current for this call      → IChangeSetAccessor.Use: ambient, gone when the call returns
   → AbilityInvoker.InvokeAsync            ChangeSets/ChangeSetService.cs (end of file)
       no change set, or not a Write  → ability.InvokeAsync: it runs now
       a Write inside a change set    → ChangeSetService.RecordAsync: recorded, not run
@@ -58,7 +62,8 @@ model calls entity_setValue (JSON arguments)
         edit.Apply(document, input)  → EntityEditor: a path edit on the Entity
         authorize                    → the adapter asks the product: may this user make this change?
         keep it                      → ChangeSet.Changes, or a product's own draft (IDraftingEntityAdapter)
-  → result JSON back to the model: { success, status, result } or { status, correctable, message, problems }
+  → result JSON back to the model: { success, status, result } or { status, correctable, message, problems },
+    plus the change set the call used: { id, name, open }
 
 later, model calls changeSet_apply
   → ChangeSetService.ApplyAsync
@@ -88,16 +93,17 @@ Start with what the system does, before how it does it.
 4. `ChangeSetTests.A_campaign_spanning_content_commerce_and_a_side_effect_is_applied_together` is one set holding a
    page, a discount that refers to that page, and an email to send afterwards.
 
-**Look for:** whether the tool calls are ones a real model could plausibly make. They're scripted here. Nothing proves an
-LLM chooses them (see "What it does not prove" in the README).
+**Look for:** whether the tool calls are ones a real model could plausibly make. They're scripted here. A real model
+made the same kind of calls in a few runs (see "Against a real model" in the README), but that is not proof it always
+will.
 
 ### Pass 2: layer 1, abilities (15 minutes)
 
 | File | What it is |
 | --- | --- |
-| `src/Umbraco.Abilities/Abilities/Ability.cs` | The contract. `[Ability]` declares an operation: id, `Kind` (Explain, Read, Transform, Trigger, Write), `Reversible`, `Retries`. `AbilityBase<TInput, TOutput>` gives typed input from JSON. `AbilityContext` holds the acting user's key, the caller and the active change set. `AbilityResult` mirrors the CMS's `Attempt<TResult, TStatus>`, and `Problem` mirrors `PropertyValidationError` |
-| `src/Umbraco.Abilities.AI/AbilityAIFunction.cs` | The whole AI adapter: an ability becomes an `AIFunction`, with a schema from its input type. Only irreversible Writes need approval |
-| `AbilityInvoker` (end of `ChangeSets/ChangeSetService.cs`) | The single entry point. A Write with an active change set is recorded instead of run |
+| `src/Umbraco.Abilities/Abilities/Ability.cs` | The contract. `[Ability]` declares an operation: id, `Kind` (Explain, Read, Transform, Trigger, Write), `Reversible`, `Retries`, and `UsesChangeSet` (false for a read that can't depend on a set, like a schema). `AbilityBase<TInput, TOutput>` gives typed input from JSON. `AbilityBase<TOutput>` is for an ability that takes no input, like the change set tools. `AbilityContext` holds the acting user's key. Which change set a call works in is ambient, not context: see `ChangeSets/ChangeSetAccessor.cs`. `AbilityResult` mirrors the CMS's `Attempt<TResult, TStatus>`, and `Problem` mirrors `PropertyValidationError` |
+| `src/Umbraco.Abilities.AI/AbilityAIFunction.cs` | The whole AI adapter: an ability becomes an `AIFunction`, with a schema from its input type. Only irreversible Writes need approval. It adds an optional `changeSetId` to every tool that uses a change set, keeps the sets open in the conversation in `AbilityToolSession` (with two or more open, a call must name one), and reports the set each call used |
+| `AbilityInvoker` (end of `ChangeSets/ChangeSetService.cs`) | The single entry point. A Write while a change set is current is recorded instead of run |
 
 **Look for:** whether `Kind` plus `Reversible` is enough to decide approval. Finding 1 in the README says approval
 depends on the call, not just the tool. Also check whether the result shape suits Automate as well as AI.
@@ -163,7 +169,8 @@ limit to raise with Commerce.
 | `ChangeSets/ChangeSet.cs` | The data. `Changes` are recorded entity edits. `AfterApply` holds side effects. `AppliedSteps` lets apply resume. `Bases` and `BaseVersions` record where rebasing starts from, and `Resolutions` records how conflicts were resolved. `Drafts` holds product drafts. Also the seams `IUnitOfWorkProvider`, `IEntityEditAbility` and `IDraftingEntityAdapter` |
 | `ChangeSets/ChangeSetService.cs` | The coordinator. Read its public methods top to bottom (see below) |
 | `Entities/EntityDiff.cs` | Compares two versions of any entity, by path. This is what makes rebasing generic |
-| `ChangeSets/ChangeSetAbilities.cs` | The `changeSet.*` tools |
+| `ChangeSets/ChangeSetAbilities.cs` | The `changeSet.*` tools. They work on the current set and take no id |
+| `ChangeSets/ChangeSetAccessor.cs` | The change set the current call works in, ambient like the Draft Sets accessor: per request, or per async flow outside one. Set by `ChangeSetHeaderMiddleware` (`Umbraco.Abilities.Cms`) from the `Umb-Change-Set` header, or by the AI adapter for one tool call |
 | `ChangeSets/ChangeSetNotifications.cs` | CMS notifications: a cancelable applying, then applied, discarded, and side effect completed |
 
 In `ChangeSetService.cs`, read the public methods in this order:
@@ -172,6 +179,7 @@ In `ChangeSetService.cs`, read the public methods in this order:
 2. `ComputeAsync` (private, behind `GetWorkingStateAsync` and `GetRebasedAsync`): one entity's state, worked out once.
    The set's edits are replayed onto the **current** live version, which is what rebasing means here, and replayed onto
    the starting version to find where both sides changed the same value. Validate, summarize and apply all use it.
+   `ReadAsync` and `ReadAllAsync` use it too: they are how any read, a product's own included, sees the current set.
 3. `ResolveConflictAsync`: keeping yours or theirs for one conflict.
 4. `ValidateAsync`: schema, product rules and unresolved conflicts, per entity.
 5. `ApplyAsync`: authorize for the applying user, validate, the cancelable notification, then one step per product (each
@@ -255,4 +263,5 @@ These are the judgments the PoC makes that a reviewer is best placed to challeng
 - [README.md](README.md): findings, numbers, and the sections referred to above.
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md): the design, with the same findings
   folded in.
+- [EXAMPLE-FLOWS.md](docs/EXAMPLE-FLOWS.md): three recorded flows, call by call.
 - Commit messages on this branch: each records what changed and why, in order.

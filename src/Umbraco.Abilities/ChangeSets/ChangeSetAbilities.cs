@@ -4,56 +4,60 @@ namespace Umbraco.Abilities.ChangeSets;
 
 public sealed record CreateChangeSetInput([property: Description("A name a person will recognise, e.g. 'Black Friday campaign'.")] string Name);
 
-public sealed record ChangeSetIdInput([property: Description("The change set's id.")] Guid ChangeSetId);
+/// <summary>What <c>changeSet.create</c> returns. A surface sees it and makes the new set current for later calls.</summary>
+public sealed record ChangeSetCreated(Guid ChangeSetId, string Name);
 
-[Ability("changeSet.create", "Create change set", Kind = AbilityKind.Write, Reversible = true,
-    Description = "Starts a change set. Writes made with it active are recorded, not saved, until the set is applied.")]
+[Ability("changeSet.create", "Create change set", Kind = AbilityKind.Write, Reversible = true, UsesChangeSet = false,
+    Description = "Starts a change set: later edits are recorded in it, not saved, until a person applies it. While it is the only change set open in this conversation, calls use it without naming it. With two or more open, every call must name one with changeSetId.")]
 public sealed class CreateChangeSetAbility(ChangeSetService changeSets) : AbilityBase<CreateChangeSetInput, object>, IChangeSetLifecycleAbility
 {
     protected override Task<AbilityResult> ExecuteAsync(CreateChangeSetInput input, AbilityContext context, CancellationToken cancellationToken)
-        => Task.FromResult(Success(new { changeSetId = changeSets.Create(input.Name).Id }));
+    {
+        var set = changeSets.Create(input.Name);
+        return Task.FromResult(Success(new ChangeSetCreated(set.Id, set.Name)));
+    }
 }
 
 [Ability("changeSet.validate", "Validate change set", Kind = AbilityKind.Read,
     Description = "Checks every entity in the set. Returns problems by path; fix them with the entity edit abilities.")]
-public sealed class ValidateChangeSetAbility(ChangeSetService changeSets) : AbilityBase<ChangeSetIdInput, object>, IChangeSetLifecycleAbility
+public sealed class ValidateChangeSetAbility(ChangeSetService changeSets) : AbilityBase<object>, IChangeSetLifecycleAbility
 {
-    protected override async Task<AbilityResult> ExecuteAsync(ChangeSetIdInput input, AbilityContext context, CancellationToken cancellationToken)
+    protected override async Task<AbilityResult> ExecuteAsync(AbilityContext context, CancellationToken cancellationToken)
     {
-        var problems = await changeSets.ValidateAsync(input.ChangeSetId, cancellationToken);
+        var problems = await changeSets.ValidateAsync(changeSets.GetCurrent().Id, cancellationToken);
         return Success(new { valid = problems.Count == 0, entities = problems });
     }
 }
 
 [Ability("changeSet.summarize", "Summarize change set", Kind = AbilityKind.Read,
     Description = "Lists what applying the set would create, update and run. Show it to the person before they apply.")]
-public sealed class SummarizeChangeSetAbility(ChangeSetService changeSets) : AbilityBase<ChangeSetIdInput, ChangeSetSummary>, IChangeSetLifecycleAbility
+public sealed class SummarizeChangeSetAbility(ChangeSetService changeSets) : AbilityBase<ChangeSetSummary>, IChangeSetLifecycleAbility
 {
-    protected override async Task<AbilityResult> ExecuteAsync(ChangeSetIdInput input, AbilityContext context, CancellationToken cancellationToken)
-        => Success(await changeSets.SummarizeAsync(input.ChangeSetId, cancellationToken));
+    protected override async Task<AbilityResult> ExecuteAsync(AbilityContext context, CancellationToken cancellationToken)
+        => Success(await changeSets.SummarizeAsync(changeSets.GetCurrent().Id, cancellationToken));
 }
 
 [Ability("changeSet.apply", "Apply change set", Kind = AbilityKind.Write,
     Description = "Saves every entity in the set and runs its recorded operations, all or nothing. This is the only step that changes live data.")]
-public sealed class ApplyChangeSetAbility(ChangeSetService changeSets) : AbilityBase<ChangeSetIdInput, IReadOnlyList<EntitySummary>>, IChangeSetLifecycleAbility
+public sealed class ApplyChangeSetAbility(ChangeSetService changeSets) : AbilityBase<IReadOnlyList<EntitySummary>>, IChangeSetLifecycleAbility
 {
-    protected override Task<AbilityResult> ExecuteAsync(ChangeSetIdInput input, AbilityContext context, CancellationToken cancellationToken)
-        => changeSets.ApplyAsync(input.ChangeSetId, context, cancellationToken);
+    protected override Task<AbilityResult> ExecuteAsync(AbilityContext context, CancellationToken cancellationToken)
+        => changeSets.ApplyAsync(changeSets.GetCurrent().Id, context, cancellationToken);
 }
 
 [Ability("changeSet.discard", "Discard change set", Kind = AbilityKind.Write, Reversible = true,
     Description = "Throws the set away. No live data changes.")]
-public sealed class DiscardChangeSetAbility(ChangeSetService changeSets) : AbilityBase<ChangeSetIdInput, object>, IChangeSetLifecycleAbility
+public sealed class DiscardChangeSetAbility(ChangeSetService changeSets) : AbilityBase<object>, IChangeSetLifecycleAbility
 {
-    protected override async Task<AbilityResult> ExecuteAsync(ChangeSetIdInput input, AbilityContext context, CancellationToken cancellationToken)
+    protected override async Task<AbilityResult> ExecuteAsync(AbilityContext context, CancellationToken cancellationToken)
     {
-        await changeSets.DiscardAsync(input.ChangeSetId, cancellationToken);
-        return Success(new { discarded = input.ChangeSetId });
+        var id = changeSets.GetCurrent().Id;
+        await changeSets.DiscardAsync(id, cancellationToken);
+        return Success(new { discarded = id });
     }
 }
 
 public sealed record ResolveConflictInput(
-    [property: Description("The change set's id.")] Guid ChangeSetId,
     [property: Description("Entity type of the conflicting entity.")] string EntityType,
     [property: Description("Entity key.")] Guid Key,
     [property: Description("The conflict's path, as listed by changeSet.validate or changeSet.summarize.")] string Path,
@@ -74,7 +78,7 @@ public sealed class ResolveConflictAbility(ChangeSetService changeSets) : Abilit
             _ => throw new AbilityInputException("Keep must be 'yours' or 'theirs'.", [new Problem("keep", "Must be 'yours' or 'theirs'.")]),
         };
 
-        await changeSets.ResolveConflictAsync(input.ChangeSetId, input.EntityType, input.Key, input.Path, Entities.VariantId.From(input.Variant), keep, cancellationToken);
+        await changeSets.ResolveConflictAsync(changeSets.GetCurrent().Id, input.EntityType, input.Key, input.Path, Entities.VariantId.From(input.Variant), keep, cancellationToken);
         return Success(new { resolved = input.Path, kept = keep.ToString().ToLowerInvariant() });
     }
 }

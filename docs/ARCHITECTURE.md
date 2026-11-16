@@ -1,15 +1,13 @@
 # Abilities, entities and change sets
 
-> **Status:** Draft for discussion. Proven by the proof of concept in
-> [this repo](../); start with its
-> [REVIEWING.md](../REVIEWING.md) to review the code.
+> **Status:** Draft for discussion. Tested by the proof of concept in [this repo](../); start with its
+> [REVIEWING.md](../REVIEWING.md) to review the code. This is the design's source of truth.
 
 - **Date:** 2026-11-14
 - **Authors:** Umbraco AI team
-- **Related:** [Draft Sets & Content Validators](https://github.com/umbraco/Umbraco.AI/blob/claude/pensive-hawking-ft8z3f/docs/plans/draft-sets-content-validators/BRIEF.md), the CMS Draft Sets vision
-  that change sets generalise
-- **Source:** exported from the design doc of the same name. This copy is the one in version control; the design doc
-  is where comments happen.
+- **Related:** [Draft Sets & Content Validators](https://github.com/umbraco/Umbraco.AI/blob/v18/dev/docs/plans/draft-sets-content-validators/BRIEF.md),
+  and the [CMS Draft Sets proof of concept](https://github.com/mattbrailsford/Umbraco.Cms.DraftSets) that change sets
+  generalise
 
 ## Summary
 
@@ -501,21 +499,22 @@ Each idea below uses the same three layers with no new contract.
 
 ## Proof of concept findings
 
-A standalone [proof of concept](../) implements all three layers, with stand-ins for a CMS page with nested blocks, a Commerce discount, a third-party rule type and an Automate workflow. Its 57 in-memory tests drive everything through the generated AI tools with scripted calls; no real model and no real product code are involved. It surfaced four changes to this design:
+A standalone [proof of concept](../) implements all three layers, with stand-ins for a CMS page with nested blocks, a Commerce discount, a third-party rule type and an Automate workflow. Its in-memory tests drive everything through the generated AI tools with scripted calls, and a model-run tool lets a real model (Claude Opus 5.5) drive the same tools from a description. Building it changed this design in these ways:
 
 | Finding | What it showed | Change to the design |
 | --- | --- | --- |
 | Approval depends on the call, not just the tool | `email.send` needs approval when run directly, but inside a change set it is only recorded. M.E.AI's `ApprovalRequiredAIFunction` wraps a tool once, so it cannot express "only outside a set" | Decide approval per call from the context, and put it on applying the set |
 | Side effects are not checked when recorded | An email with an invalid recipient was accepted into the set and only failed at apply | Add an optional "check this input without running it" hook to abilities, so a whole set can be checked before anyone approves it |
-| Every read must see the set's changes | Finding an entity by name inside a set first missed one renamed in the set. The generic reads now use the working state, but a product's own Read ability still shows live data | The framework needs a way to show a set's changes to product Read abilities: the generic form of the CMS Draft Sets read overlay |
+| Every read must see the set's changes | Finding an entity by name inside a set first missed one renamed in the set, and a product's own Read ability showed only live data | Reads go through the change set: the generic reads use the working state, and a product's Read ability runs its own query for what's live, then reads it through `ChangeSetService.ReadAllAsync` (or `ReadModelsAsync`), which adds what the current set changed, created or deleted. The generic form of the CMS Draft Sets read overlay |
 | Keys chosen at record time work | Writing generated keys into the recorded input made replay deterministic. A discount referred to a page created in the same set, and a workflow step to a later step, with no key remapping | Settles the "new items referring to each other" risk in favour of keys chosen when the call is recorded |
+| Which change set a call works in is ambient, and named per call | A real model (Claude Opus 5.5) built a discount from text with only the generic tools, but couldn't validate it: it was never told the set's id. A set the model created itself couldn't be used at all, since nothing passed its id to later calls | As in the CMS Draft Sets PoC, an accessor makes one set current per call (per request over HTTP, from the `Umb-Change-Set` header), and no ability input carries the id. The AI adapter adds an optional `changeSetId` to every tool that uses a set (an ability that can't depend on one, like getting a schema, says `UsesChangeSet = false`); without it a call uses the only set open in the conversation, and with two or more open it must name one. Every result reports the set used, and an unknown set is refused |
 | Typing moves the work, not the line count | Moving the samples to model classes left their size about the same: Commerce went from 74 to 62 statement lines, and the real CMS adapter from 621 to 599 lines. But a discount's structure was previously written twice, as field definitions and as string-keyed JSON reads. Now it is written once. Typed values also exposed a validator bug that only parsed JSON had hidden | Make EntityAdapterBase\<TModel> the default for package developers, with IEntityAdapter over a typed document as the escape hatch for a schema that is data |
 
-Not yet proven: real CMS documents (cultures and segments are not in the schema language yet), the real Commerce and Automate models, persistence, permission checks, and opening a set in an editor.
+Not yet proven: the real Commerce and Automate models, persistence, opening a set in an editor, and how reliably real models use the tools beyond a few runs.
 
 ## Checked against the real models
 
-The schema language holds up against the real CMS, Commerce and Automate code, with five additions for CMS content and one for Automate. Three gaps can only be closed in the products themselves. Sources: Umbraco CMS `main` (18.5.0-rc), Umbraco.Commerce `dev` and Umbraco.Automate `v18/dev`, read on 13-11-2026. The proof of concept's CMS sample now follows the real content model's shapes, and its 20 tests pass.
+The schema language holds up against the real CMS, Commerce and Automate code, with five additions for CMS content and one for Automate. Three gaps can only be closed in the products themselves. Sources: Umbraco CMS `main` (18.5.0-rc), Umbraco.Commerce `dev` and Umbraco.Automate `v18/dev`, read on 13-11-2026. The proof of concept's CMS sample now follows the real content model's shapes, and its tests pass.
 
 ### Additions to the schema language
 
@@ -543,7 +542,7 @@ Two existing Umbraco.AI defects turned up and were raised: [#746](https://github
 
 ## Proven against a real Umbraco
 
-A real adapter for CMS documents now runs against Umbraco 18 on SQLite, and all 6 of its integration tests pass. It builds the schema from document types and their Block List and Block Grid data types, and loads and saves through `IContentEditingService` inside one Umbraco scope. It validates with Umbraco's own validation.
+A real adapter for CMS documents now runs against Umbraco 18 on SQLite, and its integration tests pass. It builds the schema from document types and their Block List and Block Grid data types, and loads and saves through `IContentEditingService` inside one Umbraco scope. It validates with Umbraco's own validation.
 
 The tests show:
 
@@ -561,7 +560,7 @@ It changed the design in two ways:
 
 It also confirmed two smaller points. Umbraco reports errors inside a block with the culture in a JSON path filter, counting only the blocks shown in that culture, and the adapter maps these back to entity paths. Umbraco saves invalid values and reports them afterwards, so the adapter treats any reported error as a failed save, which rolls the scope back.
 
-Not covered yet: templates, publishing, rich text with blocks, segments inside blocks, a parent created in the same set, and permissions (the tests run as the super user).
+Not covered yet: templates, publishing, rich text with blocks, segments inside blocks, and a parent created in the same set.
 
 ## Beyond this spec: Deploy
 

@@ -1,16 +1,16 @@
 # Abilities, entities and change sets: proof of concept
 
-> **Status:** Experiment. Not a product, not shipped. It started in the
-> [Umbraco.AI](https://github.com/umbraco/Umbraco.AI/tree/claude/pensive-hawking-ft8z3f) repo and moved here because it is not
-> AI specific. It exists to
-> test the design in the "Abilities, entities and change sets" doc before anything is built for real.
+> **Status:** Experiment. Not a product, not shipped. It started in the [Umbraco.AI](https://github.com/umbraco/Umbraco.AI)
+> repo and moved here because it is not AI specific. It tests the design in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+> before anything is built for real. This repo is where the proof of concept and its design live.
 
 It tests one claim: if packages declare **abilities** and **entity adapters**, and Write calls are
 recorded into **change sets**, then "create an entity from a description" needs no per-product code. That
 covers a discount with a rule tree, a page with nested blocks, or a workflow whose steps form a graph.
 
 **Reviewing it?** Start with [REVIEWING.md](REVIEWING.md): what to read, in what order, and how the pieces connect. The
-design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). To see the tools in use, read
+[docs/EXAMPLE-FLOWS.md](docs/EXAMPLE-FLOWS.md): a page, a workflow and a discount, call by call.
 
 ## Run it
 
@@ -21,6 +21,16 @@ dotnet test
 Packages come from nuget.org only, with versions set in `Directory.Packages.props`. The CMS tests start a real
 Umbraco 18 on SQLite through `Umbraco.Cms.Tests.Integration`, and take about 30 seconds.
 
+To let a real model build an entity from text, set `ANTHROPIC_API_KEY` and run:
+
+```bash
+dotnet run --project tools/Umbraco.Abilities.ModelRun
+dotnet run --project tools/Umbraco.Abilities.ModelRun -- "Free shipping over 500 at weekends"
+```
+
+It is not a test: each run calls the Claude API, costs money, and can give a different result. See
+[Against a real model](#against-a-real-model).
+
 ## What is here
 
 | Project | Plays the part of | Depends on |
@@ -28,10 +38,11 @@ Umbraco 18 on SQLite through `Umbraco.Cms.Tests.Integration`, and take about 30 
 | `Umbraco.Abilities` | The contract and runtime: abilities, entity adapters, the path editor, change sets, the invoker | Nothing |
 | `Umbraco.Abilities.AI` | Umbraco.AI's adapter: every ability becomes an M.E.AI `AIFunction` | Contract, `Microsoft.Extensions.AI.Abstractions` |
 | `Umbraco.Abilities.Samples` | Product packages: CMS pages with nested blocks, Commerce collections and discounts, a third-party rule type, an email package, Automate workflows | Contract only |
-| `Umbraco.Abilities.Cms` | The real entity adapter for CMS documents, on `IContentEditingService`, and the adapter that stages content changes into a CMS draft set | Contract, Umbraco 18, the draft sets stand-in |
+| `Umbraco.Abilities.Cms` | The real entity adapter for CMS documents, on `IContentEditingService`, the adapter that stages content changes into a CMS draft set, and the `Umb-Change-Set` header middleware | Contract, Umbraco 18, the draft sets stand-in |
 | `Umbraco.Cms.DraftSets` | A stand-in for a Draft Sets feature in CMS core: per-property content changes held apart from live, read-through, rebase and conflicts, apply in one scope | Umbraco 18 only: no Abilities |
 | `Umbraco.Abilities.Tests` | A scripted model calling the AI tools with JSON arguments | Contract, AI adapter, samples |
 | `Umbraco.Abilities.Cms.Tests` | The same, against a real Umbraco on SQLite | Contract, AI adapter, CMS adapter, Umbraco test host |
+| `tools/Umbraco.Abilities.ModelRun` | A "Create with AI" surface: a real model (Claude, through M.E.AI's `IChatClient`) builds an entity in a change set from a description | Contract, AI adapter, samples, `Anthropic` |
 
 Each design layer and where it lives:
 
@@ -477,8 +488,18 @@ Each claim is followed by the tests that show it. `(all)` means every test in th
   - `ChangeSetTests.A_product_whose_save_fails_rolls_back_all_of_its_changes_and_can_be_fixed_and_resumed`
 - Reads inside a set show its edits; reads outside show live data
   - `ChangeSetTests.Reads_inside_a_set_show_its_edits_and_reads_outside_show_live_data`
+- A product's own Read ability shows what the current set changed and created, and live data outside it
+  - `ChangeSetTests.A_product_read_ability_shows_the_current_sets_changes_and_live_data_outside_it`
 - Replay is deterministic, and keys handed to the model are the stored keys (for products that store item ids; see Commerce's derived keys)
   - `ChangeSetTests.Replaying_a_set_gives_the_same_entity_every_time`
+- A call works in the change set it names, or the only one open in the conversation. With two or more open, it must
+  name one. No ability takes the id: the AI adapter adds an optional `changeSetId` to every tool that uses a set, and the set is ambient
+  for that call only
+  - `CurrentChangeSetTests` (all)
+- An HTTP request names its change set in the `Umb-Change-Set` header; an unknown set is refused before the request runs
+  - `CmsDocumentAdapterTests.A_request_naming_a_change_set_in_its_header_works_in_that_set_for_that_request_only`
+  - `CmsDocumentAdapterTests.A_request_naming_an_unknown_change_set_is_refused_before_it_runs`
+  - `CmsDocumentAdapterTests.A_request_without_the_header_works_in_no_change_set`
 
 ### Rebasing and conflicts
 
@@ -576,7 +597,7 @@ Each claim is followed by the tests that show it. `(all)` means every test in th
 
 ## What building it taught us
 
-These feed back into the design doc.
+These feed back into the design in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 1. **Approval depends on the call, not just the tool.** `email.send` and `commerce.activateDiscount` need
    approval when run directly. Inside a change set they are only recorded, so asking then is pointless; the
@@ -587,8 +608,11 @@ These feed back into the design doc.
    accepted into the set and only fails at apply. Abilities need an optional "check this input without
    running it" hook, so a set can be validated fully before anyone approves it.
 3. **Every read must be draft-aware.** `entity.find` first missed an existing entity renamed in the set.
-   The generic reads now use the working state, but a product's own Read ability (e.g. "list discounts")
-   would still show live data inside a set. This is the generic form of the CMS PoC's read-overlay problem.
+   The generic reads now use the working state. A product's own Read ability reads through the change set too: it
+   runs its own query for what's live, then `ChangeSetService.ReadAllAsync` (or `ReadModelsAsync` for a typed model)
+   adds what the current set changed, created or deleted. `commerce.listDiscounts` shows a discount renamed, switched
+   on and created in the set. This is the generic form of the CMS PoC's read overlay. Products filter after reading,
+   since what a set built may not match their own query.
 4. **Caller-chosen keys solve references between new items.** Writing generated keys into the recorded
    input made replay deterministic, and let a discount refer to a page created in the same set, and a
    workflow step refer to a later step. No key remapping was needed.
@@ -638,6 +662,18 @@ These feed back into the design doc.
    any variant is reported, which covers "the page has no culture yet" without a culture rule. The CMS adapter maps
    `ContentVariation` to its two dimensions; a typed model's `Varying<T>` is per culture unless `[VariesBy(...)]` says
    otherwise.
+12. **Which change set a call works in is ambient, and named per call.** A real model wasn't told the id of the set it
+   worked in, so it couldn't validate its work. Looking closer, a set the model created itself couldn't be used at all:
+   `changeSet.create` returned an id, but nothing passed it on to later calls. The scripted tests hid this by copying
+   the id by hand. Now it works like the CMS Draft Sets proof of concept: an accessor holds the current set for one
+   call, per request, and nothing else carries it. No ability input has a change set id. The AI adapter adds an
+   optional `changeSetId` to every tool, so a call can name a set. Leave it out and the call uses the only set open in
+   the conversation. With two or more open, a call that names none is refused and told which are open: using the last
+   one touched would let a model that forgot to switch back edit the wrong set, with nothing to say so. Every result
+   says which set it used, and a set that doesn't exist is refused rather than falling back to live data. An ability
+   whose result can't depend on a set (getting a schema, starting a set) says `UsesChangeSet = false`: it takes no id
+   and always runs outside one. A Write can't say it, since it would change live data. For HTTP callers, a middleware
+   reads the `Umb-Change-Set` header into the same accessor.
 
 ## Applying a set
 
@@ -750,6 +786,38 @@ Not covered yet: templates (an update would clear one), publishing, rich text wi
 properties against real Umbraco, a parent created in the same set, and editors other than text,
 numbers, booleans, tags, content picker and blocks (they pass through as JSON, untested).
 
+## Against a real model
+
+`tools/Umbraco.Abilities.ModelRun` gives Claude Opus 5.5 the generic tools and a description, and nothing else. Its
+prompt names no product, field or item type. The model creates its own change set; applying is kept for a person.
+Runs on 16-11-2026, against the sample Commerce:
+
+| Description | Result | Tool calls | Time | Tokens in / out |
+| --- | --- | --- | --- | --- |
+| 10% off the Summer collection for VIP customers in December | Correct: VIP rule, Summer collection rule, 10% off, 01-12-2026 to 31-12-2026. Valid, applied | 10 (1 failed) | 20 s | 54k / 1.9k |
+| Weekend deal in January: 15% off orders over 500 for customers in the VIP or Gold group, Saturdays and Sundays only | Built the VIP version with an order total rule and the third party's weekday rule. Said there is no Gold group and asked, instead of inventing one. Valid, applied | 10 (2 failed) | 23 s | 48k / 2.1k |
+| 10% off the Summer collection for VIP customers in December, with no change set open at the start | Created a change set, built the same discount in it, validated and summarized it with `{}`. Valid, applied | 10 (0 failed) | 16 s | 62k / 1.6k |
+
+What it showed:
+
+- **The schema and tools were enough.** The model read the schema, fetched only the item types it needed, found the
+  collection by name, built the discount in small steps and validated it. It found the third party's rule type on its
+  own.
+- **It reported gaps instead of hiding them.** It said the 10% comes off the whole order, because no reward type limits
+  it to the Summer items. It said it couldn't tell whether "over 500" includes 500. It left the discount switched off
+  and said so.
+- **It needed the change set's id** and wasn't given it. The first two runs had the id in the prompt as a workaround.
+  See finding 12 in "What building it taught us": the set is now ambient per call and named per call. In the third run
+  the model started with no set, created one, and every later call used it without the id.
+- **A fixed list of values reads like a reference.** Each run, the model first looked up customer groups as an entity
+  type, and the error listing the known types sent it back. A field's allowed values are in the schema, but nothing
+  says the field isn't a reference to look up.
+- **Derived keys change on save.** The applied discount's rules have different keys from the ones the model was given,
+  as described in "What the mapping costs".
+
+Not covered: nested rule groups (the model would have used one for "VIP or Gold"), editing an existing entity,
+rebasing, CMS documents, Automate workflows, and other models.
+
 ## Checked against the real models
 
 The schema language was compared with the real code of Umbraco CMS (`main`, 18.5.0-rc),
@@ -790,10 +858,11 @@ and [#747](https://github.com/umbraco/Umbraco.AI/issues/747) (block settings use
 
 - **Real Commerce and Automate.** Only CMS documents have a real adapter. The Commerce and Automate
   adapters are still stand-ins.
-- **A real model.** The tests script the tool calls. No LLM chose them.
+- **A real model, at scale.** The tests script the tool calls. One model built two discounts from text in a few runs
+  (see [Against a real model](#against-a-real-model)). That shows the tools are usable, not how often a model gets them
+  right, or how it does on documents, workflows or edits.
 - **Persistence and scale.** Sets are in memory, and working state is recomputed by replaying every call
   on each read.
-- **Access checks.** The `Access` failure category exists but nothing enforces permissions.
 - **Opening a set in an editor.** Nothing loads a set's working state into a backoffice workspace.
 - **Undo.** A failed apply is resumed, not undone. Nothing reverses a product's step that already applied.
 - **Products sharing a database.** Products that do share a connection could apply in one transaction; the

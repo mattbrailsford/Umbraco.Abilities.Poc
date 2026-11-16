@@ -326,6 +326,28 @@ public class ChangeSetTests
     }
 
     [Fact]
+    public async Task A_product_read_ability_shows_the_current_sets_changes_and_live_data_outside_it()
+    {
+        var spring = await CreateLiveDiscountAsync("Spring");
+
+        await _agent.StartChangeSetAsync("Summer campaign");
+        await _agent.OkAsync("entity_setValue", $$"""{ "entityType": "umbraco-commerce-discount", "key": "{{spring}}", "path": "name", "value": "Spring sale" }""");
+        await _agent.OkAsync("commerce_activateDiscount", $$"""{ "discount": "{{spring}}" }""");
+        await _agent.OkAsync("entity_create", """{ "entityType": "umbraco-commerce-discount", "fields": { "name": "Summer" } }""");
+
+        // Commerce's own query finds only what's live; reading through the change set adds what the set built.
+        var inSet = await _agent.OkAsync("commerce_listDiscounts", "{}");
+        Assert.Equal(["Spring sale", "Summer"], inSet.EnumerateArray().Select(d => d.GetProperty("name").GetString()));
+        var active = await _agent.OkAsync("commerce_listDiscounts", """{ "activeOnly": true }""");
+        Assert.Equal("Spring sale", Assert.Single(active.EnumerateArray()).GetProperty("name").GetString());
+
+        _agent.ChangeSetId = null;
+        var live = await _agent.OkAsync("commerce_listDiscounts", "{}");
+        var only = Assert.Single(live.EnumerateArray());
+        Assert.Equal(("Spring", false), (only.GetProperty("name").GetString(), only.GetProperty("active").GetBoolean()));
+    }
+
+    [Fact]
     public async Task Replaying_a_set_gives_the_same_entity_every_time()
     {
         await _agent.StartChangeSetAsync("Replay");

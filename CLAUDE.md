@@ -8,9 +8,9 @@ edit an entity from a description" needs no per-product code.
 - [README.md](README.md) holds the findings: what was built, what it taught us, what it does not prove.
 - [REVIEWING.md](REVIEWING.md) is the guided tour: the map, how one call flows, and a reading order.
 
-It started in the [Umbraco.AI repo](https://github.com/umbraco/Umbraco.AI/tree/claude/pensive-hawking-ft8z3f)
-(`experiments/abilities-poc`) and moved here because it is not AI specific. The Umbraco.AI code it builds on
-(the content tools and block path engine) still lives there.
+It started in the [Umbraco.AI repo](https://github.com/umbraco/Umbraco.AI) and moved here because it is not AI
+specific. This repo is now the source of truth for the proof of concept and its design. The Umbraco.AI code it builds
+on (the content tools and block path engine) still lives there.
 
 Read the relevant ARCHITECTURE and README sections before changing a design layer. Many choices there were made on purpose
 (for example: one value tree, variation as named dimensions, caller-chosen keys).
@@ -41,6 +41,7 @@ dotnet test
 | `src/Umbraco.Cms.DraftSets` | A stand-in for a Draft Sets feature in CMS core |
 | `tests/Umbraco.Abilities.Tests` | A scripted model (`ScriptedAgent`) calling the AI tools with JSON |
 | `tests/Umbraco.Abilities.Cms.Tests` | The same, against a real Umbraco |
+| `tools/Umbraco.Abilities.ModelRun` | Runs a real model (Claude) against the samples. Not a test: it costs money and needs `ANTHROPIC_API_KEY` |
 
 ## Dependency rules
 
@@ -67,6 +68,4 @@ These boundaries are part of what the PoC proves. Do not cross them.
 - README and REVIEWING use plain, short sentences and tables. Keep that style.
 - When building something teaches a lesson about the design, add it to "What building it taught us" in the README.
 - When a gap is closed, update "What it does not prove" and the "Not covered yet" list.
-- When a finding changes the design, update `docs/ARCHITECTURE.md` too. Its header says it is exported from a
-  shared design doc, where comments happen, so flag design changes to the user rather than treating this copy as
-  the only source.
+- When a finding changes the design, update `docs/ARCHITECTURE.md` too. It is the design's source of truth.

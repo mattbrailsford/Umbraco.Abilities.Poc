@@ -9,23 +9,49 @@ namespace Umbraco.Abilities.Tests;
 
 /// <summary>
 /// Plays the part of a model: calls the AI tools by name with JSON arguments, exactly as a chat client's
-/// function invocation would. The change set id is the surface's context, like the Umbraco Draft Sets header.
+/// function invocation would. One agent is one conversation, with its own current change set.
 /// </summary>
 public sealed class ScriptedAgent
 {
     public ScriptedAgent(SampleSite site)
     {
         Tools = AbilityAITools
-            .Create(site.Abilities, site.Invoker, () => new AbilityContext(UserKey, ChangeSetId))
+            .Create(site.Abilities, site.Invoker, Session)
             .ToDictionary(t => t.Name);
     }
 
     public IReadOnlyDictionary<string, AIFunction> Tools { get; }
 
-    public Guid? ChangeSetId { get; set; }
+    /// <summary>What the conversation keeps between calls: its user and current change set.</summary>
+    public AbilityToolSession Session { get; } = new(SampleAccess.Editor);
+
+    /// <summary>
+    /// The conversation's current change set: the only one open in it. Setting it plays a surface that opened one (and
+    /// closed any others), or with null, closed them all.
+    /// </summary>
+    public Guid? ChangeSetId
+    {
+        get => Session.ChangeSetId;
+        set
+        {
+            foreach (var open in Session.OpenChangeSetIds.ToList())
+            {
+                Session.Close(open);
+            }
+
+            if (value is { } id)
+            {
+                Session.Open(id);
+            }
+        }
+    }
 
     /// <summary>The user the agent acts for. It gets their permissions, no more.</summary>
-    public Guid UserKey { get; set; } = SampleAccess.Editor;
+    public Guid UserKey
+    {
+        get => Session.UserKey;
+        set => Session.UserKey = value;
+    }
 
     public async Task<JsonElement> CallAsync(string tool, string argumentsJson)
     {
@@ -55,9 +81,11 @@ public sealed class ScriptedAgent
 
     public async Task<Guid> StartChangeSetAsync(string name)
     {
+        // The new set joins the conversation: nothing here copies the id.
         var output = await OkAsync("changeSet_create", $$"""{ "name": "{{name}}" }""");
-        ChangeSetId = output.GetProperty("changeSetId").GetGuid();
-        return ChangeSetId.Value;
+        var id = output.GetProperty("changeSetId").GetGuid();
+        Assert.Contains(id, Session.OpenChangeSetIds);
+        return id;
     }
 }
 

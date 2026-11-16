@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 
@@ -45,6 +46,7 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
     private Agent _agent = null!;
     private CmsDocumentAdapter _documents = null!;
     private ChangeSetService _changeSets = null!;
+    private ChangeSetAccessor _accessor = null!;
     private DraftSetService _draftSets = null!;
 
     private IContentTypeService ContentTypeService => GetRequiredService<IContentTypeService>();
@@ -161,7 +163,8 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
         var itemTypes = new ItemTypeRegistry();
         VetoHandler.Applied.Clear();
         VetoHandler.SideEffects.Clear();
-        _changeSets = new ChangeSetService(new InMemoryChangeSetStore(), abilities, adapters, itemTypes, GetRequiredService<IEventAggregator>(), GetRequiredService<IBackgroundTaskQueue>(), TimeSpan.Zero);
+        _accessor = ChangeSetAccessor.Ambient();
+        _changeSets = new ChangeSetService(new InMemoryChangeSetStore(), abilities, adapters, itemTypes, _accessor, GetRequiredService<IEventAggregator>(), GetRequiredService<IBackgroundTaskQueue>(), TimeSpan.Zero);
         _draftSets = new DraftSetService(
             ContentEditingService,
             GetRequiredService<PropertyEditorCollection>(),
@@ -548,6 +551,7 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
         var refused = await _agent.FailAsync("changeSet_apply", SetJson());
         Assert.That(refused.GetProperty("message").GetString(), Is.EqualTo("Applying was refused. Change sets called 'Not today' can't be applied."));
         Assert.That(ContentService.GetById(page.Key), Is.Null);
+        await _agent.OkAsync("changeSet_discard", "{}");
 
         // Vetoed at the CMS draft set: the Content step fails and rolls back.
         await _agent.StartChangeSetAsync("Not this content");
@@ -555,6 +559,7 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
         refused = await _agent.FailAsync("changeSet_apply", SetJson());
         Assert.That(refused.GetProperty("message").GetString(), Does.Contain("Content failed and was rolled back").And.Contain("Draft sets called 'Not this content' can't be applied."));
         Assert.That(ContentService.GetById(page.Key), Is.Null);
+        await _agent.OkAsync("changeSet_discard", "{}");
 
         // Applied: both notifications are raised.
         await _agent.StartChangeSetAsync("Fine");
@@ -581,6 +586,7 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
             Assert.That(refused.GetProperty("status").GetString(), Is.EqualTo("AccessDenied"));
             Assert.That(refused.GetProperty("message").GetString(), Is.EqualTo("You don't have permission to update this document."));
         });
+        await _agent.OkAsync("changeSet_discard", "{}");
 
         // A set made by someone who may change the page, applied by the reader: refused, nothing changes.
         _agent.UserKey = Constants.Security.SuperUserKey;
@@ -906,6 +912,46 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
         => (await _agent.OkAsync("entity_addItem", $$"""{ "entityType": "document", "key": "{{page}}", "fieldPath": "{{fieldPath}}", "itemType": "{{itemType}}", "fields": {{fieldsJson}}{{Culture(culture)}} }"""))
             .GetProperty("path").GetString()!;
 
+    [Test]
+    public async Task A_request_naming_a_change_set_in_its_header_works_in_that_set_for_that_request_only()
+    {
+        var set = _changeSets.Create("From MCP");
+        Guid? seen = null;
+        var middleware = new ChangeSetHeaderMiddleware(_ => { seen = _accessor.CurrentChangeSetId; return Task.CompletedTask; });
+        var request = new DefaultHttpContext();
+        request.Request.Headers[ChangeSetAccessor.HeaderName] = set.Id.ToString();
+
+        await middleware.InvokeAsync(request, _accessor, _changeSets);
+
+        Assert.That(seen, Is.EqualTo(set.Id));
+        Assert.That(_accessor.CurrentChangeSetId, Is.Null);
+    }
+
+    [Test]
+    public async Task A_request_naming_an_unknown_change_set_is_refused_before_it_runs()
+    {
+        var ran = false;
+        var middleware = new ChangeSetHeaderMiddleware(_ => { ran = true; return Task.CompletedTask; });
+        var request = new DefaultHttpContext();
+        request.Request.Headers[ChangeSetAccessor.HeaderName] = Guid.NewGuid().ToString();
+
+        await middleware.InvokeAsync(request, _accessor, _changeSets);
+
+        Assert.That(ran, Is.False);
+        Assert.That(request.Response.StatusCode, Is.EqualTo(StatusCodes.Status400BadRequest));
+    }
+
+    [Test]
+    public async Task A_request_without_the_header_works_in_no_change_set()
+    {
+        Guid? seen = Guid.NewGuid();
+        var middleware = new ChangeSetHeaderMiddleware(_ => { seen = _accessor.CurrentChangeSetId; return Task.CompletedTask; });
+
+        await middleware.InvokeAsync(new DefaultHttpContext(), _accessor, _changeSets);
+
+        Assert.That(seen, Is.Null);
+    }
+
     private string SetJson() => $$"""{ "changeSetId": "{{_agent.ChangeSetId}}" }""";
 
     private static string Culture(string? culture) => culture is null ? string.Empty : $", \"variant\": {{ \"culture\": \"{culture}\" }}";
@@ -1028,19 +1074,23 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
     {
         private readonly Dictionary<string, AIFunction> _tools;
 
-        public Agent(AbilityRegistry abilities, AbilityInvoker invoker)
-            => _tools = AbilityAITools.Create(abilities, invoker, () => new AbilityContext(UserKey, ChangeSetId)).ToDictionary(t => t.Name);
+        private readonly AbilityToolSession _session = new(Constants.Security.SuperUserKey);
 
-        public Guid? ChangeSetId { get; private set; }
+        public Agent(AbilityRegistry abilities, AbilityInvoker invoker)
+            => _tools = AbilityAITools.Create(abilities, invoker, _session).ToDictionary(t => t.Name);
+
+        /// <summary>The conversation's current change set: the only one open in it.</summary>
+        public Guid? ChangeSetId => _session.ChangeSetId;
 
         /// <summary>The user the agent acts for. It gets their permissions, no more.</summary>
-        public Guid UserKey { get; set; } = Constants.Security.SuperUserKey;
+        public Guid UserKey
+        {
+            get => _session.UserKey;
+            set => _session.UserKey = value;
+        }
 
         public async Task StartChangeSetAsync(string name)
-        {
-            ChangeSetId = null;
-            ChangeSetId = (await OkAsync("changeSet_create", $$"""{ "name": "{{name}}" }""")).GetProperty("changeSetId").GetGuid();
-        }
+            => await OkAsync("changeSet_create", $$"""{ "name": "{{name}}" }""");
 
         public async Task<JsonElement> OkAsync(string tool, string json)
         {

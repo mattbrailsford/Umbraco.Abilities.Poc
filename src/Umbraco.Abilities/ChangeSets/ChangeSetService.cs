@@ -26,6 +26,7 @@ public sealed class ChangeSetService(
     AbilityRegistry abilities,
     EntityAdapterRegistry adapters,
     ItemTypeRegistry itemTypes,
+    IChangeSetAccessor accessor,
     IEventAggregator? events = null,
     IBackgroundTaskQueue? background = null,
     TimeSpan? retryDelay = null)
@@ -39,6 +40,55 @@ public sealed class ChangeSetService(
 
     public ChangeSet Get(Guid id)
         => store.Get(id) ?? throw new AbilityInputException($"No change set {id}.", [new Problem("changeSetId", "Not found.")]);
+
+    /// <summary>The change set, or null if there is none with that id (never created, applied or discarded).</summary>
+    public ChangeSet? Find(Guid id) => store.Get(id);
+
+    /// <summary>The change set the current call works in, from the ambient <see cref="IChangeSetAccessor"/>; null for none.</summary>
+    public Guid? CurrentId => accessor.CurrentChangeSetId;
+
+    /// <summary>The current change set, for abilities that need one. A correctable failure when none is open.</summary>
+    public ChangeSet GetCurrent()
+        => CurrentId is { } id ? Get(id) : throw new AbilityInputException(
+            "No change set is open. Create one with changeSet_create, or name one with changeSetId.",
+            [new Problem("changeSetId", "No change set is open.")]);
+
+    /// <summary>Makes a change set (or none) current for the calls made until the scope is disposed.</summary>
+    public IDisposable Use(Guid? changeSetId) => accessor.Use(changeSetId);
+
+    /// <summary>
+    /// Reads one entity the way the current call sees it: inside a change set, live data with the set's changes over
+    /// it; otherwise live. A product's Read abilities use this, so they show what the set has built.
+    /// </summary>
+    public async Task<Entity?> ReadAsync(IEntityAdapter adapter, Guid key, CancellationToken cancellationToken = default)
+        => CurrentId is { } id
+            ? await GetWorkingStateAsync(Get(id), adapter.EntityType, key, cancellationToken)
+            : await adapter.LoadAsync(key, cancellationToken);
+
+    /// <summary>
+    /// Reads the entities a product's own query found live, the way the current call sees them. Inside a change set,
+    /// entities the set changed come with its changes, ones it created are added, and ones it deleted are left out.
+    /// Filter after reading: what the set created or changed may not match the product's query.
+    /// </summary>
+    public async Task<IReadOnlyList<Entity>> ReadAllAsync(IEntityAdapter adapter, IEnumerable<Guid> liveKeys, CancellationToken cancellationToken = default)
+    {
+        var keys = liveKeys.ToList();
+        if (CurrentId is { } id)
+        {
+            keys.AddRange(Get(id).Changes.Where(c => c.EntityType == adapter.EntityType).Select(c => c.EntityKey!.Value));
+        }
+
+        var entities = new List<Entity>();
+        foreach (var key in keys.Distinct())
+        {
+            if (await ReadAsync(adapter, key, cancellationToken) is { } entity)
+            {
+                entities.Add(entity);
+            }
+        }
+
+        return entities;
+    }
 
     public async Task DiscardAsync(Guid id, CancellationToken cancellationToken = default)
     {
@@ -482,7 +532,8 @@ public sealed class ChangeSetService(
         var saved = new List<EntitySummary>();
         var steps = new List<Problem>();
         string? failure = null;
-        var runContext = context with { ChangeSetId = null };
+        // The set's changes and side effects run for real, so no change set is current while they do.
+        using var noSet = accessor.Use(null);
 
         foreach (var step in Plan(set))
         {
@@ -523,12 +574,12 @@ public sealed class ChangeSetService(
                 }
                 else if (abilities.Find(step.Call!.AbilityId)! is { Descriptor.Retries: > 0 } retried && background is not null)
                 {
-                    QueueSideEffect(set, retried, step.Call, runContext);
+                    QueueSideEffect(set, retried, step.Call, context);
                     outcome = $"Queued: runs in the background, retried up to {retried.Descriptor.Retries} times.";
                 }
                 else
                 {
-                    var result = await abilities.Find(step.Call!.AbilityId)!.InvokeAsync(step.Call.Input, runContext, cancellationToken);
+                    var result = await abilities.Find(step.Call!.AbilityId)!.InvokeAsync(step.Call.Input, context, cancellationToken);
                     if (!result.Success)
                     {
                         throw new InvalidOperationException(result.Message);
@@ -666,6 +717,9 @@ public sealed class ChangeSetService(
 /// </summary>
 public sealed class AbilityInvoker(AbilityRegistry abilities, ChangeSetService changeSets)
 {
+    /// <summary>The change sets calls are recorded into, for surfaces that choose the current one.</summary>
+    public ChangeSetService ChangeSets => changeSets;
+
     public async Task<AbilityResult> InvokeAsync(string abilityId, JsonObject input, AbilityContext context, CancellationToken cancellationToken = default)
     {
         var ability = abilities.Find(abilityId);
@@ -674,7 +728,7 @@ public sealed class AbilityInvoker(AbilityRegistry abilities, ChangeSetService c
             return AbilityResult.Fail(AbilityOperationStatus.InvalidInput, $"Unknown ability '{abilityId}'.");
         }
 
-        if (context.ChangeSetId is { } setId
+        if (changeSets.CurrentId is { } setId
             && ability.Descriptor.Kind == AbilityKind.Write
             && ability is not IChangeSetLifecycleAbility)
         {

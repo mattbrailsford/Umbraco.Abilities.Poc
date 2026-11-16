@@ -1,6 +1,9 @@
 <Project>
   <ItemGroup>
     <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.7.0" />
+    <!-- Only for tools/Umbraco.Abilities.ModelRun, which runs a real model against the samples -->
+    <PackageVersion Include="Microsoft.Extensions.AI" Version="10.7.0" />
+    <PackageVersion Include="Anthropic" Version="13.8.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.5.1" />
     <!-- The version an Umbraco 18 site already resolves (through NPoco.SqlServer), so retries add nothing new. -->
     <PackageVersion Include="Polly.Core" Version="8.5.0" />

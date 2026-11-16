@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- A real entity definition for CMS documents, on IContentEditingService. -->
   <ItemGroup>
+    <!-- For the Umb-Change-Set header middleware -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="../Umbraco.Abilities/Umbraco.Abilities.csproj" />
     <ProjectReference Include="../Umbraco.Cms.DraftSets/Umbraco.Cms.DraftSets.csproj" />
     <PackageReference Include="Umbraco.Cms.Core" />

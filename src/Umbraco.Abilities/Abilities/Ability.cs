@@ -40,6 +40,13 @@ public sealed class AbilityAttribute(string id, string name) : Attribute
     /// retried, never correctable input or a refusal. Zero runs it inline, once.
     /// </summary>
     public int Retries { get; set; }
+
+    /// <summary>
+    /// False for an ability whose result can't depend on a change set, such as describing a schema. It always runs
+    /// outside a set: its tool takes no change set id, and needs none named while several sets are open. Only reads,
+    /// and the change set tools that start a set, can say false: any other Write would run on live data.
+    /// </summary>
+    public bool UsesChangeSet { get; set; } = true;
 }
 
 /// <summary>
@@ -61,16 +68,17 @@ public sealed record AbilityDescriptor(
     AbilityKind Kind,
     bool Reversible,
     Type InputType,
-    int Retries = 0)
+    int Retries = 0,
+    bool UsesChangeSet = true)
 {
     public bool RequiresApproval => Kind == AbilityKind.Write && !Reversible;
 }
 
 /// <summary>
-/// Who is calling (a backoffice user's key, as the CMS's services take it) and which change set (if any) is active. An
-/// agent acts for a user: it gets that user's permissions, no more.
+/// Who is calling: a backoffice user's key, as the CMS's services take it. An agent acts for a user: it gets that user's
+/// permissions, no more. Which change set the call works in is ambient, from <c>IChangeSetAccessor</c>.
 /// </summary>
-public sealed record AbilityContext(Guid UserKey, Guid? ChangeSetId = null);
+public sealed record AbilityContext(Guid UserKey);
 
 /// <summary>
 /// How an ability call ended. Mirrors the CMS's operation status enums (e.g. <c>ContentEditingOperationStatus</c>).
@@ -175,7 +183,14 @@ public abstract class AbilityBase<TInput, TOutput> : IAbility
             attribute.Kind,
             attribute.Reversible,
             typeof(TInput),
-            attribute.Retries);
+            attribute.Retries,
+            attribute.UsesChangeSet);
+
+        if (!attribute.UsesChangeSet && attribute.Kind == AbilityKind.Write && this is not ChangeSets.IChangeSetLifecycleAbility)
+        {
+            throw new InvalidOperationException(
+                $"{attribute.Id} is a Write, so it must use the change set: outside one it would change live data.");
+        }
     }
 
     public AbilityDescriptor Descriptor { get; }
@@ -214,6 +229,21 @@ public abstract class AbilityBase<TInput, TOutput> : IAbility
     protected abstract Task<AbilityResult> ExecuteAsync(TInput input, AbilityContext context, CancellationToken cancellationToken);
 
     protected static AbilityResult Success(TOutput output) => AbilityResult.Ok(output);
+}
+
+/// <summary>
+/// The input of an ability that takes none. Callers send an empty object (<c>{}</c>). Derive from
+/// <see cref="AbilityBase{TOutput}"/> rather than naming this type.
+/// </summary>
+public sealed record NoInput;
+
+/// <summary>A stateless ability that takes no input, only a typed output. For example, one that works on the current change set.</summary>
+public abstract class AbilityBase<TOutput> : AbilityBase<NoInput, TOutput>
+{
+    protected sealed override Task<AbilityResult> ExecuteAsync(NoInput input, AbilityContext context, CancellationToken cancellationToken)
+        => ExecuteAsync(context, cancellationToken);
+
+    protected abstract Task<AbilityResult> ExecuteAsync(AbilityContext context, CancellationToken cancellationToken);
 }
 
 public sealed class AbilityRegistry
