@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 using Umbraco.Abilities.Entities;
@@ -74,6 +75,12 @@ public class PropertyEditorContext(IPropertyType property, IDataType? dataType)
 
     /// <summary>The property's description, or its name when it has none.</summary>
     public string Description => string.IsNullOrWhiteSpace(Property.Description) ? Property.Name : Property.Description;
+
+    /// <summary>A setting of the data type's configuration, by alias, as JSON. Null when it isn't set.</summary>
+    public JsonNode? Setting(string alias)
+        => DataType?.ConfigurationData.TryGetValue(alias, out var value) == true && value is not null
+            ? value as JsonNode ?? JsonSerializer.SerializeToNode(value)
+            : null;
 
     /// <summary>A field for the property's value: its alias, description and whether it is mandatory.</summary>
     public FieldDefinition Field(FieldType type) => new(Property.Alias, Description, type, Property.Mandatory);

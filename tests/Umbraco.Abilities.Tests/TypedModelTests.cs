@@ -195,6 +195,19 @@ public class TypedModelTests
     }
 
     [Fact]
+    public async Task A_new_entity_starts_with_its_models_default_values()
+    {
+        // [DefaultValue(false)] on the discount's Active: in the schema, and filled in when it's created without one.
+        var schema = await _agent.OkAsync("entity_getSchema", """{ "entityType": "umbraco-commerce-discount" }""");
+        Assert.False(schema.GetProperty("fields").GetProperty("properties").GetProperty("active").GetProperty("default").GetBoolean());
+
+        await _agent.StartChangeSetAsync("Sale");
+        var discount = (await _agent.OkAsync("entity_create", """{ "entityType": "umbraco-commerce-discount", "fields": { "name": "Sale" } }""")).GetProperty("key").GetGuid();
+        var entity = await _agent.OkAsync("entity_get", $$"""{ "entityType": "umbraco-commerce-discount", "key": "{{discount}}" }""");
+        Assert.False(entity.GetProperty("fields").GetProperty("active").GetBoolean(), entity.ToString());
+    }
+
+    [Fact]
     public void An_edit_ability_finds_its_key_from_the_inputs_entity_key_property()
     {
         // ActivateDiscountAbility writes no KeyOf: its input's [EntityKey("umbraco-commerce-discount")] property is the key.

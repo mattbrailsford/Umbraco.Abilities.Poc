@@ -100,6 +100,10 @@ public static class ModelSchemas
                     ? FieldDefinition.ObjectOf(alias, description, SchemaOf(valueType)) with { Required = config.Required ?? false }
                     : FieldFor(config, alias, description, valueType);
             field = field with { VariesBy = varying ? property.GetCustomAttribute<VariesByAttribute>()?.Dimensions ?? [VariationDimensions.Culture] : [] };
+            if (property.GetCustomAttribute<DefaultValueAttribute>() is { } preset && !field.IsItems && field.Type != FieldType.Object)
+            {
+                field = field with { Default = JsonSerializer.SerializeToNode(preset.Value, AbilityJson.Options) };
+            }
 
             if (property.GetCustomAttribute<ValueHandlerAttribute>() is { } handled)
             {

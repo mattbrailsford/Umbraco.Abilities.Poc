@@ -65,6 +65,8 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
   - `TypedModelTests.A_fluently_described_entity_is_created_from_text_like_any_other`
 - Commerce keeps its own model; the adapter maps to it, and rule keys are derived because Commerce rules have no ids
   - `TypedModelTests.Commerce_keeps_its_own_model_and_the_definition_maps_to_it`
+- A new entity starts with its model's `[DefaultValue]`s, which the schema shows
+  - `TypedModelTests.A_new_entity_starts_with_its_models_default_values`
 - The schema (types, required, allowed values, references, items fields, variation, settings, placement, JSON Schema) comes from model classes and attributes
   - `TypedModelTests.The_structure_comes_from_the_model_class_and_its_attributes`
   - `TypedModelTests.Varying_values_settings_layout_and_json_values_are_described_too`
@@ -119,6 +121,8 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
   - `CmsDocumentAdapterTests.Editors_the_definition_has_no_rule_for_are_fields_described_by_Umbracos_value_schemas`
 - A third party's property editor with its own handler, found on its own, is the field its handler describes (a star rating as a number from 1 to 5), checked before Umbraco sees it, saved in the editor's own shape and read back
   - `CmsDocumentAdapterTests.A_third_party_editor_with_a_handler_is_a_field_shaped_by_that_handler`
+- A new page and a new block start with their editors' presets, as the backoffice would start them (a toggle's default, a number's minimum)
+  - `CmsDocumentAdapterTests.A_new_page_and_a_new_block_start_with_their_editors_presets`
 
 ## Workflows
 

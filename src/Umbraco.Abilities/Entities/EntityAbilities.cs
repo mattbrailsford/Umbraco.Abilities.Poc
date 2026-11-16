@@ -222,7 +222,9 @@ public sealed class CreateEntityAbility : EntityEditAbilityBase<CreateEntityInpu
 
     protected override object? Apply(Entity entity, CreateEntityInput input, EntityEditContext context)
     {
-        EntityEditor.SetFields(Target(entity, input, context), entity.Fields, context.Schema.Root, string.Empty, input.Fields);
+        var target = Target(entity, input, context);
+        EntityEditor.SetFields(target, entity.Fields, context.Schema.Root, string.Empty, input.Fields);
+        EntityEditor.FillDefaults(target, entity.Fields, context.Schema.Root, string.Empty);
         return context.Adapter.ToSummary(entity);
     }
 }

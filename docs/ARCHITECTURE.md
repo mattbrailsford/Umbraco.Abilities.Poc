@@ -250,6 +250,7 @@ Both registries already carry what an item type needs:
 How the framework uses them:
 
 - **Fields** use the same type mapping as model classes. Required and allowed values become part of the schema, and other rules (a range) are checked on the field's path.
+- **Defaults.** A field can have a `Default`: the value a new entity or item starts with, filled in when it's created or added. In the CMS it comes from the editor's handler, matching the backoffice's value presets.
 - **Editor UI aliases** map to references through a small table per product (Commerce's collection picker → a collection). An unmapped editor stays a plain value whose description names it.
 - **Localization-key labels** (Commerce's default `#uc…Label`) are treated as missing: the type is named by its alias, and its description tells the model so.
 - **Bindings** (`${trigger.orderId}`) are accepted where a setting supports them, marked in the schema, and checked when they resolve.

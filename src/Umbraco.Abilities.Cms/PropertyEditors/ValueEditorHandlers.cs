@@ -24,17 +24,26 @@ public class ValueEditorHandler(string editorAlias, Func<PropertyEditorContext, 
     public Task<JsonNode?> WriteAsync(JsonNode value, PropertyValueWriter writer, CancellationToken cancellationToken = default)
         => Task.FromResult<JsonNode?>(value.DeepClone());
 
-    /// <summary>The core editors whose values are plain values or references.</summary>
+    /// <summary>
+    /// The core editors whose values are plain values or references. Defaults are the backoffice's value presets for
+    /// each editor: a toggle starts at its "default" setting or off, a number at its "min" setting or 0.
+    /// </summary>
     public static IEnumerable<IPropertyEditorEntityHandler> Core =>
     [
         new ValueEditorHandler(Constants.PropertyEditors.Aliases.TextBox, c => c.Field(FieldType.String)),
         new ValueEditorHandler(Constants.PropertyEditors.Aliases.TextArea, c => c.Field(FieldType.String)),
-        new ValueEditorHandler(Constants.PropertyEditors.Aliases.Integer, c => c.Field(FieldType.Integer)),
-        new ValueEditorHandler(Constants.PropertyEditors.Aliases.Decimal, c => c.Field(FieldType.Number)),
-        new ValueEditorHandler(Constants.PropertyEditors.Aliases.Boolean, c => c.Field(FieldType.Boolean)),
+        new ValueEditorHandler(Constants.PropertyEditors.Aliases.Integer, c => c.Field(FieldType.Integer) with { Default = (int)NumberSetting(c, "min") }),
+        new ValueEditorHandler(Constants.PropertyEditors.Aliases.Decimal, c => c.Field(FieldType.Number) with { Default = NumberSetting(c, "min") }),
+        new ValueEditorHandler(Constants.PropertyEditors.Aliases.Boolean, c => c.Field(FieldType.Boolean) with { Default = BoolSetting(c, "default") }),
         new ValueEditorHandler(Constants.PropertyEditors.Aliases.Tags, c => c.Field(FieldType.String) with { Many = true }),
         new ValueEditorHandler(Constants.PropertyEditors.Aliases.ContentPicker, c => c.Field(FieldType.EntityReference) with { ReferencesEntityType = CmsDocumentAdapter.Type }),
     ];
+
+    private static decimal NumberSetting(PropertyEditorContext context, string alias)
+        => context.Setting(alias) is { } node && decimal.TryParse(node.ToString(), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var number) ? number : 0;
+
+    private static bool BoolSetting(PropertyEditorContext context, string alias)
+        => context.Setting(alias) is { } node && (node.ToString() is "true" or "True" or "1");
 }
 
 /// <summary>

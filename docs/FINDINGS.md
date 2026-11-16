@@ -160,6 +160,16 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
 
    Where the handlers should live in the end is open. See
    [Where property editor handlers should live](#where-property-editor-handlers-should-live).
+19. **A new value's default is its editor's, and the CMS only knows it in the browser.** A new block's toggle was
+   saved empty, where the backoffice would have started it at its preset. Umbraco keeps these presets in the
+   backoffice only (`propertyValuePreset`, one per editor: a toggle starts at its `default` setting or off, a number
+   at its `min` setting or 0), and has no server-side way to ask for them. Umbraco.AI hit the same gap: its
+   `IAIPropertyDefaultValueProvider` returns nothing for every property until the CMS has one. A field now has a
+   `Default`. It is in the schema as JSON Schema's `default`, and filled in when an entity is created or an item
+   added, inside object fields too (a block's settings). A varying field gets it only in the call's variant. The
+   property editor handler is where a CMS default belongs: the core toggle and number handlers read the same
+   settings the backoffice presets read. A typed model uses `[DefaultValue]`. If the CMS adds a server-side preset,
+   the handlers would call it instead.
 
 ## Developer experience of adapters
 
@@ -244,7 +254,7 @@ schema for an editor (Rich Text as a markup string) and turns the model's value 
 | A simpler schema for a model | A separate transformer, one way: the model's value to the stored value | `DescribeAsync`, with `ReadAsync` as the way back, so a model also reads the simple form |
 | Umbraco's errors inside a value | Not handled | The handler locates them, and nested values hand on |
 | Checks before a change | `ValidateAddItem`, `ValidateRemoveItem`, `ValidateSetValue` | The field's rules and the schema check. A check that needs code would be an `IValueHandler` on the field |
-| Default values for a new item | `IAIPropertyDefaultValueProvider`, over the CMS's defaults | None yet |
+| Default values for a new item | `IAIPropertyDefaultValueProvider`, which returns nothing yet: the CMS has no server-side defaults | A field's `Default`, which the handler sets from the same settings the backoffice presets read (finding 19) |
 | Finding handlers | `IDiscoverable` and a lazy collection builder: a package ships a handler and it is found | The same, taken from Umbraco.AI |
 | Data a handler doesn't understand | Never touched: edits are in place | Lost if the handler drops it on read. Only the properties an edit touches are rewritten, since the draft set stages changed properties only, but those are rewritten whole |
 
@@ -254,11 +264,10 @@ Umbraco.AI's handlers could become one adapter over these: read, edit with the s
 
 Taken from Umbraco.AI: handlers are `IDiscoverable` and found by a composer
 (`PropertyEditorEntityHandlersComposer`). The star rating test registers nothing; its handler is found on its own.
+Default values for new items are built too (finding 19), past what Umbraco.AI does today.
 
 Not taken yet, and worth taking:
 
-- **Default values.** A new block's properties should start at the CMS's defaults. That needs a default on a field,
-  which the framework doesn't have.
 - **A round-trip check for handlers.** A test kit that reads a stored value, writes it back, and compares, so a
   handler's author finds a lossy handler before an editor does.
 
@@ -303,7 +312,8 @@ The tests that show it are listed in [TESTS.md](TESTS.md#against-a-real-umbraco)
 
 Not covered yet: templates (an update would clear one), publishing, rich text with blocks, culture-variant block
 properties against real Umbraco, a parent created in the same set, a third party's editor inside a block, and saving
-most editors that pass through as JSON (only the eyedropper is saved in a test), and default values for new blocks.
+most editors that pass through as JSON (only the eyedropper is saved in a test), and defaults for editors other than
+the toggle and numbers.
 
 ## Against a real model
 

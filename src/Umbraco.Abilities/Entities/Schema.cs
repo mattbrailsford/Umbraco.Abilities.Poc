@@ -128,6 +128,13 @@ public sealed record FieldDefinition(string Alias, string Description, FieldType
 
     public IReadOnlyList<string>? Allowed { get; init; }
 
+    /// <summary>
+    /// The value a new entity or item starts with when it isn't given one, as the product's own editor would start it
+    /// (a toggle's preset). Filled in when the entity is created or the item added; a varying field only when the
+    /// call names its variant.
+    /// </summary>
+    public JsonNode? Default { get; init; }
+
     public string? ReferencesEntityType { get; init; }
 
     /// <summary>For a reference that can point at several entity types.</summary>

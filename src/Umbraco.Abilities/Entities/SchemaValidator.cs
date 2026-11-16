@@ -245,6 +245,11 @@ public static class SchemaWriter
                 fieldJson["x-bindings"] = true;
             }
 
+            if (field.Default is { } preset)
+            {
+                fieldJson["default"] = preset.DeepClone();
+            }
+
             if (field.Varies)
             {
                 fieldJson["x-variations"] = new JsonArray(field.VariesBy.Select(d => (JsonNode?)d).ToArray());

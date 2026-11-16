@@ -59,6 +59,52 @@ public static class EntityEditor
         }
     }
 
+    /// <summary>
+    /// Gives each field of a new object (the entity, or an item) that has a default and no value its default, inside
+    /// object fields too (a block's settings). A varying field gets it only in the call's variant, so one with no
+    /// variant named is left empty.
+    /// </summary>
+    public static void FillDefaults(EditTarget target, JsonObject owner, ObjectSchema schema, string path)
+    {
+        foreach (var field in schema.Fields)
+        {
+            var fieldPath = Join(path, field.Alias);
+            if (field.Type == FieldType.Object && field.Schema is { } inner && !field.Varies && HasDefaults(inner))
+            {
+                if (owner[field.Alias] is not JsonObject nested)
+                {
+                    owner[field.Alias] = nested = [];
+                }
+
+                FillDefaults(target, nested, inner, fieldPath);
+                continue;
+            }
+
+            if (field.Default is null || field.IsItems)
+            {
+                continue;
+            }
+
+            VariantId variant;
+            try
+            {
+                variant = RequireVariant(target, field.VariesBy, fieldPath);
+            }
+            catch (AbilityInputException)
+            {
+                continue;
+            }
+
+            if (EntityValues.Get(owner, field, variant) is null)
+            {
+                SetField(owner, field, fieldPath, variant, field.Default.DeepClone());
+            }
+        }
+    }
+
+    private static bool HasDefaults(ObjectSchema schema)
+        => schema.Fields.Any(f => f.Default is not null || (f.Type == FieldType.Object && f.Schema is { } inner && HasDefaults(inner)));
+
     /// <summary>Adds an item to the items field at <paramref name="fieldPath"/>, with field values. Returns the item's path.</summary>
     public static string AddItem(EditTarget target, string fieldPath, string itemTypeAlias, Guid key, JsonObject? fields, int? position)
     {
@@ -82,6 +128,7 @@ public static class EntityEditor
         items.Insert(position is { } p ? Math.Clamp(p, 0, items.Count) : items.Count, item);
         var itemPath = Join(at.Path, key.ToString());
         SetFields(target, item, itemType.Schema, itemPath, fields);
+        FillDefaults(target, item, itemType.Schema, itemPath);
         Notify(at, (handler, value, inside) => handler.ItemAdded(value, inside, key));
         return itemPath;
     }

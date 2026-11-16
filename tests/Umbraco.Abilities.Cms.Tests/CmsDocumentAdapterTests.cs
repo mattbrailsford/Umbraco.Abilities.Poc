@@ -788,6 +788,45 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
     }
 
     [Test]
+    public async Task A_new_page_and_a_new_block_start_with_their_editors_presets()
+    {
+        // A toggle preset to on, and a number whose lowest allowed value is 3: what the backoffice would start them at.
+        var toggle = await CreateConfiguredDataTypeAsync(Constants.PropertyEditors.Aliases.Boolean, "Featured", ValueStorageType.Integer, ("default", true));
+        var number = await CreateConfiguredDataTypeAsync(Constants.PropertyEditors.Aliases.Integer, "Priority", ValueStorageType.Integer, ("min", 3));
+        var offer = new ContentTypeBuilder().WithAlias("offer").WithName("offer").WithIsElement(true)
+            .AddPropertyType().WithAlias("highlight").WithName("Highlight").WithDataTypeId(toggle.Id).WithVariations(ContentVariation.Nothing).Done()
+            .Build();
+        await ContentTypeService.CreateAsync(offer, Constants.Security.SuperUserKey);
+        var offers = await CreateDataTypeAsync(Constants.PropertyEditors.Aliases.BlockList, "Offers", new BlockListConfiguration.BlockConfiguration[] { new() { ContentElementTypeKey = offer.Key } });
+        var type = new ContentTypeBuilder().WithAlias("offerPage").WithName("Offer page")
+            .AddPropertyType().WithAlias("featured").WithName("Featured").WithDataTypeId(toggle.Id).WithVariations(ContentVariation.Nothing).Done()
+            .AddPropertyType().WithAlias("priority").WithName("Priority").WithDataTypeId(number.Id).WithVariations(ContentVariation.Nothing).Done()
+            .AddPropertyType().WithAlias("offers").WithName("Offers").WithDataTypeId(offers.Id).WithVariations(ContentVariation.Nothing).Done()
+            .Build();
+        type.AllowedAsRoot = true;
+        await ContentTypeService.CreateAsync(type, Constants.Security.SuperUserKey);
+
+        // The schema tells the model what a value starts at.
+        var schema = await _agent.OkAsync("entity_getSchema", """{ "entityType": "document", "subtype": "offerPage" }""");
+        var fields = schema.GetProperty("fields").GetProperty("properties");
+        Assert.That(fields.GetProperty("featured").GetProperty("default").GetBoolean(), Is.True);
+
+        await _agent.StartChangeSetAsync("Offers");
+        var page = (await _agent.OkAsync("entity_create", """{ "entityType": "document", "subtype": "offerPage", "fields": { "name": "Deals" } }""")).GetProperty("key").GetGuid();
+        await AddItemAsync(page, "offers", "offer", "{}");
+        await _agent.OkAsync("changeSet_apply", SetJson());
+
+        var content = ContentService.GetById(page)!;
+        var block = JsonNode.Parse(content.GetValue<string>("offers")!)!["contentData"]![0]!["values"]![0]!;
+        Assert.Multiple(() =>
+        {
+            Assert.That(content.GetValue<int>("featured"), Is.EqualTo(1));
+            Assert.That(content.GetValue<int>("priority"), Is.EqualTo(3));
+            Assert.That($"{block["alias"]}:{block["value"]}", Is.EqualTo("highlight:1"), block.ToJsonString());
+        });
+    }
+
+    [Test]
     public async Task Values_that_vary_by_culture_and_segment_are_saved_per_segment_and_load_back()
     {
         await CreateSegmentedPageTypeAsync();
@@ -1048,6 +1087,21 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
         var elementType = builder.Build();
         await ContentTypeService.CreateAsync(elementType, Constants.Security.SuperUserKey);
         return elementType;
+    }
+
+    private async Task<IDataType> CreateConfiguredDataTypeAsync(string editorAlias, string name, ValueStorageType storage, params (string Alias, object Value)[] settings)
+    {
+        var dataType = new DataType(GetRequiredService<PropertyEditorCollection>()[editorAlias], GetRequiredService<IConfigurationEditorJsonSerializer>())
+        {
+            ConfigurationData = settings.ToDictionary(s => s.Alias, s => s.Value),
+            Name = name,
+            DatabaseType = storage,
+            ParentId = Constants.System.Root,
+            CreateDate = DateTime.UtcNow,
+        };
+
+        await GetRequiredService<IDataTypeService>().CreateAsync(dataType, Constants.Security.SuperUserKey);
+        return dataType;
     }
 
     private async Task<IDataType> CreateEditorDataTypeAsync(string editorAlias, string name)

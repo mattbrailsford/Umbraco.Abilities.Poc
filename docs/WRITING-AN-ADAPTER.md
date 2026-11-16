@@ -138,6 +138,7 @@ What the package no longer writes:
 | An ability that edits an entity, both directly and inside a change set | `ModelEditAbilityBase<TInput, TModel>`: one `Edit(model, input)` method, or `EditAsync` when it has to look something up. The key is the input's `[EntityKey]` property |
 
 `[Required]` and `[AllowedValues]` become part of the schema, so the generic validator checks them per culture.
+`[DefaultValue]` is the value a new entity or item starts with when it isn't given one.
 Every other rule runs on the contract. Each problem is reported once. A renamed property is a compile error, not a
 wrong string key at run time.
 
@@ -280,6 +281,10 @@ Handlers are found on their own: the interface is `IDiscoverable`, and `Property
 every one in the scanned assemblies to `PropertyEditorEntityHandlerCollection`, as Umbraco.AI finds its handlers. Use
 `builder.PropertyEditorEntityHandlers()` to add or exclude one. Packages' handlers are asked before the core ones, so a
 package can also map a core editor its own way.
+
+**Defaults.** Set `Default` on the field you describe to what the editor starts a new value at, from its data type's
+settings (`context.Setting("min")`). The core toggle and number handlers match the backoffice's value presets. The
+framework fills it in when a document is created or a block added.
 
 **Write back everything you read.** When an edit touches a property, the adapter rewrites its whole value from the
 field. Anything the handler dropped on read is lost. Keep product data that isn't a field under a `$` name on the

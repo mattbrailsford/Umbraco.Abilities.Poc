@@ -41,7 +41,7 @@ public sealed class DiscountEditModel : EntityModel
     [EntityKey("document"), Description("Optional page that promotes the discount.")]
     public Guid? LandingPage { get; set; }
 
-    [Description("Whether the discount is live. Use commerce.activateDiscount to switch it on.")]
+    [Description("Whether the discount is live. Use commerce.activateDiscount to switch it on."), DefaultValue(false)]
     public bool? Active { get; set; }
 
     [Items(DiscountAdapter.RuleGroup, Min = 1), Description("All rules must match for the discount to apply.")]
