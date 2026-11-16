@@ -160,4 +160,23 @@ public class EntityTests
         after.Fields["grid"] = new JsonArray(EntityValues.NewItem(Guid.NewGuid(), "text"));
         Assert.Equal(["text"], EntityAccess.NewItemTypesNotAvailable(null, after, schema, itemTypes, restricted));
     }
+
+    [Fact]
+    public void A_binding_is_written_with_a_dollar_and_braces_and_is_checked_when_it_resolves_not_when_set()
+    {
+        var quantity = new FieldDefinition("quantity", "How many.", FieldType.Integer)
+        {
+            AcceptsBindings = true,
+            Rules = [new System.ComponentModel.DataAnnotations.RangeAttribute(1, 10)],
+        };
+
+        Assert.Null(FieldChecker.Check(quantity, JsonValue.Create("${trigger.quantity}"), "quantity"));
+        Assert.Empty(FieldChecker.CheckRules(quantity, JsonValue.Create("${trigger.quantity}")));
+
+        // Not Automate's binding syntax, so it's checked as a literal: a string where a whole number goes.
+        Assert.NotNull(FieldChecker.Check(quantity, JsonValue.Create("{{trigger.quantity}}"), "quantity"));
+
+        // A field that takes no bindings checks the same text as a literal.
+        Assert.NotNull(FieldChecker.Check(quantity with { AcceptsBindings = false }, JsonValue.Create("${trigger.quantity}"), "quantity"));
+    }
 }

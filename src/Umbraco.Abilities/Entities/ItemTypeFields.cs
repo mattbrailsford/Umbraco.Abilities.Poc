@@ -47,7 +47,7 @@ public static class ItemTypeFields
 
         if (setting.AcceptsBindings)
         {
-            description = $"{description} Can be a binding to an earlier step's output, e.g. {{{{trigger.orderId}}}}.".Trim();
+            description = $"{description} Can be a binding to an earlier step's output, e.g. ${{trigger.orderId}}.".Trim();
         }
 
         var field = ModelSchemas.FieldFor(setting.Key, description, type, setting.Rules.OfType<RequiredAttribute>().Any(), references, allowed);

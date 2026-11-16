@@ -10,7 +10,7 @@ covers a discount with a rule tree, a page with nested blocks, or a workflow who
 
 **Reviewing it?** Start with [REVIEWING.md](REVIEWING.md): what to read, in what order, and how the pieces connect. The
 design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). To see the tools in use, read
-[docs/EXAMPLE-FLOWS.md](docs/EXAMPLE-FLOWS.md): a page, a workflow and a discount, call by call.
+[docs/EXAMPLE-FLOWS.md](docs/EXAMPLE-FLOWS.md): a page, a discount and two workflows (one that branches), call by call.
 
 ## Run it
 
@@ -264,7 +264,7 @@ How the framework uses them:
   description names the editor, so it still works with less guidance.
 - **Labels** that are localization keys (`#ucDiscountRuleProviders_…Label`, Commerce's default) are treated as
   missing. The type is named by its alias, and its description tells the model so.
-- **Bindings.** A setting that supports bindings accepts `{{trigger.orderId}}` in place of a value. The schema marks it
+- **Bindings.** A setting that supports bindings accepts `${trigger.orderId}` in place of a value. The schema marks it
   with `x-bindings`, and type and reference checks wait until it resolves.
 - **Availability.** An item type can say who may use it (`AvailableTo`, here from required sections). The schema offers
   a user only those, and adding one they may not use is refused when it's recorded.
@@ -573,6 +573,10 @@ Each claim is followed by the tests that show it. `(all)` means every test in th
   - `WorkflowTests.Step_types_are_derived_from_abilities`
 - A workflow graph (edges as item references) is validated, and can refer to a discount created in the same set
   - `WorkflowTests.A_workflow_from_text_links_its_steps_and_can_refer_to_a_discount_in_the_same_set`
+- A step that names outcomes has one exit per outcome in `outcomes`, and no `next`; a wrong outcome is refused
+  - `WorkflowTests.A_step_that_names_outcomes_has_one_exit_per_outcome_and_no_next`
+- A branching workflow is saved as Automate's connections, each with its outcome, and loaded back as exits
+  - `WorkflowTests.A_branching_workflow_is_saved_as_Automates_connections_with_outcomes_and_loaded_back_as_exits`
 
 ### Cultures and blocks
 
@@ -674,6 +678,16 @@ These feed back into the design in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
    whose result can't depend on a set (getting a schema, starting a set) says `UsesChangeSet = false`: it takes no id
    and always runs outside one. A Write can't say it, since it would change live data. For HTTP callers, a middleware
    reads the `Umb-Change-Set` header into the same accessor.
+13. **A step's exits are fields, one per outcome.** Automate stores a workflow's links as a list of connections, each
+   from one step to another with an optional outcome (`true` and `false` for an If; any action can name its own on
+   Automate's `action-outcomes` branch). Three ways to show this to a model were weighed: a list of connections as
+   stored, one field per exit on each step, or the exits nested in an `outcomes` object. A list of connections needs
+   Automate-only code to check that an outcome is one the step has, and the schema can only describe outcomes in text.
+   Exits as fields are checked by the generic code, and a wrong name is refused on the spot with the right names
+   listed. Nesting them keeps settings and exits apart. So a step with one exit has `next`, and a step that names
+   outcomes has `outcomes` and no `next`: one way to route per step, so a model can't send every result to a step it
+   meant for one. The adapter converts to Automate's connections on save and back on load. Building it found a gap:
+   an object set whole wasn't checked for names it doesn't have, while fields set one by one were. Now both are.
 
 ## Applying a set
 
@@ -858,6 +872,9 @@ and [#747](https://github.com/umbraco/Umbraco.AI/issues/747) (block settings use
 
 - **Real Commerce and Automate.** Only CMS documents have a real adapter. The Commerce and Automate
   adapters are still stand-ins.
+- **Every Automate connection.** Each exit leads to one step. Automate can also send one exit to several steps, filter
+  a connection, give a step with outcomes an "any result" exit, and build Switch's outcomes from its cases. None has a
+  field yet; Switch would need exits that change with its settings.
 - **A real model, at scale.** The tests script the tool calls. One model built two discounts from text in a few runs
   (see [Against a real model](#against-a-real-model)). That shows the tools are usable, not how often a model gets them
   right, or how it does on documents, workflows or edits.

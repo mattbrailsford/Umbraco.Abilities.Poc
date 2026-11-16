@@ -88,7 +88,7 @@ public class PluginItemTypeTests
         await _agent.OkAsync("entity_addItem", $$"""{ "entityType": "umbraco-automate-workflow", "key": "{{workflow}}", "fieldPath": "trigger", "itemType": "umbracoCommerce.orderCreated" }""");
         await _agent.OkAsync("entity_addItem", $$"""
             { "entityType": "umbraco-automate-workflow", "key": "{{workflow}}", "fieldPath": "steps", "itemType": "umbracoCommerce.changeOrderStatus",
-              "fields": { "orderId": "{{"{{"}}trigger.orderId{{"}}"}}", "orderStatusId": "{{Guid.NewGuid()}}" } }
+              "fields": { "orderId": "${trigger.orderId}", "orderStatusId": "{{Guid.NewGuid()}}" } }
             """);
 
         var validation = await _agent.OkAsync("changeSet_validate", $$"""{ "changeSetId": "{{_agent.ChangeSetId}}" }""");

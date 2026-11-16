@@ -4,8 +4,8 @@
 > what to question. The design itself is in
 > [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 > [README.md](README.md) has the findings.
-> [docs/EXAMPLE-FLOWS.md](docs/EXAMPLE-FLOWS.md) shows the tools in use: every call and result for a page, a workflow
-> and a discount.
+> [docs/EXAMPLE-FLOWS.md](docs/EXAMPLE-FLOWS.md) shows the tools in use: every call and result for a page, a discount
+> and two workflows, one that branches.
 
 ## What you are reviewing
 
@@ -150,11 +150,11 @@ These are what a package would write. Judge them as such: how short, how obvious
 | `Samples/Commerce/Domain.cs` and `Providers.cs` | Commerce's own model, with no Abilities code: a discount shaped like Commerce's (immutable, `AsWritable()`, UTC dates, rules as provider alias plus string settings with children for groups, no rule ids), and rule and reward providers shaped like Umbraco.Commerce.Core's |
 | `Samples/Commerce/Commerce.cs` | Commerce's integration: the editing contract (`DiscountEditModel`, whose rules and rewards are `DynamicItem`s), the adapter that maps to the domain, one item type source per provider seam, and the provider mapper. Also `ActivateDiscountAbility`, a product ability that edits an entity |
 | `Samples/Acme/AcmeWeekdayRule.cs` | A third party's rule, written as a plain Commerce provider with no Abilities code |
-| `Samples/Automate/Plugins.cs`, `Workflow.cs` | Automate's plugin model (triggers and actions with `[Field]` settings and required sections), and its item type sources |
+| `Samples/Automate/Plugins.cs`, `Workflow.cs` | Automate's plugin model (triggers, actions and control flows with `[Field]` settings, required sections and outcomes), and its item type sources. A step's outcomes become its exits |
 | `Samples/Commerce/CommerceAutomate.cs` | Commerce's Automate package: a trigger and an action, one with settings that take bindings |
 | `Samples/Cms/RichTextValue.cs` | A Rich Text-shaped value (markup plus blocks) and its handler: the inner model is the editor's, not the framework's |
 | `Samples/Cms/CmsPage.cs` | CMS-shaped content: culture variation, blocks with settings, a grid with placement and areas, per-culture block lists, pickers. Media is described **fluently** over plain request models |
-| `Samples/Automate/Workflow.cs` | An adapter written against `Entity`, the escape hatch for a schema that is data, not code. Step types are abilities |
+| `Samples/Automate/Workflow.cs` | An adapter written against `Entity`, the escape hatch for a schema that is data, not code. Step types are abilities. It converts each step's exits (`next`, or `outcomes`) to Automate's list of connections on save, and back on load |
 | `Samples/Email/SendEmail.cs` | A side effect with retries |
 | `Samples/SampleSite.cs` | How it's wired, as composers would wire it. Each block is one package |
 | `Samples/InMemoryDatabase.cs`, `SampleAccess.cs` | Stand-ins for each product's storage, transaction and permission model |
@@ -263,5 +263,5 @@ These are the judgments the PoC makes that a reviewer is best placed to challeng
 - [README.md](README.md): findings, numbers, and the sections referred to above.
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md): the design, with the same findings
   folded in.
-- [EXAMPLE-FLOWS.md](docs/EXAMPLE-FLOWS.md): three recorded flows, call by call.
+- [EXAMPLE-FLOWS.md](docs/EXAMPLE-FLOWS.md): four recorded flows, call by call.
 - Commit messages on this branch: each records what changed and why, in order.
