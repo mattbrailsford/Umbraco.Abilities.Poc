@@ -7,22 +7,22 @@ using Umbraco.Abilities.ChangeSets;
 namespace Umbraco.Abilities.Entities.Models;
 
 /// <summary>
-/// The base for an entity definition whose entities are C# classes. A package implements loading and saving its own
-/// model; the framework works out the structure, maps the model to and from entity documents, and runs the model's
+/// The base for an entity adapter whose entities are C# classes. A package implements loading and saving its own
+/// model; the framework works out the schema, maps the model to and from entities, and runs the model's
 /// DataAnnotations. Everything else (schemas, generic edit abilities, change sets, rebasing) comes for free.
 /// </summary>
 /// <typeparam name="TModel">The model class, marked with <see cref="EntityAttribute"/> and a <c>[Key]</c> Guid property.</typeparam>
-public abstract class EntityDefinitionBase<TModel> : IEntityDefinition
+public abstract class EntityAdapterBase<TModel> : IEntityAdapter
     where TModel : class
 {
     private readonly (string EntityType, string Name, string Description) _entity;
     private readonly ModelInfo _info;
 
-    protected EntityDefinitionBase(ItemTypeRegistry itemTypes, IUnitOfWorkProvider unitOfWork)
+    protected EntityAdapterBase(ItemTypeRegistry itemTypes, IUnitOfWorkProvider unitOfWork)
     {
         ItemTypes = itemTypes;
         UnitOfWork = unitOfWork;
-        _info = ModelShapes.Info(typeof(TModel));
+        _info = ModelSchemas.Info(typeof(TModel));
         _entity = _info.Entity
             ?? throw new InvalidOperationException($"{typeof(TModel).Name} is not an entity: add [Entity] or configure it with IsEntity.");
         if (_info.Key is null || _info.Key.PropertyType != typeof(Guid))
@@ -70,14 +70,14 @@ public abstract class EntityDefinitionBase<TModel> : IEntityDefinition
     /// <summary>A problem on a property of an item in the model, e.g. <c>ProblemAt(reward, r => r.Percent, "...")</c>.</summary>
     protected static Problem ProblemAt<TItem, TValue>(TItem item, Expression<Func<TItem, TValue>> property, string message)
         where TItem : class
-        => new(EntityEditor.Join(ModelShapes.PathOf(item), AliasOf(property)), message);
+        => new(EntityEditor.Join(ModelSchemas.PathOf(item), AliasOf(property)), message);
 
-    // ── IEntityDefinition, done by the framework ───────────────────────────────────────────────────
+    // ── IEntityAdapter, done by the framework ───────────────────────────────────────────────────
 
     public Task<IReadOnlyList<EntitySubtype>> GetSubtypesAsync(CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<EntitySubtype>>([]);
 
-    public async Task<EntityStructure> DescribeAsync(string? subtype, CancellationToken cancellationToken = default)
+    public async Task<EntitySchema> GetSchemaAsync(string? subtype, CancellationToken cancellationToken = default)
     {
         var dimensions = new List<VariationDimension>();
         foreach (var name in _info.Dimensions)
@@ -85,58 +85,58 @@ public abstract class EntityDefinitionBase<TModel> : IEntityDefinition
             dimensions.Add(new VariationDimension(name, $"Values vary by {name}.", await GetDimensionValuesAsync(name, cancellationToken)));
         }
 
-        return new EntityStructure(EntityType, _entity.Name, _entity.Description, _info.Shape) { Dimensions = dimensions };
+        return new EntitySchema(EntityType, _entity.Name, _entity.Description, _info.Schema) { Dimensions = dimensions };
     }
 
-    public EntityDocument New(Guid key, string? subtype) => new() { EntityType = EntityType, Key = key };
+    public Entity New(Guid key, string? subtype) => new() { EntityType = EntityType, Key = key };
 
-    public async Task<EntityDocument?> LoadAsync(Guid key, CancellationToken cancellationToken = default)
-        => await LoadModelAsync(key, cancellationToken) is { } model ? ToDocument(model) : null;
+    public async Task<Entity?> LoadAsync(Guid key, CancellationToken cancellationToken = default)
+        => await LoadModelAsync(key, cancellationToken) is { } model ? ToEntity(model) : null;
 
-    public async Task<IReadOnlyList<Problem>> ValidateAsync(EntityDocument document, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<Problem>> ValidateAsync(Entity entity, CancellationToken cancellationToken = default)
     {
-        var model = ToModel(document);
-        return [.. ModelShapes.Validate(model), .. await ValidateModelAsync(model, cancellationToken)];
+        var model = ToModel(entity);
+        return [.. ModelSchemas.Validate(model), .. await ValidateModelAsync(model, cancellationToken)];
     }
 
-    public async Task<EntityRef> SaveAsync(EntityDocument document, CancellationToken cancellationToken = default)
+    public async Task<EntitySummary> SaveAsync(Entity entity, CancellationToken cancellationToken = default)
     {
-        await SaveModelAsync(ToModel(document), cancellationToken);
-        return ToRef(document);
+        await SaveModelAsync(ToModel(entity), cancellationToken);
+        return ToSummary(entity);
     }
 
-    public async Task<IReadOnlyList<EntityRef>> FindAsync(string query, CancellationToken cancellationToken = default)
-        => (await FindModelsAsync(query, cancellationToken)).Select(m => ToRef(ToDocument(m))).ToList();
+    public async Task<IReadOnlyList<EntitySummary>> FindAsync(string query, CancellationToken cancellationToken = default)
+        => (await FindModelsAsync(query, cancellationToken)).Select(m => ToSummary(ToEntity(m))).ToList();
 
-    public EntityRef ToRef(EntityDocument document)
+    public EntitySummary ToSummary(Entity entity)
     {
-        var name = _info.Name is { } nameProperty ? EntityValues.ReadAny(document.Root, ModelShapes.AliasOf(nameProperty))?.GetValue<string>() : null;
-        return new EntityRef(EntityType, document.Key, name ?? "(unnamed)", GetEditUrl(document.Key));
+        var name = _info.Name is { } nameProperty ? EntityValues.ReadAny(entity.Fields, ModelSchemas.AliasOf(nameProperty))?.GetValue<string>() : null;
+        return new EntitySummary(EntityType, entity.Key, name ?? "(unnamed)", GetEditUrl(entity.Key));
     }
 
-    /// <summary>The model a document describes.</summary>
-    public TModel ToModel(EntityDocument document)
+    /// <summary>The model an entity describes.</summary>
+    public TModel ToModel(Entity entity)
     {
-        var model = (TModel)ModelShapes.Read(typeof(TModel), document.Root, ItemTypes, string.Empty);
-        _info.Key!.SetValue(model, document.Key);
-        _info.Version?.SetValue(model, document.LiveVersion);
+        var model = (TModel)ModelSchemas.Read(typeof(TModel), entity.Fields, ItemTypes, string.Empty);
+        _info.Key!.SetValue(model, entity.Key);
+        _info.Version?.SetValue(model, entity.Version);
         return model;
     }
 
-    /// <summary>The document for a model.</summary>
-    public EntityDocument ToDocument(TModel model)
+    /// <summary>The entity for a model.</summary>
+    public Entity ToEntity(TModel model)
     {
-        var document = new EntityDocument
+        var entity = new Entity
         {
             EntityType = EntityType,
             Key = (Guid)_info.Key!.GetValue(model)!,
-            LiveVersion = _info.Version?.GetValue(model) is { } version ? Convert.ToInt64(version) : null,
+            Version = _info.Version?.GetValue(model) is { } version ? Convert.ToInt64(version) : null,
         };
-        document.Root = ModelShapes.Write(model);
-        return document;
+        entity.Fields = ModelSchemas.Write(model);
+        return entity;
     }
 
-    private static string AliasOf(LambdaExpression property) => ModelShapes.AliasOf(ModelBuilder<TModel>.PropertyOf(property));
+    private static string AliasOf(LambdaExpression property) => ModelSchemas.AliasOf(ModelBuilder<TModel>.PropertyOf(property));
 }
 
 /// <summary>
@@ -144,8 +144,8 @@ public abstract class EntityDefinitionBase<TModel> : IEntityDefinition
 /// directly, it loads, edits and saves the entity; inside a change set it is recorded as a change to the entity, shown
 /// in its working state and saved with the entity's product.
 /// </summary>
-public abstract class ModelEditAbilityBase<TInput, TModel>(EntityDefinitionBase<TModel> definition)
-    : AbilityBase<TInput, EntityRef>, IEntityEditAbility
+public abstract class ModelEditAbilityBase<TInput, TModel>(EntityAdapterBase<TModel> adapter)
+    : AbilityBase<TInput, EntitySummary>, IEntityEditAbility
     where TModel : class
 {
     /// <summary>The key of the entity the input edits.</summary>
@@ -155,33 +155,33 @@ public abstract class ModelEditAbilityBase<TInput, TModel>(EntityDefinitionBase<
     protected abstract void Edit(TModel model, TInput input);
 
     public EntityEditTarget Prepare(JsonObject input)
-        => new(definition.EntityType, KeyOf(Read(input)), Creates: false);
+        => new(adapter.EntityType, KeyOf(Read(input)), Creates: false);
 
-    public object? Apply(EntityDocument document, JsonObject input, EntityEditContext context)
+    public object? Apply(Entity entity, JsonObject input, EntityEditContext context)
     {
-        var model = definition.ToModel(document);
+        var model = adapter.ToModel(entity);
         Edit(model, Read(input));
-        document.Root = definition.ToDocument(model).Root;
-        return definition.ToRef(document);
+        entity.Fields = adapter.ToEntity(model).Fields;
+        return adapter.ToSummary(entity);
     }
 
     protected override async Task<AbilityResult> ExecuteAsync(TInput input, AbilityContext context, CancellationToken cancellationToken)
     {
         var key = KeyOf(input);
-        var model = await definition.LoadModelAsync(key, cancellationToken)
-            ?? throw new AbilityInputException($"No {definition.EntityType} with key {key}.", [new Problem("key", "Not found.")]);
-        var before = definition.ToDocument(model);
+        var model = await adapter.LoadModelAsync(key, cancellationToken)
+            ?? throw new AbilityInputException($"No {adapter.EntityType} with key {key}.", [new Problem("key", "Not found.")]);
+        var before = adapter.ToEntity(model);
         Edit(model, input);
 
         // Run directly, the ability saves: the user must be allowed to change the entity, as inside a change set.
-        var after = definition.ToDocument(model);
-        if (await EntityAccess.CheckAsync(definition, new EntityAccessRequest(context.UserKey, EntityPermission.Update, key, after, EntityAccess.VariantsChanged(before, after, ModelShapes.ShapeOf(typeof(TModel)), definition.ItemTypes)), cancellationToken) is { } denied)
+        var after = adapter.ToEntity(model);
+        if (await EntityAccess.CheckAsync(adapter, new EntityAccessRequest(context.UserKey, EntityPermission.Update, key, after, EntityAccess.VariantsChanged(before, after, ModelSchemas.SchemaOf(typeof(TModel)), adapter.ItemTypes)), cancellationToken) is { } denied)
         {
             return EntityAccess.Denied(denied);
         }
 
-        await definition.SaveModelAsync(model, cancellationToken);
-        return Success(definition.ToRef(definition.ToDocument(model)));
+        await adapter.SaveModelAsync(model, cancellationToken);
+        return Success(adapter.ToSummary(adapter.ToEntity(model)));
     }
 
     private static TInput Read(JsonObject input)

@@ -18,7 +18,7 @@ public class UdiTests
         var discount = Guid.NewGuid();
         Assert.True(UdiParser.TryParse($"umb://umbraco-commerce-discount/{discount:N}", out GuidUdi? udi));
         Assert.Equal(discount, udi!.Guid);
-        Assert.Equal("umb://document/" + discount.ToString("N"), new EntityRef("document", discount, "Page").ToUdi().ToString());
+        Assert.Equal("umb://document/" + discount.ToString("N"), new EntitySummary("document", discount, "Page").ToUdi().ToString());
     }
 
     [Fact]
@@ -36,9 +36,9 @@ public class UdiTests
         var set = _site.ChangeSets.Get(_agent.ChangeSetId!.Value);
         var discountState = (await _site.ChangeSets.GetWorkingStateAsync(set, "umbraco-commerce-discount", discount))!;
         var pageState = (await _site.ChangeSets.GetWorkingStateAsync(set, "document", page))!;
-        Assert.Equal(page.ToString(), discountState.Root["landingPage"]!.GetValue<string>());
-        Assert.Equal("media", pageState.Root["related"]![0]!["entityType"]!.GetValue<string>());
-        Assert.Equal(media.ToString(), pageState.Root["related"]![0]!["key"]!.GetValue<string>());
+        Assert.Equal(page.ToString(), discountState.Fields["landingPage"]!.GetValue<string>());
+        Assert.Equal("media", pageState.Fields["related"]![0]!["entityType"]!.GetValue<string>());
+        Assert.Equal(media.ToString(), pageState.Fields["related"]![0]!["key"]!.GetValue<string>());
 
         // A UDI of the wrong type says which type was expected.
         var wrong = await _agent.FailAsync("entity_setValue", $$"""{ "entityType": "umbraco-commerce-discount", "key": "{{discount}}", "path": "landingPage", "value": "umb://media/{{media:N}}" }""");

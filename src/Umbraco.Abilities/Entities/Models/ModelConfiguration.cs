@@ -76,7 +76,7 @@ public static class ModelConfiguration
         var config = new TypeConfig();
         configure(new ModelBuilder<T>(config));
         Configs[typeof(T)] = config;
-        ModelShapes.Forget(typeof(T));
+        ModelSchemas.Forget(typeof(T));
     }
 
     internal static TypeConfig? Find(Type type) => Configs.GetValueOrDefault(type);
@@ -110,7 +110,7 @@ public sealed class ModelBuilder<T>
     /// <summary>The property holding the stored version, for rebasing.</summary>
     public ModelBuilder<T> HasVersion<TValue>(Expression<Func<T, TValue>> property) => Role(property, PropertyRole.Version);
 
-    /// <summary>Leaves a property out of the structure.</summary>
+    /// <summary>Leaves a property out of the schema.</summary>
     public ModelBuilder<T> Ignore<TValue>(Expression<Func<T, TValue>> property) => Role(property, PropertyRole.Ignored);
 
     /// <summary>A field.</summary>

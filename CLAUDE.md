@@ -1,7 +1,7 @@
 # Umbraco.Abilities.Poc
 
 A proof of concept, not a product. It tests one claim: if packages declare **abilities** (operations) and **entity
-definitions** (what their entities look like), and Write calls are recorded into **change sets**, then "create or
+adapters** (what their entities look like, and how to load and save them), and Write calls are recorded into **change sets**, then "create or
 edit an entity from a description" needs no per-product code.
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) is the design this code tests.
@@ -37,7 +37,7 @@ dotnet test
 | `src/Umbraco.Abilities` | The framework. `Abilities/` (layer 1), `Entities/` (layer 2, typed layer in `Entities/Models/`), `ChangeSets/` (layer 3) |
 | `src/Umbraco.Abilities.AI` | Turns every ability into an M.E.AI `AIFunction` |
 | `src/Umbraco.Abilities.Samples` | In-memory stand-ins for product packages: CMS, Commerce, Automate, email, a third-party rule |
-| `src/Umbraco.Abilities.Cms` | The real entity definition for CMS documents, on `IContentEditingService`, plus the draft set adapter |
+| `src/Umbraco.Abilities.Cms` | The real entity adapter for CMS documents, on `IContentEditingService`, plus the draft set adapter |
 | `src/Umbraco.Cms.DraftSets` | A stand-in for a Draft Sets feature in CMS core |
 | `tests/Umbraco.Abilities.Tests` | A scripted model (`ScriptedAgent`) calling the AI tools with JSON |
 | `tests/Umbraco.Abilities.Cms.Tests` | The same, against a real Umbraco |

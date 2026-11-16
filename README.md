@@ -5,7 +5,7 @@
 > AI specific. It exists to
 > test the design in the "Abilities, entities and change sets" doc before anything is built for real.
 
-It tests one claim: if packages declare **abilities** and **entity definitions**, and Write calls are
+It tests one claim: if packages declare **abilities** and **entity adapters**, and Write calls are
 recorded into **change sets**, then "create an entity from a description" needs no per-product code. That
 covers a discount with a rule tree, a page with nested blocks, or a workflow whose steps form a graph.
 
@@ -25,26 +25,41 @@ Umbraco 18 on SQLite through `Umbraco.Cms.Tests.Integration`, and take about 30 
 
 | Project | Plays the part of | Depends on |
 | --- | --- | --- |
-| `Umbraco.Abilities` | The contract and runtime: abilities, entity definitions, the path editor, change sets, the invoker | Nothing |
+| `Umbraco.Abilities` | The contract and runtime: abilities, entity adapters, the path editor, change sets, the invoker | Nothing |
 | `Umbraco.Abilities.AI` | Umbraco.AI's adapter: every ability becomes an M.E.AI `AIFunction` | Contract, `Microsoft.Extensions.AI.Abstractions` |
 | `Umbraco.Abilities.Samples` | Product packages: CMS pages with nested blocks, Commerce collections and discounts, a third-party rule type, an email package, Automate workflows | Contract only |
-| `Umbraco.Abilities.Cms` | The real entity definition for CMS documents, on `IContentEditingService`, and the adapter that stages content changes into a CMS draft set | Contract, Umbraco 18, the draft sets stand-in |
+| `Umbraco.Abilities.Cms` | The real entity adapter for CMS documents, on `IContentEditingService`, and the adapter that stages content changes into a CMS draft set | Contract, Umbraco 18, the draft sets stand-in |
 | `Umbraco.Cms.DraftSets` | A stand-in for a Draft Sets feature in CMS core: per-property content changes held apart from live, read-through, rebase and conflicts, apply in one scope | Umbraco 18 only: no Abilities |
 | `Umbraco.Abilities.Tests` | A scripted model calling the AI tools with JSON arguments | Contract, AI adapter, samples |
-| `Umbraco.Abilities.Cms.Tests` | The same, against a real Umbraco on SQLite | Contract, AI adapter, CMS definition, Umbraco test host |
+| `Umbraco.Abilities.Cms.Tests` | The same, against a real Umbraco on SQLite | Contract, AI adapter, CMS adapter, Umbraco test host |
 
 Each design layer and where it lives:
 
 | Layer | Code |
 | --- | --- |
-| 1. Abilities | `Abilities/Ability.cs`: `[Ability]` with `Kind` and `Reversible`, typed `AbilityBase`, failures with categories and paths, `EntityRef` |
-| 2. Entity definitions | `Entities/`: fields with values (scalars, objects with fields, items: keyed typed objects), entity and item references, an item type registry, the working copy as one JSON value tree (`EntityDocument`, `EntityValues`), a path editor generalised from Umbraco.AI's block path engine, and the generic entity abilities. `Entities/Models/`: the typed layer package developers write against (`EntityDefinitionBase<TModel>`, model attributes, `ModelEditAbilityBase`) |
+| 1. Abilities | `Abilities/Ability.cs`: `[Ability]` with `Kind` and `Reversible`, typed `AbilityBase`, failures with categories and paths, `EntitySummary` |
+| 2. Entity adapters | `Entities/`: fields with values (scalars, objects with fields, items: keyed typed objects), entity and item references, an item type registry, the working copy as one JSON value tree (`Entity`, `EntityValues`), a path editor generalised from Umbraco.AI's block path engine, and the generic entity abilities. `Entities/Models/`: the typed layer package developers write against (`EntityAdapterBase<TModel>`, model attributes, `ModelEditAbilityBase`) |
 | 3. Change sets | `ChangeSets/`: a recorded unit of "any Write ability call", working state worked out in memory, apply product by product (each all or nothing) and resumable, rebasing onto changes saved elsewhere meanwhile. Generalises the CMS Draft Sets PoC (`Umbraco.Cms.DraftSets`) |
 
-## Writing a definition
+### Words we use
+
+| Word | Means | Code |
+| --- | --- | --- |
+| Adapter | What a package writes once per entity type: it loads, saves, finds and checks that product's entities | `IEntityAdapter` |
+| Entity | One entity's key, type and field values, as one JSON tree | `Entity` |
+| Schema | What an entity looks like: its fields, item types and the dimensions values vary by | `EntitySchema`, `ObjectSchema` |
+| Field | One named value on an entity, item or object | `FieldDefinition` |
+| Summary | A short view of an entity returned to the caller: type, key, name and edit link | `EntitySummary` |
+| Reference | A stored pointer to another entity: type and key | `EntityReference` |
+
+"Field", not "property", on purpose. "Property" already means a C# property in the typed layer and a CMS property in
+the CMS adapter. "Field" is the neutral word between them. Commerce and Automate settings already use `[Field]`.
+"Schema", not "structure" or "shape", because the tool is `entity_getSchema` and Microsoft's AI library uses the same word.
+
+## Writing an adapter
 
 A package describes an **editing contract**: C# classes that say what an AI, Automate or MCP can set on an entity.
-The contract is not the product's domain model, and nothing goes on the domain model. The definition maps between
+The contract is not the product's domain model, and nothing goes on the domain model. The adapter maps between
 the two in load and save. The framework works out everything else from the contract.
 
 ```
@@ -52,7 +67,7 @@ Commerce's domain (DiscountReadOnly, AsWritable, provider settings)
         ↑  LoadModelAsync / SaveModelAsync: the mapping the package writes
 DiscountEditModel (the editing contract)
         ↓  derived by the framework
-structure, JSON Schema, paths, validation, edit abilities, change sets, rebasing
+schema, JSON Schema, paths, validation, edit abilities, change sets, rebasing
 ```
 
 There are two ways to describe a contract, and fluent configuration wins where both are used. Attributes cover
@@ -99,10 +114,10 @@ ModelConfiguration.Configure<MediaCropRequestModel>(crop => crop
     .Field(x => x.Width).Required().Rule(new RangeAttribute(1, 10000)));
 ```
 
-**The definition** maps to the domain and adds the rules the contract can't express:
+**The adapter** maps to the domain and adds the rules the contract can't express:
 
 ```csharp
-public sealed class DiscountDefinition(DiscountService discounts, ...) : EntityDefinitionBase<DiscountEditModel>(...)
+public sealed class DiscountAdapter(DiscountService discounts, ...) : EntityAdapterBase<DiscountEditModel>(...)
 {
     public override Task<DiscountEditModel?> LoadModelAsync(Guid key, CancellationToken ct) => /* domain → contract */;
     public override Task SaveModelAsync(DiscountEditModel model, CancellationToken ct)
@@ -121,7 +136,7 @@ What the package no longer writes:
 
 | Was hand-written | Now comes from |
 | --- | --- |
-| The structure: fields, types, required, allowed values, references, items fields and their limits | Property types, plus attributes or fluent configuration |
+| The schema: fields, types, required, allowed values, references, items fields and their limits | Property types, plus attributes or fluent configuration |
 | JSON Schema for structured values (a focal point) | `JsonSchemaExporter` over the property type |
 | Culture variation | `Varying<T>` (a value per culture), on value and items fields |
 | Block settings and a grid block's layout | Ordinary object properties (`Settings`, `Layout`): a class becomes an object field |
@@ -130,7 +145,7 @@ What the package no longer writes:
 | A path for a domain problem | `ProblemAt(x => x.EndDate, ...)`, or `ProblemAt(item, r => r.Percent, ...)` for an item |
 | An ability that edits an entity, both directly and inside a change set | `ModelEditAbilityBase<TInput, TModel>`: one `Edit(model, input)` method |
 
-`[Required]` and `[AllowedValues]` become part of the structure, so the generic validator checks them per culture.
+`[Required]` and `[AllowedValues]` become part of the schema, so the generic validator checks them per culture.
 Every other rule runs on the contract. Each problem is reported once. A renamed property is a compile error, not a
 wrong string key at run time.
 
@@ -151,25 +166,25 @@ are a provider alias plus string settings, with no ids.
 The mapping is ordinary typed C#, roughly the size of a Management API mapper. It is the only per-entity code the
 package writes besides the contract.
 
-**One limit the mapping exposed:** Commerce's rules have no ids, so the definition derives each item's key from the
+**One limit the mapping exposed:** Commerce's rules have no ids, so the adapter derives each item's key from the
 discount, the position and the provider alias. A rule's key is stable across loads. But a rule the agent added gets
 a new key once saved, and moving a rule changes its key, so rebasing sees a move as a remove and an add. Stable ids
 on Commerce's rule nodes would fix this. It is a change to suggest to the Commerce team, not something a mapping can
 paper over.
 
-### Entities whose structure is data
+### Entities whose schema is data
 
 A CMS document type is defined in the backoffice. A workflow's step types are other packages' abilities. Neither has
-a class to describe, so `CmsDocumentDefinition` and `WorkflowDefinition` implement `IEntityDefinition` over the typed
-`EntityDocument`. There is still no `JsonObject` digging: they use `item.Settings` or `item.Layout`, not
-`item["settings"]["fields"]`. The CMS definition builds Umbraco's own `BlockListValue`, `BlockGridValue`,
+a class to describe, so `CmsDocumentAdapter` and `WorkflowAdapter` implement `IEntityAdapter` over the typed
+`Entity`. There is still no `JsonObject` digging: they use `item.Settings` or `item.Layout`, not
+`item["settings"]["fields"]`. The CMS adapter builds Umbraco's own `BlockListValue`, `BlockGridValue`,
 `BlockItemData`, `BlockPropertyValue`, `BlockGridLayoutItem` and `BlockItemVariation` instead of hand-built
 envelopes, and Umbraco's serializer reads and writes them. Moving to the typed document took it from 621 lines to 599.
 
 ## Values, paths and handlers
 
 An entity is **fields with values**, as content is (a property has a value, and its editor defines what's inside it)
-and as JSON Schema describes data. The working copy is one JSON tree (`EntityDocument.Root`):
+and as JSON Schema describes data. The working copy is one JSON tree (`Entity.Fields`):
 
 ```jsonc
 {
@@ -184,7 +199,7 @@ and as JSON Schema describes data. The working copy is one JSON tree (`EntityDoc
 
 **The path rule.** A path goes down through values: in an object a step is a field alias (`blocks/{key}/settings/theme`),
 in an items field a step is an item's key (`blocks/{key}/heading`). Any other array is set whole. Paths never use
-positions, which would point at something else once an item is added above. The structure says which fields vary,
+positions, which would point at something else once an item is added above. The schema says which fields vary,
 hold items or hold objects, so nothing is guessed from the data. One walker (`EntityValues.Find`) serves editing, diff
 and rebasing; another (`EntityValues.Walk`) lists every value for validation, authorization and diff.
 
@@ -195,7 +210,7 @@ and rebasing; another (`EntityValues.Walk`) lists every value for validation, au
 | Items | `type: array`, `x-item-types` | `entity.addItem`, `removeItem`, `moveItem` at the items field's path |
 | JSON with only a schema (a CMS editor's value) | The editor's own value schema | `entity.setValue`, whole |
 
-**Handlers add behaviour, not structure.** A handler (`IValueHandler`) is only for what a schema can't say. Rich Text
+**Handlers add behaviour, not schema.** A handler (`IValueHandler`) is only for what a schema can't say. Rich Text
 is an object of `markup` and `blocks`, and paths reach both like any other value. Its handler keeps them in step:
 adding a block places its tag in the markup, removing or moving one removes or moves its tag, and every tag must have
 a block. A typed model declares one with `[ValueHandler(typeof(...))]` on an object property.
@@ -204,9 +219,9 @@ Because paths reach inside every described value, rebasing works per value and p
 included, and references inside objects and items are checked. Only a JSON value with just a schema is still opaque:
 it rebases as one value, and references in it aren't seen.
 
-**Not done yet.** The CMS definition still maps Block List and Block Grid itself, to the built-in items. The next step
+**Not done yet.** The CMS adapter still maps Block List and Block Grid itself, to the built-in items. The next step
 is to make those editors' handlers the ones Umbraco.AI already has (`IAIPropertyValueHandler`), so Abilities and
-Umbraco.AI's tools share one handler model and the CMS definition loses its block code.
+Umbraco.AI's tools share one handler model and the CMS adapter loses its block code.
 
 ## Item types for plugin seams
 
@@ -231,7 +246,7 @@ Both registries already carry what an item type needs. The PoC's stand-ins are s
 How the framework uses them:
 
 - **Fields** come from `ItemTypeFields.For`, with the same type mapping as model classes. `[Required]` and
-  `[AllowedValues]` become part of the structure. Other rules (`[Range]`) go on the field (`FieldDefinition.Rules`) and
+  `[AllowedValues]` become part of the schema. Other rules (`[Range]`) go on the field (`FieldDefinition.Rules`) and
   are checked on its path, since there's no class to carry them.
 - **Editor UI aliases** map to references through a small table per product, for example Commerce's collection picker
   becomes a reference to `umbraco-commerce-collection`. An editor no table maps stays a plain value, and its
@@ -264,7 +279,7 @@ What it found:
 ## Identity: UDIs
 
 An entity's identity is a UDI, as in Deploy and the CMS: `umb://document/{key}`. Entity types are UDI entity types
-(`document`, `media`, `umbraco-commerce-discount`), and adding a definition registers its type with `UdiParser` unless
+(`document`, `media`, `umbraco-commerce-discount`), and adding an adapter registers its type with `UdiParser` unless
 the CMS or a package already has. Change sets key their snapshots, versions and resolutions by UDI, and the CMS draft
 set addresses what it changes by UDI.
 
@@ -279,7 +294,7 @@ store it in the field's own form:
 | Either, with the wrong type | `"umb://media/3f2a…"` for a document | Refused: "Expected a document, not a media." |
 
 The type names follow each product's Deploy package. Commerce Deploy defines `umbraco-commerce-discount`, but doesn't
-register it or deploy discounts today, so the definition registers it. The sample's collection has no Commerce
+register it or deploy discounts today, so the adapter registers it. The sample's collection has no Commerce
 equivalent, and `umbraco-automate-workflow` follows the convention but isn't checked against Automate.
 
 Moving to UDIs found a bug: conflict resolutions were keyed by their own `type:key` string rather than the set's
@@ -293,7 +308,7 @@ Before building something, check whether the CMS has it. This is where the PoC l
 | Need | Uses | Notes |
 | --- | --- | --- |
 | Entity identity | UDIs (`GuidUdi`, `UdiParser`) | See "Identity: UDIs" |
-| What a value varies by | `ContentVariation`, in the CMS adapter only | The framework has named dimensions (`VariationDimension`); the CMS definition maps `ContentVariation` to its `culture` and `segment` dimensions. Using `ContentVariation` in the framework had made culture and segment the only ways to vary |
+| What a value varies by | `ContentVariation`, in the CMS adapter only | The framework has named dimensions (`VariationDimension`); the CMS adapter maps `ContentVariation` to its `culture` and `segment` dimensions. Using `ContentVariation` in the framework had made culture and segment the only ways to vary |
 | Block editor values | `BlockListValue`, `BlockGridValue`, `BlockItemData`, … | Read and written with Umbraco's serializer |
 | A product's transaction, for content | `ICoreScopeProvider` | Behind `IUnitOfWorkProvider`, which stays because Commerce and Automate have their own connections |
 | Packages reacting to, or vetoing, an apply | Notifications through `IEventAggregator` | `ChangeSetApplyingNotification` and `DraftSetApplyingNotification` are cancelable, like `ContentSavingNotification`. Then applied and discarded |
@@ -301,7 +316,7 @@ Before building something, check whether the CMS has it. This is where the PoC l
 | Work after a transaction commits | Scopes: notifications published through `scope.Notifications`, and `Context.Enlist` actions | Both run only when the outermost scope commits. The draft set's applied notification and its "applied" flag use them, so neither happens when an outer scope rolls back |
 | Who may do what | The CMS's own permission model, through `IContentPermissionService` | See "Authorization" |
 | Side effects that need retries | `IBackgroundTaskQueue`, run by `QueuedHostedService`, with Polly | See "Retries". Webhooks weren't used, as they're going away |
-| Results and problems | `Attempt<TResult, TStatus>` and `PropertyValidationError`, mirrored | `AbilityResult` has a status (`AbilityOperationStatus`: Success, InvalidInput, AccessDenied, Failed) and a result. `Problem` has `ErrorMessages` and a `Variant` (the CMS's culture and segment are two of its dimensions). The CMS definition passes Umbraco's messages straight through |
+| Results and problems | `Attempt<TResult, TStatus>` and `PropertyValidationError`, mirrored | `AbilityResult` has a status (`AbilityOperationStatus`: Success, InvalidInput, AccessDenied, Failed) and a result. `Problem` has `ErrorMessages` and a `Variant` (the CMS's culture and segment are two of its dimensions). The CMS adapter passes Umbraco's messages straight through |
 
 Checked, and not usable:
 
@@ -318,8 +333,8 @@ Left for later:
 ## Authorization
 
 An agent acts for a user and gets that user's permissions, no more. `AbilityContext` carries the user's key, as the CMS's
-services take it. Abilities never build their own permission model: a definition that has one implements
-`IAuthorizingEntityDefinition`, and is asked whether a user may read, create or update an entity, in the cultures a
+services take it. Abilities never build their own permission model: an adapter that has one implements
+`IAuthorizingEntityAdapter`, and is asked whether a user may read, create or update an entity, in the cultures a
 change touches. It answers with a reason when not.
 
 | When | Who is checked |
@@ -330,7 +345,7 @@ change touches. It answers with a reason when not.
 | An entity is read | The user: a refusal is an `AccessDenied` result |
 | A product ability is run directly | The user, the same as inside a set |
 
-The CMS definition asks the CMS. The user must have the Content section, then the document permission (browse, create
+The CMS adapter asks the CMS. The user must have the Content section, then the document permission (browse, create
 or update) on the document. For a new document that's its parent, or the root. Then they need access to the cultures
 the change touches. Refusals are not correctable: retrying won't help, so an agent should stop and tell the user. The
 in-memory samples stand in for each product's model with `SampleAccess`, where a content editor may not touch Commerce.
@@ -355,7 +370,7 @@ Two limits:
 
 The CMS is building Draft Sets for content. It shouldn't depend on Abilities, and Abilities shouldn't keep and replay
 content edits itself when the CMS has its own drafts. So a product that keeps its own drafts implements
-`IDraftingEntityDefinition`. The change set then holds one of the product's drafts and hands it that product's changes:
+`IDraftingEntityAdapter`. The change set then holds one of the product's drafts and hands it that product's changes:
 
 ```
 Change set (Abilities)
@@ -368,11 +383,11 @@ The draft set is the source of truth for content. Changes an AI makes are a CMS 
 and preview. The change set keeps only the draft set's id and the fact that it touched an entity. Products with no
 drafts of their own (the in-memory samples) work as before. Both kinds mix in one set.
 
-What the adapter (`CmsDocumentDefinition`) does:
+What the adapter (`CmsDocumentAdapter`) does:
 
 | Change set needs | CMS draft set provides |
 | --- | --- |
-| Record an edit | `StageNew` for new content (whole), `StageChangesAsync` for existing content: only the property values, per culture and segment, that the edit changed. The adapter works them out by diffing the entity document before and after |
+| Record an edit | `StageNew` for new content (whole), `StageChangesAsync` for existing content: only the property values, per culture and segment, that the edit changed. The adapter works them out by diffing the entities before and after |
 | The working state | `GetAsync`: live content with the set's changes over it, or the set's new content, in editor format |
 | Rebase and conflicts | `GetRebaseAsync`: what others changed since, and the values both changed. Conflicts are per property value, not per block |
 | Resolve | `ResolveAsync`: keep the draft's value or the live one |
@@ -387,8 +402,8 @@ another property is simply kept.
 1. **A one-language document failed validation and save** on a mandatory property in the other language.
    `ValidateUpdateAsync` checks every culture unless `ValidateContentUpdateModel.Cultures` says otherwise.
    `UpdateAsync` saves anyway but returns `PropertyValidationError` with problems in every culture. The draft set and
-   the definition now validate only the cultures the document has, and treat "saved with problems" as decided by those
-   problems alone. The definition had the same bug, hidden because every earlier test page existed in both languages.
+   the adapter now validate only the cultures the document has, and treat "saved with problems" as decided by those
+   problems alone. The adapter had the same bug, hidden because every earlier test page existed in both languages.
 2. **Conflicts are coarser than the generic diff.** A block property is one value, so two people editing different
    blocks in the same Block List conflict. Item-level merging needs block-level change tracking in the draft set.
 
@@ -400,12 +415,12 @@ not on Abilities, so a core coordinator would reach all of them:
 ```
 CMS core: Draft Sets = the change set
 ├── coordinator: one step per product, all or nothing per product, resumable, rebase and conflicts
-├── IDraftSetParticipant, public: the seam IDraftingEntityDefinition is here
+├── IDraftSetParticipant, public: the seam IDraftingEntityAdapter is here
 ├── content participant, built by the CMS team
 └── Commerce, Forms, … implement their own participant
 
 Abilities, on top
-├── structure, paths, generic edit tools, item types
+├── schema, paths, generic edit tools, item types
 ├── records ability calls by staging them into a draft set
 └── side effects after apply, approval
 ```
@@ -429,7 +444,7 @@ mind.
 | 9 | Raise CMS notifications: a cancelable applying, then applied and discarded | So packages can veto applying a set as they veto saving a document, and audit, caches and integrations can react. The stand-in does this |
 | 10 | Make the draft set's id, create, apply and discard public, with no assumption about who started it | A coordinator, the backoffice or Automate can drive it |
 | 11 | Shape the coordinator and the participant contract generically from day one, with content as its first participant | The step from content-only to the generic change set is then adding participants, not redesigning |
-| 12 | Leave side effects, approval and the AI-facing structure language out of core | Core has no "operation to run afterwards". Approval is per caller. The structure language is a large, fast-moving API |
+| 12 | Leave side effects, approval and the AI-facing schema language out of core | Core has no "operation to run afterwards". Approval is per caller. The schema language is a large, fast-moving API |
 
 Recommended, not required: block-level change tracking inside block properties (finding 2), and capturing
 `IContentEditingService` calls into an ambient draft set, as the original Draft Sets PoC does, so existing code is
@@ -486,14 +501,14 @@ Each claim is followed by the tests that show it. `(all)` means every test in th
 - A class with no attributes and no base class is described fluently, and created from text like any other
   - `TypedModelTests.A_class_with_no_attributes_or_base_class_is_described_fluently`
   - `TypedModelTests.A_fluently_described_entity_is_created_from_text_like_any_other`
-- Commerce keeps its own model; the definition maps to it, and rule keys are derived because Commerce rules have no ids
+- Commerce keeps its own model; the adapter maps to it, and rule keys are derived because Commerce rules have no ids
   - `TypedModelTests.Commerce_keeps_its_own_model_and_the_definition_maps_to_it`
-- The structure (types, required, allowed values, references, items fields, variation, settings, placement, JSON Schema) comes from model classes and attributes
+- The schema (types, required, allowed values, references, items fields, variation, settings, placement, JSON Schema) comes from model classes and attributes
   - `TypedModelTests.The_structure_comes_from_the_model_class_and_its_attributes`
   - `TypedModelTests.Varying_values_settings_layout_and_json_values_are_described_too`
 - A model round-trips through its working copy, keeping item keys and giving each item its path
   - `TypedModelTests.A_model_round_trips_through_its_document_with_item_keys_and_paths`
-- Each problem is reported once, whether it comes from the structure, an attribute or a domain rule
+- Each problem is reported once, whether it comes from the schema, an attribute or a domain rule
   - `TypedModelTests.Each_problem_is_reported_once_whether_it_comes_from_the_structure_or_an_attribute`
 
 ### CMS draft sets
@@ -528,7 +543,7 @@ Each claim is followed by the tests that show it. `(all)` means every test in th
   - `PluginItemTypeTests.A_user_is_only_offered_plugin_types_they_may_use`
 - A value whose model is its editor's (Rich Text's markup plus blocks) is edited inside through its handler, with the same tools; the handler keeps markup and blocks in step and reports its problems on paths inside the value
   - `ValueHandlerTests (all)`
-- Editors the CMS definition has no rule for are fields described by Umbraco's own value schemas
+- Editors the CMS adapter has no rule for are fields described by Umbraco's own value schemas
   - `CmsDocumentDefinitionTests.Editors_the_definition_has_no_rule_for_are_fields_described_by_Umbracos_value_schemas`
 
 ### Workflows
@@ -547,9 +562,9 @@ Each claim is followed by the tests that show it. `(all)` means every test in th
 - Each culture is validated separately, and problems say which culture
   - `CmsContentTests.Each_culture_is_validated_separately_and_problems_say_which`
 - A value can vary by two dimensions at once (culture and segment). Each segment keeps its own value, a segment still needs a known culture, and problems name both
-  - `EntityDocumentTests.A_value_can_vary_by_two_dimensions_and_each_segment_keeps_its_own_value`
-  - `EntityDocumentTests.A_segment_still_needs_a_known_culture`
-  - `EntityDocumentTests.Problems_in_a_segment_say_which_culture_and_segment`
+  - `EntityTests.A_value_can_vary_by_two_dimensions_and_each_segment_keeps_its_own_value`
+  - `EntityTests.A_segment_still_needs_a_known_culture`
+  - `EntityTests.Problems_in_a_segment_say_which_culture_and_segment`
 - Blocks in an invariant Block List hold per-culture values, and a block's settings are an object edited and validated at `{item}/settings/…`
   - `CmsContentTests.Block_values_vary_per_culture_inside_an_invariant_block_list_and_settings_are_an_object`
 - Block Grid: column span is in a layout object at `{item}/layout/…`, areas are items fields with limits, and a type can be allowed at the root and in areas
@@ -586,10 +601,10 @@ These feed back into the design doc.
    types come for free, including an entity reference from `[EntityKey]`.
 7. **Typed values found an untyped bug.** The validator checked whole numbers with
    `JsonValue.TryGetValue<long>`. That works on parsed JSON but fails on a value holding a CLR `int`, which
-   is what the CMS definition puts in once it reads Umbraco's typed `BlockGridLayoutItem.ColumnSpan`. Every
+   is what the CMS adapter puts in once it reads Umbraco's typed `BlockGridLayoutItem.ColumnSpan`. Every
    grid page then failed validation. The check now reads the JSON text. A typed document must not assume its
    values came from parsing.
-8. **Slots were fields all along.** The structure first had fields and, separately, slots: lists of typed items. But
+8. **Slots were fields all along.** The schema first had fields and, separately, slots: lists of typed items. But
    every existing model treats "a list of typed things" as a field with that value type: Umbraco's Block List is a
    property like any other, JSON Schema has an array of a `oneOf`, GraphQL a list of a union. So there is now one concept,
    a field, with value type `Items` (its item type group, min, max and placement values; a single block is `Max = 1`).
@@ -608,7 +623,7 @@ These feed back into the design doc.
    fallback is mainly for third parties' editors.
 10. **One value tree, and paths through values.** Finding 9 still stored items apart from other values, and handlers
    owned paths. Asking what consumers of the entity tools need showed neither was required: a path goes down through
-   values, object steps by field and item steps by key, and the structure says which values vary, hold items or hold
+   values, object steps by field and item steps by key, and the schema says which values vary, hold items or hold
    objects. So the working copy became one JSON tree, a block's settings and a grid block's layout became ordinary
    object fields (`@settings` and `@layout` are gone), handlers only add behaviour (Rich Text's tags), and the
    separate walks over items in the editor, diff, validation and authorization became one. It also removed guessing
@@ -616,7 +631,7 @@ These feed back into the design doc.
    culture and see them per culture; which cultures exist is product meaning worked out from the values (the CMS:
    cultures with a name), so it isn't part of the contract.
 11. **Variation is named dimensions, not culture.** The framework had used the CMS's `ContentVariation`, so values
-   could only vary by culture and segment. Now an entity's structure lists its dimensions (`culture` with the site's
+   could only vary by culture and segment. Now an entity's schema lists its dimensions (`culture` with the site's
    languages; `segment`, open; or a product's own, such as `currency`), each field says which it `VariesBy`, tools take
    a `variant` object (`{ "culture": "da-DK" }`), and problems and conflicts carry one. A dimension with listed values
    needs one of them; an open one may be left out for its default. A required value that varies but has no value in
@@ -627,7 +642,7 @@ These feed back into the design doc.
 ## Applying a set
 
 Products can each use their own connection string (Commerce, Automate and Umbraco.AI all can), so a draft
-set never assumes one transaction across products. Each entity definition names its product's unit of
+set never assumes one transaction across products. Each entity adapter names its product's unit of
 work, and applying a set runs in steps:
 
 1. **One step per product**, in the order the set first touched them: all of that product's changes save
@@ -655,7 +670,7 @@ A change set records edits by path, not copies of entities, so when someone else
 editing, the set's edits are replayed onto the newer version instead of the apply being refused.
 
 - The first time a set edits an existing entity, it remembers the version it started from. If the product keeps
-  version history (`IVersionedEntityDefinition`), it remembers only the version number and loads that version from
+  version history (`IVersionedEntityAdapter`), it remembers only the version number and loads that version from
   the history when needed. Otherwise it keeps its own snapshot.
 - What someone else changed is the difference between that starting version and the live one; what the set changed
   is the difference between the starting version and the set's result (`EntityDiff`, the same for every product).
@@ -666,13 +681,13 @@ editing, the set's edits are replayed onto the newer version instead of the appl
 - If both made the same change, it isn't a conflict. If the starting version is gone from the product's history
   (a version clean-up), the entity can't be rebased and validation says why.
 
-The CMS document definition uses the snapshot for now: whether every draft save gets a new version that stays in
+The CMS document adapter uses the snapshot for now: whether every draft save gets a new version that stays in
 the history (version clean-up removes old ones) needs checking before it can rely on the history.
 
 ## Against a real Umbraco
 
-`CmsDocumentDefinition` is a real definition for documents. One entity type, `document`, has a subtype per
-document type. It builds the structure from the document type and its data types (Block List and Block Grid
+`CmsDocumentAdapter` is a real adapter for documents. One entity type, `document`, has a subtype per
+document type. It builds the schema from the document type and its data types (Block List and Block Grid
 configuration, settings element types, areas, variance), loads through `IContentEditingService` in the editor
 format, writes block envelopes with layout, settings, grid areas and expose entries, validates with Umbraco's
 own `ValidateCreateAsync` / `ValidateUpdateAsync`, and saves with `ContentCreateModel` / `ContentUpdateModel`
@@ -707,8 +722,8 @@ Shown against Umbraco 18 (SQLite):
 
 What running against Umbraco taught us:
 
-1. **Structure can depend on a subtype.** Documents are one entity type with a structure per document type,
-   chosen at create. The contract gained `GetSubtypesAsync`, `DescribeAsync(subtype)` and `subtype` on create
+1. **Schema can depend on a subtype.** Documents are one entity type with a schema per document type,
+   chosen at create. The contract gained `GetSubtypesAsync`, `GetSchemaAsync(subtype)` and `subtype` on create
    and schema. Media types and member types will need the same.
 2. **An item exists only in the cultures it has values for.** Umbraco exposes a block in the cultures it has
    values in, and skips validating it elsewhere: an English-only hero is not part of the Danish page. The
@@ -716,19 +731,19 @@ What running against Umbraco taught us:
    when an item has no values yet).
 3. **Umbraco's block error paths need translating.** Errors inside an invariant block property carry no
    culture; it sits in a JSON path filter, `.contentData[1].values[?(@.alias == 'heading' && @.culture ==
-   'en-US' ...)].value`, and `contentData[i]` counts only the blocks exposed in that culture. The definition
+   'en-US' ...)].value`, and `contentData[i]` counts only the blocks exposed in that culture. The adapter
    maps these to `blocks/{key}/heading` with culture `en-US`.
-4. **Umbraco saves invalid values and reports them afterwards.** The definition treats any reported error
+4. **Umbraco saves invalid values and reports them afterwards.** The adapter treats any reported error
    as a failed save, so the scope rolls back and nothing half-valid is applied.
 5. **`UpdateDate` works to notice a change.** Umbraco has no check of its own on update; comparing `UpdateDate` tells a
    change set when to rebase.
 6. **A segment exists where it has values.** Umbraco has no list of segments. It checks the segments the save names,
    in each culture with page values in that segment, and an empty segment value does not fall back to the default
-   (`release-18.0.0`: `ContentValidationServiceBase`). The definition first named no segments, so Umbraco checked
+   (`release-18.0.0`: `ContentValidationServiceBase`). The adapter first named no segments, so Umbraco checked
    none. It now names each segment the page's own values are in. The generic validator first treated a VIP value
    inside a block as making the whole page VIP, so it asked for a VIP heading. It now counts an open dimension, such
    as a segment, only where an object has values of its own. A value that varies by segment only has no culture,
-   but Umbraco wants a culture on every variant of a culture-variant page, so the definition names that segment in
+   but Umbraco wants a culture on every variant of a culture-variant page, so the adapter names that segment in
    each of the page's cultures.
 
 Not covered yet: templates (an update would clear one), publishing, rich text with blocks, culture-variant block
@@ -737,11 +752,11 @@ numbers, booleans, tags, content picker and blocks (they pass through as JSON, u
 
 ## Checked against the real models
 
-The structure language was compared with the real code of Umbraco CMS (`main`, 18.5.0-rc),
+The schema language was compared with the real code of Umbraco CMS (`main`, 18.5.0-rc),
 Umbraco.Commerce (`dev`) and Umbraco.Automate (`v18/dev`). The CMS sample now follows the real content
 model's shapes. What the contract gained from that:
 
-| Added to the structure language | Why (real model) |
+| Added to the schema language | Why (real model) |
 | --- | --- |
 | Dimensions on the entity (`VariationDimension`, with their values) and `VariesBy` on each field, with `VariantId` narrowed per value | CMS property values carry a culture or segment only if their property varies that way, and Umbraco rejects values that don't match. Other products vary by their own dimensions (a price per currency) |
 | A varying value stored per variant where the field is (`"title": { "en-US": … }`), names as a culture-variant field | CMS names vary by culture; block values inside an invariant block property vary per culture |
@@ -756,15 +771,15 @@ What still does not fit, and needs a decision rather than more code:
 | Product | Gap | Consequence |
 | --- | --- | --- |
 | CMS | Blocks in rich text are placed by markup, not by item order | Adding a block to rich text needs an anchor in the markup; editing existing ones fits |
-| CMS | Segments are not managed (no list to validate against); "expose" (which cultures a block exists in) is derived by the CMS on read | The CMS definition must produce expose entries and accept any segment |
-| CMS | Update replaces all properties, and saves invalid values while returning errors | The definition must send the full working copy and treat returned errors as a failed apply |
+| CMS | Segments are not managed (no list to validate against); "expose" (which cultures a block exists in) is derived by the CMS on read | The CMS adapter must produce expose entries and accept any segment |
+| CMS | Update replaces all properties, and saves invalid values while returning errors | The adapter must send the full working copy and treat returned errors as a failed apply |
 | CMS | No concurrency token on update | Change sets rebase instead (see "Rebasing"); a change saved between validating and saving is still not caught |
-| Commerce | A discount's rules are one recursive tree under a group rule (AND/OR is a setting); rule and reward nodes have no ids | Fits as an items field of one group rule with nested items fields, but the definition must assign item keys on load and drop them on save |
-| Commerce | Validation is message-only and stops at the first error; rule and reward settings are not validated on write | Problems by path have to come from the definition, not from Commerce |
+| Commerce | A discount's rules are one recursive tree under a group rule (AND/OR is a setting); rule and reward nodes have no ids | Fits as an items field of one group rule with nested items fields, but the adapter must assign item keys on load and drop them on save |
+| Commerce | Validation is message-only and stops at the first error; rule and reward settings are not validated on write | Problems by path have to come from the adapter, not from Commerce |
 | Commerce | Saves use Commerce's own unit of work and connection, and can't join an Umbraco scope | No longer a gap: change sets don't assume a transaction across products (see "Applying a set") |
 | Commerce | `Version` exists but isn't exposed, and conflicts are retried (last writer wins) | No change detection for discounts without a Commerce change |
 | Automate | Steps are a flat list and edges are their own list carrying data (outcome, handle, filter); loops and parallel paths come from edges, not nesting | Item references on fields are not enough: the contract needs **edges as a first-class part of an entity** |
-| Automate | Validation errors are strings with no path; unknown step types aren't caught at publish | Problems by path have to come from the definition |
+| Automate | Validation errors are strings with no path; unknown step types aren't caught at publish | Problems by path have to come from the adapter |
 | Automate | Bindings (`${ trigger.x }`) resolve to strings | Typed step inputs from bindings need an Automate change |
 
 Two existing Umbraco.AI defects turned up on the way and were raised as issues:
@@ -773,8 +788,8 @@ and [#747](https://github.com/umbraco/Umbraco.AI/issues/747) (block settings use
 
 ## What it does not prove
 
-- **Real Commerce and Automate.** Only CMS documents have a real definition. The Commerce and Automate
-  definitions are still stand-ins.
+- **Real Commerce and Automate.** Only CMS documents have a real adapter. The Commerce and Automate
+  adapters are still stand-ins.
 - **A real model.** The tests script the tool calls. No LLM chose them.
 - **Persistence and scale.** Sets are in memory, and working state is recomputed by replaying every call
   on each read.

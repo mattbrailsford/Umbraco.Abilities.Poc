@@ -25,7 +25,7 @@ using Umbraco.Extensions;
 namespace Umbraco.Abilities.Cms;
 
 /// <summary>
-/// The real entity definition for CMS documents: one entity type, <c>document</c> (the UDI entity type), whose subtypes are
+/// The real entity adapter for CMS documents: one entity type, <c>document</c> (the UDI entity type), whose subtypes are
 /// the document types. It reads through <see cref="IContentEditingService"/> in the editor (Management API) format, maps
 /// block editor values to items fields and back, and validates with Umbraco's own validation.
 /// <para>
@@ -34,7 +34,7 @@ namespace Umbraco.Abilities.Cms;
 /// and its own rebasing, review and apply (all or nothing, in one Umbraco scope) are used.
 /// </para>
 /// </summary>
-public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthorizingEntityDefinition
+public sealed class CmsDocumentAdapter : IDraftingEntityAdapter, IAuthorizingEntityAdapter
 {
     public const string Type = Constants.UdiEntityType.Document;
 
@@ -57,10 +57,10 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
     private readonly IContentPermissionService _permissions;
     private readonly IJsonSerializer _json;
     private readonly Func<Guid> _actingUser;
-    private readonly CmsStructureMapper _mapper;
+    private readonly CmsSchemaMapper _mapper;
     private readonly ItemTypeRegistry _itemTypes;
 
-    public CmsDocumentDefinition(
+    public CmsDocumentAdapter(
         IContentTypeService contentTypes,
         IDataTypeService dataTypes,
         ILanguageService languages,
@@ -86,7 +86,7 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
         _json = json;
         _actingUser = actingUser;
         _itemTypes = itemTypes;
-        _mapper = new CmsStructureMapper(contentTypes, dataTypes, itemTypes, schemas);
+        _mapper = new CmsSchemaMapper(contentTypes, dataTypes, itemTypes, schemas);
     }
 
     public string EntityType => Type;
@@ -101,12 +101,12 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
             .Select(t => new EntitySubtype(t.Alias, t.Name ?? t.Alias))
             .ToList());
 
-    public async Task<EntityStructure> DescribeAsync(string? subtype, CancellationToken cancellationToken = default)
+    public async Task<EntitySchema> GetSchemaAsync(string? subtype, CancellationToken cancellationToken = default)
     {
         var type = DocumentType(subtype);
         var map = await _mapper.MapAsync(type, isDocument: true);
         var cultures = (await _languages.GetAllAsync()).Select(l => l.IsoCode).ToList();
-        return new EntityStructure(Type, type.Name ?? type.Alias, type.Description ?? string.Empty, map.Shape)
+        return new EntitySchema(Type, type.Name ?? type.Alias, type.Description ?? string.Empty, map.Schema)
         {
             // Listed for every document type: blocks inside an invariant document can still vary.
             Dimensions =
@@ -117,43 +117,43 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
         };
     }
 
-    public EntityDocument New(Guid key, string? subtype) => new() { EntityType = Type, Key = key, Subtype = subtype };
+    public Entity New(Guid key, string? subtype) => new() { EntityType = Type, Key = key, Subtype = subtype };
 
-    public async Task<EntityDocument?> LoadAsync(Guid key, CancellationToken cancellationToken = default)
-        => await _draftSets.GetLiveAsync(EntityUdis.For(Type, key)) is { } live ? await ToDocumentAsync(live) : null;
+    public async Task<Entity?> LoadAsync(Guid key, CancellationToken cancellationToken = default)
+        => await _draftSets.GetLiveAsync(EntityUdis.For(Type, key)) is { } live ? await ToEntityAsync(live) : null;
 
-    /// <summary>A document in editor format, live or as a draft set would leave it, as an entity document.</summary>
-    private async Task<EntityDocument> ToDocumentAsync(DraftContent content)
+    /// <summary>A document in editor format, live or as a draft set would leave it, as an entity.</summary>
+    private async Task<Entity> ToEntityAsync(DraftContent content)
     {
         var type = _mapper.RequireType(content.ContentTypeKey);
         var map = await _mapper.MapAsync(type, isDocument: true);
-        var document = new EntityDocument
+        var document = new Entity
         {
             EntityType = Type,
             Key = content.Key,
             Subtype = type.Alias,
-            LiveVersion = content.Version,
+            Version = content.Version,
         };
 
-        var nameField = map.Shape.Find(CmsStructureMapper.NameField)!;
+        var nameField = map.Schema.Find(CmsSchemaMapper.NameField)!;
         foreach (var (culture, name) in content.Names)
         {
-            EntityValues.Set(document.Root, nameField, CmsVariants.Of(culture.Length == 0 ? null : culture, null), name);
+            EntityValues.Set(document.Fields, nameField, CmsVariants.Of(culture.Length == 0 ? null : culture, null), name);
         }
 
         if (content.ParentKey is { } parent)
         {
-            document.Root[CmsStructureMapper.ParentField] = parent.ToString();
+            document.Fields[CmsSchemaMapper.ParentField] = parent.ToString();
         }
 
-        await ReadValuesAsync(document.Root, content.Values.Select(v => (v.Alias, v.Culture, v.Segment, v.Value)), map);
+        await ReadValuesAsync(document.Fields, content.Values.Select(v => (v.Alias, v.Culture, v.Segment, v.Value)), map);
         return document;
     }
 
-    public async Task<IReadOnlyList<Problem>> ValidateAsync(EntityDocument document, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<Problem>> ValidateAsync(Entity document, CancellationToken cancellationToken = default)
     {
         var model = await BuildModelAsync(document);
-        var attempt = document.LiveVersion is null
+        var attempt = document.Version is null
             ? await _editing.ValidateCreateAsync(model.ToCreateModel(), _actingUser())
             : await _editing.ValidateUpdateAsync(document.Key, model.ToValidateUpdateModel(), _actingUser());
 
@@ -167,17 +167,17 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
     }
 
     /// <summary>Not used: content in a change set is applied through its draft set (<see cref="ApplyDraftAsync"/>).</summary>
-    public Task<EntityRef> SaveAsync(EntityDocument document, CancellationToken cancellationToken = default)
+    public Task<EntitySummary> SaveAsync(Entity document, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Content is applied through its CMS draft set.");
 
-    public Task<IReadOnlyList<EntityRef>> FindAsync(string query, CancellationToken cancellationToken = default)
-        => Task.FromResult<IReadOnlyList<EntityRef>>(_entities.GetAll(UmbracoObjectTypes.Document)
+    public Task<IReadOnlyList<EntitySummary>> FindAsync(string query, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<EntitySummary>>(_entities.GetAll(UmbracoObjectTypes.Document)
             .Where(e => e.Name?.Contains(query, StringComparison.OrdinalIgnoreCase) == true)
-            .Select(e => new EntityRef(Type, e.Key, e.Name!, EditUrl(e.Key)))
+            .Select(e => new EntitySummary(Type, e.Key, e.Name!, EditUrl(e.Key)))
             .ToList());
 
-    public EntityRef ToRef(EntityDocument document)
-        => new(Type, document.Key, EntityValues.ReadAny(document.Root, CmsStructureMapper.NameField)?.GetValue<string>() ?? "(unnamed)", EditUrl(document.Key));
+    public EntitySummary ToSummary(Entity document)
+        => new(Type, document.Key, EntityValues.ReadAny(document.Fields, CmsSchemaMapper.NameField)?.GetValue<string>() ?? "(unnamed)", EditUrl(document.Key));
 
     // ── Authorization: the CMS's own permission model ─────────────────────────────────────────────
 
@@ -208,7 +208,7 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
         ContentAuthorizationStatus status;
         if (request.Permission == EntityPermission.Create)
         {
-            var parent = request.Document?.Root[CmsStructureMapper.ParentField] is { } node && Guid.TryParse(node.ToString(), out var key) ? key : (Guid?)null;
+            var parent = request.Entity?.Fields[CmsSchemaMapper.ParentField] is { } node && Guid.TryParse(node.ToString(), out var key) ? key : (Guid?)null;
             status = parent is { } parentKey
                 ? await _permissions.AuthorizeAccessAsync(user, parentKey, permission)
                 : await _permissions.AuthorizeRootAccessAsync(user, permission);
@@ -238,17 +238,17 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
     public Task<Guid> CreateDraftAsync(string name, CancellationToken cancellationToken = default)
         => Task.FromResult(_draftSets.Create(name).Id);
 
-    public async Task<EntityDocument?> LoadDraftAsync(Guid draftId, Guid key, CancellationToken cancellationToken = default)
-        => await _draftSets.GetAsync(draftId, EntityUdis.For(Type, key)) is { } content ? await ToDocumentAsync(content) : null;
+    public async Task<Entity?> LoadDraftAsync(Guid draftId, Guid key, CancellationToken cancellationToken = default)
+        => await _draftSets.GetAsync(draftId, EntityUdis.For(Type, key)) is { } content ? await ToEntityAsync(content) : null;
 
     /// <summary>
     /// Stages an edit. New content is staged whole. For existing content only the values the edit changed are staged,
     /// per property, culture and segment, so the draft set can rebase onto values others change meanwhile.
     /// </summary>
-    public async Task StageAsync(Guid draftId, EntityDocument? before, EntityDocument after, CancellationToken cancellationToken = default)
+    public async Task StageAsync(Guid draftId, Entity? before, Entity after, CancellationToken cancellationToken = default)
     {
         var model = await BuildModelAsync(after);
-        if (before is null || before.LiveVersion is null)
+        if (before is null || before.Version is null)
         {
             _draftSets.StageNew(draftId, new DraftContent
             {
@@ -266,10 +266,10 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
         var type = DocumentType(after.Subtype);
         var map = await _mapper.MapAsync(type, isDocument: true);
         var touched = new HashSet<(string Alias, string? Culture, string? Segment)>();
-        foreach (var change in EntityDiff.Compare(before.Root, after.Root, map.Shape, _itemTypes))
+        foreach (var change in EntityDiff.Compare(before.Fields, after.Fields, map.Schema, _itemTypes))
         {
             var alias = change.Path.Split('/')[0];
-            if (alias == CmsStructureMapper.NameField)
+            if (alias == CmsSchemaMapper.NameField)
             {
                 touched.Add((DraftSetService.NameAlias, type.VariesByCulture() ? change.Variant.Culture : null, null));
             }
@@ -292,7 +292,7 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
         foreach (var rebase in await _draftSets.GetRebaseAsync(draftId))
         {
             var live = await LoadAsync(rebase.Entity.Guid, cancellationToken);
-            var entity = live is not null ? ToRef(live) : new EntityRef(Type, rebase.Entity.Guid, "(deleted)", EditUrl(rebase.Entity.Guid));
+            var entity = live is not null ? ToSummary(live) : new EntitySummary(Type, rebase.Entity.Guid, "(deleted)", EditUrl(rebase.Entity.Guid));
             if (rebase.DeletedLive)
             {
                 result.Add(new RebasedEntity(entity, ["(deleted)"], [new ChangeSetConflict(entity, string.Empty, null, null, null, null, null)]));
@@ -312,7 +312,7 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
         => _draftSets.ResolveAsync(
             draftId,
             EntityUdis.For(Type, key),
-            path == CmsStructureMapper.NameField ? DraftSetService.NameAlias : path,
+            path == CmsSchemaMapper.NameField ? DraftSetService.NameAlias : path,
             variant.Culture,
             variant.Segment,
             keep == ConflictSide.Yours ? DraftKeep.Draft : DraftKeep.Live);
@@ -325,7 +325,7 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
         return Task.CompletedTask;
     }
 
-    private static string PathOf(string alias) => alias == DraftSetService.NameAlias ? CmsStructureMapper.NameField : alias;
+    private static string PathOf(string alias) => alias == DraftSetService.NameAlias ? CmsSchemaMapper.NameField : alias;
 
     private static string EditUrl(Guid key) => $"/umbraco/section/content/workspace/document/edit/{key}";
 
@@ -344,7 +344,7 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
     // ── Reading block values into items ────────────────────────────────────────────────────
 
     /// <summary>Property values (a document's or a block's) into an object: a field's JSON, or a block property's items.</summary>
-    private async Task ReadValuesAsync(JsonObject owner, IEnumerable<(string Alias, string? Culture, string? Segment, JsonNode? Value)> values, ShapeMap map)
+    private async Task ReadValuesAsync(JsonObject owner, IEnumerable<(string Alias, string? Culture, string? Segment, JsonNode? Value)> values, SchemaMap map)
     {
         foreach (var (alias, culture, segment, value) in values)
         {
@@ -407,12 +407,12 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
             item[SettingsKeyProperty] = settingsKey.ToString();
             var settingsValues = new JsonObject();
             await ReadValuesAsync(settingsValues, BlockValues(settings), await _mapper.MapAsync(_mapper.RequireType(settingsType), isDocument: false));
-            item[CmsStructureMapper.SettingsField] = settingsValues;
+            item[CmsSchemaMapper.SettingsField] = settingsValues;
         }
 
         if (layoutItem is BlockGridLayoutItem gridItem)
         {
-            item[CmsStructureMapper.LayoutField] = new JsonObject { ["columnSpan"] = gridItem.ColumnSpan, ["rowSpan"] = gridItem.RowSpan };
+            item[CmsSchemaMapper.LayoutField] = new JsonObject { ["columnSpan"] = gridItem.ColumnSpan, ["rowSpan"] = gridItem.RowSpan };
             foreach (var area in gridItem.Areas ?? [])
             {
                 var areaItems = new JsonArray();
@@ -433,13 +433,13 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
 
     // ── Writing the working copy as a content model ────────────────────────────────────────────
 
-    private async Task<ContentModel> BuildModelAsync(EntityDocument document)
+    private async Task<ContentModel> BuildModelAsync(Entity document)
     {
         var type = DocumentType(document.Subtype);
         var map = await _mapper.MapAsync(type, isDocument: true);
-        var root = document.Root;
-        var cultures = EntityValues.VariantsIn(root, map.Shape, _itemTypes).Select(v => v.Culture).OfType<string>().Distinct().ToList();
-        var nameField = map.Shape.Find(CmsStructureMapper.NameField)!;
+        var root = document.Fields;
+        var cultures = EntityValues.VariantsIn(root, map.Schema, _itemTypes).Select(v => v.Culture).OfType<string>().Distinct().ToList();
+        var nameField = map.Schema.Find(CmsSchemaMapper.NameField)!;
         var index = new ErrorIndex();
 
         var variants = new List<VariantModel>();
@@ -464,7 +464,7 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
         {
             // A value that varies by segment only has no culture, but a culture-variant document's variants all need one
             // (ContentEditingServiceBase refuses a variant without): name its segment in each of the document's cultures.
-            var segments = EntityValues.OwnVariants(root, map.Shape)
+            var segments = EntityValues.OwnVariants(root, map.Schema)
                 .Where(v => v.Segment is not null)
                 .SelectMany(v => v.Culture is null && type.VariesByCulture() ? cultures.Select(c => CmsVariants.Of(c, v.Segment)) : [CmsVariants.Of(v.Culture, v.Segment)])
                 .Distinct();
@@ -486,7 +486,7 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
         }
 
         var properties = values.Select(v => new PropertyValueModel { Alias = v.Alias, Value = ToModelValue(v.Value), Culture = v.Culture, Segment = v.Segment }).ToList();
-        var parent = root[CmsStructureMapper.ParentField] is { } parentNode && Guid.TryParse(parentNode.ToString(), out var parentKey) ? parentKey : (Guid?)null;
+        var parent = root[CmsSchemaMapper.ParentField] is { } parentNode && Guid.TryParse(parentNode.ToString(), out var parentKey) ? parentKey : (Guid?)null;
         return new ContentModel(document.Key, type.Key, parent, variants, properties, values, index);
     }
 
@@ -524,7 +524,7 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
             List<string?> exposedIn = [envelopeCulture];
             if (elementMap.Variations.VariesByCulture())
             {
-                var own = EntityValues.OwnVariants(item, elementMap.Shape).Select(v => v.Culture).OfType<string>().Distinct().Cast<string?>().ToList();
+                var own = EntityValues.OwnVariants(item, elementMap.Schema).Select(v => v.Culture).OfType<string>().Distinct().Cast<string?>().ToList();
                 exposedIn = own.Count > 0 ? own : envelopeCulture is not null ? [envelopeCulture] : documentCultures.Cast<string?>().ToList();
             }
 
@@ -539,9 +539,9 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
             {
                 settingsKey = item[SettingsKeyProperty] is { } stored ? Guid.Parse(stored.ToString()) : DerivedKey(key, "settings");
                 var settingsMap = await _mapper.MapAsync(_mapper.RequireType(settingsType), isDocument: false);
-                var settingsPath = $"{path}/{CmsStructureMapper.SettingsField}";
+                var settingsPath = $"{path}/{CmsSchemaMapper.SettingsField}";
                 var settingsNested = new Envelopes();
-                var settingsValues = await WriteValuesAsync(item[CmsStructureMapper.SettingsField] as JsonObject ?? [], settingsMap, documentCultures, envelopeCulture, settingsPath, settingsNested);
+                var settingsValues = await WriteValuesAsync(item[CmsSchemaMapper.SettingsField] as JsonObject ?? [], settingsMap, documentCultures, envelopeCulture, settingsPath, settingsNested);
                 settingsData.Add(new BlockItemData { Key = settingsKey.Value, ContentTypeKey = settingsType, Values = settingsValues });
                 index.Settings.Add(new IndexedElement(key, settingsPath, settingsValues, settingsNested));
             }
@@ -563,7 +563,7 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
                 areas.Add(new BlockGridLayoutAreaItem(area.Key) { Items = [.. areaItems] });
             }
 
-            var layout = item[CmsStructureMapper.LayoutField] as JsonObject;
+            var layout = item[CmsSchemaMapper.LayoutField] as JsonObject;
             return new BlockGridLayoutItem
             {
                 ContentKey = key,
@@ -586,7 +586,7 @@ public sealed class CmsDocumentDefinition : IDraftingEntityDefinition, IAuthoriz
             : new BlockListValue { Layout = blocks, ContentData = contentData, SettingsData = settingsData, Expose = expose };
     }
 
-    private async Task<List<BlockPropertyValue>> WriteValuesAsync(JsonObject owner, ShapeMap map, IReadOnlyList<string> documentCultures, string? envelopeCulture, string path, Envelopes nested)
+    private async Task<List<BlockPropertyValue>> WriteValuesAsync(JsonObject owner, SchemaMap map, IReadOnlyList<string> documentCultures, string? envelopeCulture, string path, Envelopes nested)
     {
         var values = new List<BlockPropertyValue>();
         foreach (var property in map.Properties.Values)

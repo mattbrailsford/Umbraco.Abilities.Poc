@@ -13,7 +13,7 @@ using Umbraco.Abilities.Samples.Commerce.Domain;
 namespace Umbraco.Abilities.Samples.Commerce;
 
 // ── The editing contracts: plain C# classes, separate from Commerce's domain model (Domain.cs). Everything the
-// AI and change sets need is derived from them; the definition maps them to and from the domain. ─────────────
+// AI and change sets need is derived from them; the adapter maps them to and from the domain. ─────────────
 
 [Entity("umbraco-commerce-collection", "Collection", Description = "A product collection.")]
 public sealed class Collection
@@ -55,20 +55,20 @@ public sealed class DiscountEditModel
     [Description("Whether the discount is live. Use commerce.activateDiscount to switch it on.")]
     public bool? Active { get; set; }
 
-    [Items(DiscountDefinition.RuleGroup, Min = 1), Description("All rules must match for the discount to apply.")]
+    [Items(DiscountAdapter.RuleGroup, Min = 1), Description("All rules must match for the discount to apply.")]
     public List<DynamicItem> Rules { get; set; } = [];
 
-    [Items(DiscountDefinition.RewardGroup, Min = 1, Max = 3), Description("What the customer gets.")]
+    [Items(DiscountAdapter.RewardGroup, Min = 1, Max = 3), Description("What the customer gets.")]
     public List<DynamicItem> Rewards { get; set; } = [];
 }
 
 // Rules and rewards are a plugin seam: Commerce and other packages register providers (Providers.cs), so their item
 // types come from the provider collections at run time (DiscountProviderItemTypes below), not from classes here.
 
-// ── The definitions: load, save, and the rules attributes can't express. ─────────────────────────────────
+// ── The adapters: load, save, and the rules attributes can't express. ─────────────────────────────────
 
-public sealed class CollectionDefinition(InMemoryDatabase database, ItemTypeRegistry itemTypes)
-    : InMemoryModelDefinition<Collection>(database, itemTypes, "/umbraco/section/commerce/collection")
+public sealed class CollectionAdapter(InMemoryDatabase database, ItemTypeRegistry itemTypes)
+    : InMemoryModelAdapter<Collection>(database, itemTypes, "/umbraco/section/commerce/collection")
 {
     public override bool CanCreate => false;
 
@@ -82,15 +82,15 @@ public sealed class CollectionDefinition(InMemoryDatabase database, ItemTypeRegi
 
 /// <summary>
 /// Maps Commerce's own discount model to and from its editing contract. This mapping is the part a package writes by
-/// hand; the structure, schemas, paths, validation and change sets come from <see cref="DiscountEditModel"/>.
+/// hand; the schema, schemas, paths, validation and change sets come from <see cref="DiscountEditModel"/>.
 /// </summary>
-public sealed class DiscountDefinition(
+public sealed class DiscountAdapter(
     DiscountService discounts,
     DiscountProviderCollection ruleProviders,
     DiscountProviderCollection rewardProviders,
     InMemoryDatabase unitOfWork,
     ItemTypeRegistry itemTypes)
-    : EntityDefinitionBase<DiscountEditModel>(itemTypes, unitOfWork), IAuthorizingEntityDefinition
+    : EntityAdapterBase<DiscountEditModel>(itemTypes, unitOfWork), IAuthorizingEntityAdapter
 {
     /// <summary>Real Commerce would check the Commerce section and the user's access to the discount's store.</summary>
     public SampleAccess? Access { get; set; }
@@ -205,7 +205,7 @@ public sealed class DiscountProviderItemTypes(string group, DiscountProviderColl
             ItemTypeFields.Text(provider.Label) ?? provider.Alias,
             ItemTypeFields.Text(provider.Description)
                 ?? $"Commerce gives this provider no description, only a localization key. Describe it in plain words from its alias, '{provider.Alias}'.",
-            new ElementShape(fields))
+            new ObjectSchema(fields))
         {
             AvailableTo = availableTo,
         };
@@ -244,7 +244,7 @@ internal static class ProviderItems
         if (rule.Children is { Count: > 0 } children)
         {
             // A group's child rules are an items field like any other: an array of keyed, typed items.
-            item.Fields[Children] = new JsonArray(children.Select((c, i) => (JsonNode?)ToJson(ToItem(providers, c, DiscountDefinition.DerivedKey(key, i, c.RuleProviderAlias)))).ToArray());
+            item.Fields[Children] = new JsonArray(children.Select((c, i) => (JsonNode?)ToJson(ToItem(providers, c, DiscountAdapter.DerivedKey(key, i, c.RuleProviderAlias)))).ToArray());
         }
 
         return item;
@@ -252,11 +252,11 @@ internal static class ProviderItems
 
     public static DynamicItem ToItem(DiscountProviderCollection providers, string alias, IReadOnlyDictionary<string, string> settings, Guid key)
     {
-        var definitions = providers.Find(alias)?.SettingDefinitions ?? [];
+        var adapters = providers.Find(alias)?.SettingDefinitions ?? [];
         var item = new DynamicItem { Key = key, Type = alias };
         foreach (var (settingKey, text) in settings)
         {
-            var type = definitions.FirstOrDefault(d => d.Key == settingKey)?.PropertyType ?? typeof(string);
+            var type = adapters.FirstOrDefault(d => d.Key == settingKey)?.PropertyType ?? typeof(string);
             var target = Nullable.GetUnderlyingType(type) ?? type;
             item.Fields[settingKey] = target.IsPrimitive || target == typeof(decimal) ? JsonNode.Parse(text) : JsonValue.Create(text);
         }
@@ -281,7 +281,7 @@ public sealed record ActivateDiscountInput(
 /// <summary>Run directly it saves the discount; inside a change set it is recorded as a change to the discount.</summary>
 [Ability("commerce.activateDiscount", "Activate discount", Kind = AbilityKind.Write,
     Description = "Switches a discount on so customers get it.")]
-public sealed class ActivateDiscountAbility(DiscountDefinition discounts) : ModelEditAbilityBase<ActivateDiscountInput, DiscountEditModel>(discounts)
+public sealed class ActivateDiscountAbility(DiscountAdapter discounts) : ModelEditAbilityBase<ActivateDiscountInput, DiscountEditModel>(discounts)
 {
     protected override Guid KeyOf(ActivateDiscountInput input) => input.Discount;
 

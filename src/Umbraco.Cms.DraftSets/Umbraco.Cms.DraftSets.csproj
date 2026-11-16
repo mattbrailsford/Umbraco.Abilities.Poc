@@ -6,5 +6,7 @@
   <ItemGroup>
     <PackageReference Include="Umbraco.Cms.Core" />
     <PackageReference Include="Umbraco.Cms.Infrastructure" />
+    <!-- Raises a vulnerable transitive version; see Directory.Packages.props -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
   </ItemGroup>
 </Project>

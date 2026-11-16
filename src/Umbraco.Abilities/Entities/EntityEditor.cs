@@ -3,8 +3,8 @@ using System.Text.Json.Nodes;
 
 namespace Umbraco.Abilities.Entities;
 
-/// <summary>What an edit works on: the document, its structure, the item types, and the variant being edited.</summary>
-public sealed record EditTarget(EntityDocument Document, EntityStructure Structure, ItemTypeRegistry ItemTypes, VariantId Variant);
+/// <summary>What an edit works on: the entity, its schema, the item types, and the variant being edited.</summary>
+public sealed record EditTarget(Entity Entity, EntitySchema Schema, ItemTypeRegistry ItemTypes, VariantId Variant);
 
 /// <summary>
 /// Edits an entity by path. A path goes down through values: in an object a step is a field alias, in an items field a
@@ -19,7 +19,7 @@ public static class EntityEditor
 
     /// <summary>What a path points at, for editing: the variant of each varying value on the way is the edit's.</summary>
     public static PathTarget Find(EditTarget target, string path, bool create = true)
-        => EntityValues.Find(target.Document.Root, target.Structure.Shape, target.ItemTypes, path, (field, at) => RequireVariant(target, field.VariesBy, at), create);
+        => EntityValues.Find(target.Entity.Fields, target.Schema.Root, target.ItemTypes, path, (field, at) => RequireVariant(target, field.VariesBy, at), create);
 
     /// <summary>Sets the value at a path. Returns the path.</summary>
     public static string SetValue(EditTarget target, string path, JsonNode? value)
@@ -35,7 +35,7 @@ public static class EntityEditor
     }
 
     /// <summary>Sets fields of an object (the entity, or a new item) from a JSON object of values by alias.</summary>
-    public static void SetFields(EditTarget target, JsonObject owner, ElementShape shape, string path, JsonObject? values)
+    public static void SetFields(EditTarget target, JsonObject owner, ObjectSchema schema, string path, JsonObject? values)
     {
         var problems = new List<Problem>();
         foreach (var (alias, value) in values ?? [])
@@ -43,8 +43,8 @@ public static class EntityEditor
             var fieldPath = Join(path, alias);
             try
             {
-                var field = shape.Find(alias)
-                    ?? throw Invalid(fieldPath, $"No field '{alias}' here. Fields: {EntityValues.Names(shape.Fields.Select(f => f.Alias))}.");
+                var field = schema.Find(alias)
+                    ?? throw Invalid(fieldPath, $"No field '{alias}' here. Fields: {EntityValues.Names(schema.Fields.Select(f => f.Alias))}.");
                 SetField(owner, field, fieldPath, RequireVariant(target, field.VariesBy, fieldPath), value);
             }
             catch (AbilityInputException ex)
@@ -81,7 +81,7 @@ public static class EntityEditor
         var item = EntityValues.NewItem(key, itemType.Alias);
         items.Insert(position is { } p ? Math.Clamp(p, 0, items.Count) : items.Count, item);
         var itemPath = Join(at.Path, key.ToString());
-        SetFields(target, item, itemType.Shape, itemPath, fields);
+        SetFields(target, item, itemType.Schema, itemPath, fields);
         Notify(at, (handler, value, inside) => handler.ItemAdded(value, inside, key));
         return itemPath;
     }
@@ -114,7 +114,7 @@ public static class EntityEditor
         var variant = target.Variant.Narrow(variesBy);
         foreach (var name in variesBy)
         {
-            if (target.Structure.Dimension(name)?.Values is not { } values)
+            if (target.Schema.Dimension(name)?.Values is not { } values)
             {
                 continue;
             }
@@ -247,7 +247,7 @@ public static class FieldChecker
 
         if (field.Type == FieldType.Json)
         {
-            return null; // Checked against the editor's own schema by the entity definition.
+            return null; // Checked against the editor's own schema by the entity adapter.
         }
 
         if (field.Type == FieldType.Object)

@@ -33,17 +33,17 @@ using Umbraco.Extensions;
 namespace Umbraco.Abilities.Cms.Tests;
 
 /// <summary>
-/// The CMS document definition against a real Umbraco (SQLite): culture-variant documents with a Block List
+/// The CMS document adapter against a real Umbraco (SQLite): culture-variant documents with a Block List
 /// (blocks with culture-variant values and a settings element) and a Block Grid (placement and areas), built
 /// through the AI tools in a change set, validated by Umbraco, and saved through IContentEditingService.
 /// </summary>
 [TestFixture]
 [UmbracoTest(Database = UmbracoTestOptions.Database.NewSchemaPerTest, WithApplication = true)]
-public sealed class CmsDocumentDefinitionTests : UmbracoIntegrationTest
+public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
 {
     private IContentType _page = null!;
     private Agent _agent = null!;
-    private CmsDocumentDefinition _documents = null!;
+    private CmsDocumentAdapter _documents = null!;
     private ChangeSetService _changeSets = null!;
     private DraftSetService _draftSets = null!;
 
@@ -155,13 +155,13 @@ public sealed class CmsDocumentDefinitionTests : UmbracoIntegrationTest
         await ContentTypeService.CreateAsync(_page, Constants.Security.SuperUserKey);
 
         // The framework: generic abilities, the change set service applying inside an Umbraco scope, and the
-        // CMS document definition.
+        // CMS document adapter.
         var abilities = new AbilityRegistry();
-        var definitions = new EntityDefinitionRegistry();
+        var adapters = new EntityAdapterRegistry();
         var itemTypes = new ItemTypeRegistry();
         VetoHandler.Applied.Clear();
         VetoHandler.SideEffects.Clear();
-        _changeSets = new ChangeSetService(new InMemoryChangeSetStore(), abilities, definitions, itemTypes, GetRequiredService<IEventAggregator>(), GetRequiredService<IBackgroundTaskQueue>(), TimeSpan.Zero);
+        _changeSets = new ChangeSetService(new InMemoryChangeSetStore(), abilities, adapters, itemTypes, GetRequiredService<IEventAggregator>(), GetRequiredService<IBackgroundTaskQueue>(), TimeSpan.Zero);
         _draftSets = new DraftSetService(
             ContentEditingService,
             GetRequiredService<PropertyEditorCollection>(),
@@ -169,7 +169,7 @@ public sealed class CmsDocumentDefinitionTests : UmbracoIntegrationTest
             GetRequiredService<ICoreScopeProvider>(),
             GetRequiredService<IEventAggregator>(),
             GetRequiredService<IAuditService>());
-        _documents = new CmsDocumentDefinition(
+        _documents = new CmsDocumentAdapter(
             ContentTypeService,
             GetRequiredService<IDataTypeService>(),
             GetRequiredService<ILanguageService>(),
@@ -183,12 +183,12 @@ public sealed class CmsDocumentDefinitionTests : UmbracoIntegrationTest
             new CmsScopeUnitOfWorkProvider(GetRequiredService<ICoreScopeProvider>()),
             () => Constants.Security.SuperUserKey,
             GetRequiredService<IPropertyEditorSchemaService>());
-        definitions.Add(_documents);
+        adapters.Add(_documents);
 
         abilities
-            .Add(new GetEntitySchemaAbility(definitions, itemTypes))
-            .Add(new FindEntityAbility(definitions, _changeSets))
-            .Add(new GetEntityAbility(definitions, _changeSets))
+            .Add(new GetEntitySchemaAbility(adapters, itemTypes))
+            .Add(new FindEntityAbility(adapters, _changeSets))
+            .Add(new GetEntityAbility(adapters, _changeSets))
             .Add(new CreateEntityAbility())
             .Add(new SetEntityValueAbility())
             .Add(new AddEntityItemAbility())
@@ -262,15 +262,15 @@ public sealed class CmsDocumentDefinitionTests : UmbracoIntegrationTest
         Assert.That(rowLayout["columnSpan"]!.GetValue<int>(), Is.EqualTo(12));
         Assert.That(rowLayout["areas"]!.AsArray().Single(a => a!["items"]!.AsArray().Count > 0)!["items"]![0]!["contentKey"]!.ToString(), Is.EqualTo(page.AreaText.ToString()));
 
-        // And loading it back through the definition gives the same working copy shape.
+        // And loading it back through the adapter gives the same entity.
         var loaded = (await _documents.LoadAsync(page.Key))!;
         // A value tree: blocks are keyed items, settings and layout are objects, and a varying value is per culture.
-        var hero = loaded.Root["blocks"]!.AsArray().Single(b => EntityValues.KeyOf(b!.AsObject()) == page.Hero)!;
+        var hero = loaded.Fields["blocks"]!.AsArray().Single(b => EntityValues.KeyOf(b!.AsObject()) == page.Hero)!;
         Assert.Multiple(() =>
         {
             Assert.That(hero["heading"]!["da-DK"]!.ToString(), Is.EqualTo("Sommerudsalg"));
             Assert.That(hero["settings"]!["theme"]!.ToString(), Is.EqualTo("dark"));
-            var row = loaded.Root["grid"]![0]!;
+            var row = loaded.Fields["grid"]![0]!;
             Assert.That(row["layout"]!["columnSpan"]!.GetValue<int>(), Is.EqualTo(12));
             Assert.That(EntityValues.KeyOf(row["left"]![0]!.AsObject()), Is.EqualTo(page.AreaText));
         });
@@ -291,13 +291,13 @@ public sealed class CmsDocumentDefinitionTests : UmbracoIntegrationTest
         var empty = await AddItemAsync(page, "blocks", "hero", "{}");
         await SetAsync(page, $"{empty}/settings", "theme", "\"light\"");
 
-        // Ask Umbraco directly, skipping the generic structure check, to see its own errors mapped back.
+        // Ask Umbraco directly, skipping the generic schema check, to see its own errors mapped back.
         var working = (await _changeSets.GetWorkingStateAsync(_changeSets.Get(_agent.ChangeSetId!.Value), "document", page))!;
         var problems = (await _documents.ValidateAsync(working)).Select(p => $"{p.Path}|{p.Variant?.GetValueOrDefault("culture")}").ToList();
 
         Assert.That(problems, Is.EquivalentTo(new[] { "subtitle|da-DK", $"{empty}/heading|en-US", $"{empty}/heading|da-DK" }), string.Join(", ", problems));
 
-        // The generic structure check agrees with Umbraco, including about the English-only hero.
+        // The generic schema check agrees with Umbraco, including about the English-only hero.
         var generic = await _agent.OkAsync("changeSet_validate", SetJson());
         Assert.That(generic.GetProperty("entities")[0].GetProperty("problems").EnumerateArray().Select(p => $"{p.GetProperty("path").GetString()}|{p.GetProperty("variant").GetProperty("culture").GetString()}"),
             Is.EquivalentTo(new[] { "subtitle|da-DK", $"{empty}/heading|en-US", $"{empty}/heading|da-DK" }));
@@ -729,7 +729,7 @@ public sealed class CmsDocumentDefinitionTests : UmbracoIntegrationTest
         });
 
         var loaded = (await _documents.LoadAsync(page))!;
-        Assert.That(loaded.Root["heading"]!.AsObject().Select(v => $"{v.Key}:{v.Value}"),
+        Assert.That(loaded.Fields["heading"]!.AsObject().Select(v => $"{v.Key}:{v.Value}"),
             Is.EquivalentTo(new[] { "en-US:Summer", "en-US|vip:Summer, for our VIPs", "en-US|new:Summer, for new visitors" }));
     }
 
@@ -752,7 +752,7 @@ public sealed class CmsDocumentDefinitionTests : UmbracoIntegrationTest
             Is.EquivalentTo(new[] { "en-US|:Sale", "en-US|vip:Early access for VIPs" }));
 
         var loaded = (await _documents.LoadAsync(page))!;
-        Assert.That(loaded.Root["promos"]![0]!["text"]!.AsObject().Select(v => $"{v.Key}:{v.Value}"),
+        Assert.That(loaded.Fields["promos"]![0]!["text"]!.AsObject().Select(v => $"{v.Key}:{v.Value}"),
             Is.EquivalentTo(new[] { "en-US:Sale", "en-US|vip:Early access for VIPs" }));
     }
 
@@ -802,7 +802,7 @@ public sealed class CmsDocumentDefinitionTests : UmbracoIntegrationTest
         });
 
         var loaded = (await _documents.LoadAsync(page))!;
-        Assert.That(loaded.Root["banner"]!.AsObject().Select(v => $"{v.Key}:{v.Value}"),
+        Assert.That(loaded.Fields["banner"]!.AsObject().Select(v => $"{v.Key}:{v.Value}"),
             Is.EquivalentTo(new[] { ":Free shipping", "vip:Free shipping and gifts" }));
     }
 

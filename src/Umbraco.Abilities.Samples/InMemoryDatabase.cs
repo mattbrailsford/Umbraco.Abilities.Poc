@@ -73,11 +73,11 @@ public sealed class InMemoryDatabase(string name) : IUnitOfWorkProvider
 }
 
 /// <summary>
-/// Sample storage for a typed model: the model is kept in its document form. A real product loads and saves its own
-/// model instead (Commerce's discount service, for example), and its definition is just as short.
+/// Sample storage for a typed model: the model is kept in its entity form. A real product loads and saves its own
+/// model instead (Commerce's discount service, for example), and its adapter is just as short.
 /// </summary>
-public abstract class InMemoryModelDefinition<TModel>(InMemoryDatabase database, ItemTypeRegistry itemTypes, string editUrlPrefix)
-    : EntityDefinitionBase<TModel>(itemTypes, database), IAuthorizingEntityDefinition
+public abstract class InMemoryModelAdapter<TModel>(InMemoryDatabase database, ItemTypeRegistry itemTypes, string editUrlPrefix)
+    : EntityAdapterBase<TModel>(itemTypes, database), IAuthorizingEntityAdapter
     where TModel : class
 {
     protected InMemoryDatabase Database { get; } = database;
@@ -88,37 +88,37 @@ public abstract class InMemoryModelDefinition<TModel>(InMemoryDatabase database,
         => Task.FromResult(Access?.Authorize(EntityType, request));
 
     public override Task<TModel?> LoadModelAsync(Guid key, CancellationToken cancellationToken = default)
-        => Task.FromResult(Database.Get(EntityType, key) is { } row ? ToModel(Document(key, row)) : null);
+        => Task.FromResult(Database.Get(EntityType, key) is { } row ? ToModel(FromRow(key, row)) : null);
 
     public override Task SaveModelAsync(TModel model, CancellationToken cancellationToken = default)
     {
-        var document = ToDocument(model);
-        Database.Put(EntityType, document.Key, document.Root);
+        var entity = ToEntity(model);
+        Database.Put(EntityType, entity.Key, entity.Fields);
         return Task.CompletedTask;
     }
 
     /// <summary>Every stored model, for checks across entities such as unique codes.</summary>
-    protected IEnumerable<TModel> All() => Database.All(EntityType).Select(r => ToModel(Document(r.Key, r.Row)));
+    protected IEnumerable<TModel> All() => Database.All(EntityType).Select(r => ToModel(FromRow(r.Key, r.Row)));
 
     protected override Task<IReadOnlyList<TModel>> FindModelsAsync(string query, CancellationToken cancellationToken)
-        => Task.FromResult<IReadOnlyList<TModel>>(All().Where(m => ToRef(ToDocument(m)).Name.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList());
+        => Task.FromResult<IReadOnlyList<TModel>>(All().Where(m => ToSummary(ToEntity(m)).Name.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList());
 
     protected override string? GetEditUrl(Guid key) => $"{editUrlPrefix}/{key}";
 
     /// <summary>A stored version, for products that keep version history.</summary>
-    protected EntityDocument? LoadVersion(Guid key, long version)
-        => Database.GetVersion(EntityType, key, version) is { } row ? Document(key, row) : null;
+    protected Entity? LoadVersion(Guid key, long version)
+        => Database.GetVersion(EntityType, key, version) is { } row ? FromRow(key, row) : null;
 
-    private EntityDocument Document(Guid key, InMemoryDatabase.Row row)
-        => new() { EntityType = EntityType, Key = key, LiveVersion = row.Version, Root = row.Root };
+    private Entity FromRow(Guid key, InMemoryDatabase.Row row)
+        => new() { EntityType = EntityType, Key = key, Version = row.Version, Fields = row.Root };
 }
 
 /// <summary>
-/// A definition written against entity documents rather than a model class: the escape hatch for entities whose
-/// structure isn't a C# class, such as an Automate workflow whose step types are other packages' abilities.
+/// An adapter written against entities rather than a model class: the escape hatch for entities whose
+/// schema isn't a C# class, such as an Automate workflow whose step types are other packages' abilities.
 /// </summary>
-public abstract class InMemoryEntityDefinition(InMemoryDatabase database, string entityType, string nameField, string editUrlPrefix)
-    : IAuthorizingEntityDefinition
+public abstract class InMemoryEntityAdapter(InMemoryDatabase database, string entityType, string nameField, string editUrlPrefix)
+    : IAuthorizingEntityAdapter
 {
     protected InMemoryDatabase Database { get; } = database;
 
@@ -133,33 +133,33 @@ public abstract class InMemoryEntityDefinition(InMemoryDatabase database, string
 
     public IUnitOfWorkProvider UnitOfWork => Database;
 
-    public abstract Task<EntityStructure> DescribeAsync(string? subtype, CancellationToken cancellationToken = default);
+    public abstract Task<EntitySchema> GetSchemaAsync(string? subtype, CancellationToken cancellationToken = default);
 
     public Task<IReadOnlyList<EntitySubtype>> GetSubtypesAsync(CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<EntitySubtype>>([]);
 
-    public EntityDocument New(Guid key, string? subtype) => new() { EntityType = EntityType, Key = key };
+    public Entity New(Guid key, string? subtype) => new() { EntityType = EntityType, Key = key };
 
-    public Task<EntityDocument?> LoadAsync(Guid key, CancellationToken cancellationToken = default)
+    public Task<Entity?> LoadAsync(Guid key, CancellationToken cancellationToken = default)
         => Task.FromResult(Database.Get(EntityType, key) is { } row
-            ? new EntityDocument { EntityType = EntityType, Key = key, LiveVersion = row.Version, Root = row.Root }
+            ? new Entity { EntityType = EntityType, Key = key, Version = row.Version, Fields = row.Root }
             : null);
 
-    public virtual Task<IReadOnlyList<Problem>> ValidateAsync(EntityDocument document, CancellationToken cancellationToken = default)
+    public virtual Task<IReadOnlyList<Problem>> ValidateAsync(Entity entity, CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<Problem>>([]);
 
-    public virtual Task<EntityRef> SaveAsync(EntityDocument document, CancellationToken cancellationToken = default)
+    public virtual Task<EntitySummary> SaveAsync(Entity entity, CancellationToken cancellationToken = default)
     {
-        Database.Put(EntityType, document.Key, document.Root);
-        return Task.FromResult(ToRef(document));
+        Database.Put(EntityType, entity.Key, entity.Fields);
+        return Task.FromResult(ToSummary(entity));
     }
 
-    public Task<IReadOnlyList<EntityRef>> FindAsync(string query, CancellationToken cancellationToken = default)
-        => Task.FromResult<IReadOnlyList<EntityRef>>(Database.All(EntityType)
-            .Select(r => ToRef(new EntityDocument { EntityType = EntityType, Key = r.Key, Root = r.Row.Root }))
+    public Task<IReadOnlyList<EntitySummary>> FindAsync(string query, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<EntitySummary>>(Database.All(EntityType)
+            .Select(r => ToSummary(new Entity { EntityType = EntityType, Key = r.Key, Fields = r.Row.Root }))
             .Where(r => r.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
             .ToList());
 
-    public EntityRef ToRef(EntityDocument document)
-        => new(EntityType, document.Key, EntityValues.ReadAny(document.Root, nameField)?.GetValue<string>() ?? "(unnamed)", $"{editUrlPrefix}/{document.Key}");
+    public EntitySummary ToSummary(Entity entity)
+        => new(EntityType, entity.Key, EntityValues.ReadAny(entity.Fields, nameField)?.GetValue<string>() ?? "(unnamed)", $"{editUrlPrefix}/{entity.Key}");
 }

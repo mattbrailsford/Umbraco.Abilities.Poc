@@ -20,41 +20,41 @@ public class TypedModelTests
     [Fact]
     public async Task The_structure_comes_from_the_model_class_and_its_attributes()
     {
-        var discount = await _site.Discounts.DescribeAsync(null);
-        var fields = discount.Shape.Fields.ToDictionary(f => f.Alias);
+        var discount = await _site.Discounts.GetSchemaAsync(null);
+        var fields = discount.Root.Fields.ToDictionary(f => f.Alias);
 
         Assert.True(fields["name"].Required);
         Assert.Equal(FieldType.Date, fields["startDate"].Type);
         Assert.Equal("document", fields["landingPage"].ReferencesEntityType);
-        Assert.Equal(1, discount.Shape.Fields.Single(f => f.Alias == "rules").Min);
-        Assert.Equal(3, discount.Shape.Fields.Single(f => f.Alias == "rewards").Max);
+        Assert.Equal(1, discount.Root.Fields.Single(f => f.Alias == "rules").Min);
+        Assert.Equal(3, discount.Root.Fields.Single(f => f.Alias == "rewards").Max);
         Assert.DoesNotContain("key", fields.Keys);
         Assert.DoesNotContain("version", fields.Keys);
 
-        var customerGroup = _site.ItemTypes.Find(DiscountDefinition.RuleGroup, "customerGroup")!;
-        Assert.Equal(["VIP", "Wholesale", "Retail"], customerGroup.Shape.Fields.Single().Allowed);
+        var customerGroup = _site.ItemTypes.Find(DiscountAdapter.RuleGroup, "customerGroup")!;
+        Assert.Equal(["VIP", "Wholesale", "Retail"], customerGroup.Schema.Fields.Single().Allowed);
         Assert.Null(customerGroup.ClrType); // from Commerce's provider collection, not a class
     }
 
     [Fact]
     public async Task Varying_values_settings_layout_and_json_values_are_described_too()
     {
-        var page = await _site.Pages.DescribeAsync(null);
-        var fields = page.Shape.Fields.ToDictionary(f => f.Alias);
+        var page = await _site.Pages.GetSchemaAsync(null);
+        var fields = page.Root.Fields.ToDictionary(f => f.Alias);
 
         Assert.Equal(["en-US", "da-DK"], Assert.Single(page.Dimensions).Values);
         Assert.Equal(["culture"], fields["title"].VariesBy);
         Assert.True(fields["tags"].Many);
         Assert.Equal(["document", "media"], fields["related"].ReferencesAnyOf);
-        Assert.Equal(["culture"], page.Shape.Fields.Single(f => f.Alias == "promos").VariesBy);
-        Assert.Equal("columnSpan", _site.ItemTypes.Find(CmsPageDefinition.GridRootGroup, "richText")!.Shape.Find("layout")!.Shape!.Fields[0].Alias);
+        Assert.Equal(["culture"], page.Root.Fields.Single(f => f.Alias == "promos").VariesBy);
+        Assert.Equal("columnSpan", _site.ItemTypes.Find(CmsPageAdapter.GridRootGroup, "richText")!.Schema.Find("layout")!.Schema!.Fields[0].Alias);
 
-        var hero = _site.ItemTypes.Find(CmsPageDefinition.BlockGroup, "hero")!;
-        Assert.Equal(["light", "dark"], hero.Shape.Find("settings")!.Shape!.Find("theme")!.Allowed);
+        var hero = _site.ItemTypes.Find(CmsPageAdapter.BlockGroup, "hero")!;
+        Assert.Equal(["light", "dark"], hero.Schema.Find("settings")!.Schema!.Find("theme")!.Allowed);
 
-        var focalPoint = _site.ItemTypes.Find(CmsPageDefinition.MediaEntryGroup, "mediaEntry")!.Shape.Fields.Single(f => f.Alias == "focalPoint");
+        var focalPoint = _site.ItemTypes.Find(CmsPageAdapter.MediaEntryGroup, "mediaEntry")!.Schema.Fields.Single(f => f.Alias == "focalPoint");
         Assert.Equal(FieldType.Json, focalPoint.Type);
-        Assert.NotNull(focalPoint.Schema!["properties"]!["left"]);
+        Assert.NotNull(focalPoint.JsonSchema!["properties"]!["left"]);
     }
 
     [Fact]
@@ -70,8 +70,8 @@ public class TypedModelTests
             Image = [new MediaEntry { Media = Guid.NewGuid(), FocalPoint = new FocalPoint(0.5, 0.25) }],
         };
 
-        var document = _site.Pages.ToDocument(page);
-        var copy = _site.Pages.ToModel(document);
+        var entity = _site.Pages.ToEntity(page);
+        var copy = _site.Pages.ToModel(entity);
 
         Assert.Equal("Lancering", copy.Title["da-DK"]);
         var hero = Assert.IsType<Hero>(Assert.Single(copy.Blocks));
@@ -94,13 +94,13 @@ public class TypedModelTests
             StartDate = new DateOnly(2026, 12, 31),
             EndDate = new DateOnly(2026, 12, 1),
         };
-        var document = _site.Discounts.ToDocument(discount);
-        var structure = await _site.Discounts.DescribeAsync(null);
+        var entity = _site.Discounts.ToEntity(discount);
+        var schema = await _site.Discounts.GetSchemaAsync(null);
 
         IReadOnlyList<Problem> problems =
         [
-            .. await StructureValidator.ValidateAsync(document, structure, _site.ItemTypes, (_, _) => Task.FromResult(true)),
-            .. await _site.Discounts.ValidateAsync(document),
+            .. await SchemaValidator.ValidateAsync(entity, schema, _site.ItemTypes, (_, _) => Task.FromResult(true)),
+            .. await _site.Discounts.ValidateAsync(entity),
         ];
 
         Assert.Equal(
@@ -111,28 +111,28 @@ public class TypedModelTests
     [Fact]
     public async Task A_class_with_no_attributes_or_base_class_is_described_fluently()
     {
-        var media = await _site.Media.DescribeAsync(null);
-        var fields = media.Shape.Fields.ToDictionary(f => f.Alias);
+        var media = await _site.Media.GetSchemaAsync(null);
+        var fields = media.Root.Fields.ToDictionary(f => f.Alias);
 
         Assert.Equal("media", media.EntityType);
         Assert.True(fields["name"].Required);
         Assert.Equal(["name", "altText", "crops"], fields.Keys); // the key, version and server-side UpdateDate are not fields
-        Assert.Equal(CmsMediaDefinition.CropGroup, Assert.Single(media.Shape.ItemFields).ItemTypeGroup);
+        Assert.Equal(CmsMediaAdapter.CropGroup, Assert.Single(media.Root.ItemFields).ItemTypeGroup);
 
-        var crop = _site.ItemTypes.Find(CmsMediaDefinition.CropGroup, "crop")!;
+        var crop = _site.ItemTypes.Find(CmsMediaAdapter.CropGroup, "crop")!;
         Assert.Equal(typeof(MediaCropRequestModel), crop.ClrType);
-        Assert.All(crop.Shape.Fields, f => Assert.True(f.Required));
+        Assert.All(crop.Schema.Fields, f => Assert.True(f.Required));
 
         // Items keep their own key property and get a path without deriving from EntityItemModel.
         var request = new MediaRequestModel { Id = Guid.NewGuid(), Name = "Hero", Crops = [new MediaCropRequestModel { Alias = "wide", Width = 0, Height = 600 }] };
-        var copy = _site.Media.ToModel(_site.Media.ToDocument(request));
+        var copy = _site.Media.ToModel(_site.Media.ToEntity(request));
         var key = request.Crops[0].Id;
         Assert.NotEqual(Guid.Empty, key);
         Assert.Equal(key, copy.Crops[0].Id);
-        Assert.Equal($"crops/{key}", ModelShapes.PathOf(copy.Crops[0]));
+        Assert.Equal($"crops/{key}", ModelSchemas.PathOf(copy.Crops[0]));
 
         // A fluent rule is reported on the item's path, like an attribute.
-        var problems = await _site.Media.ValidateAsync(_site.Media.ToDocument(copy));
+        var problems = await _site.Media.ValidateAsync(_site.Media.ToEntity(copy));
         Assert.Equal([$"crops/{key}/width"], problems.Select(p => p.Path));
     }
 

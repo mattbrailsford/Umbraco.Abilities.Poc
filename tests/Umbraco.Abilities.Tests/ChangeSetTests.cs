@@ -96,7 +96,7 @@ public class ChangeSetTests
             failure.GetProperty("problems").EnumerateArray().Select(p => $"{p.GetProperty("path").GetString()}: {p.GetProperty("errorMessages")[0].GetString()}"));
 
         // The page is applied; the set is kept, and its applied part can no longer be edited in it.
-        Assert.Equal(1, (await _site.Pages.LoadAsync(page))!.LiveVersion);
+        Assert.Equal(1, (await _site.Pages.LoadAsync(page))!.Version);
         var locked = await _agent.FailAsync("entity_setValue", $$"""
             { "entityType": "document", "key": "{{page}}", "path": "title", "value": "Changed", "variant": { "culture": "en-US" } }
             """);
@@ -106,7 +106,7 @@ public class ChangeSetTests
         _site.Outbox.ServerDown = false;
         await _agent.OkAsync("changeSet_apply", $$"""{ "changeSetId": "{{_agent.ChangeSetId}}" }""");
         Assert.Single(_site.Outbox.Sent);
-        Assert.Equal(1, (await _site.Pages.LoadAsync(page))!.LiveVersion);
+        Assert.Equal(1, (await _site.Pages.LoadAsync(page))!.Version);
     }
 
     [Fact]
@@ -346,7 +346,7 @@ public class ChangeSetTests
         Assert.Equal(first, second);
 
         // The key the agent was given is the key that is stored, so later calls can refer to it.
-        var blocks = (await _site.ChangeSets.GetWorkingStateAsync(set, "document", page))!.Root["blocks"]!.AsArray();
+        var blocks = (await _site.ChangeSets.GetWorkingStateAsync(set, "document", page))!.Fields["blocks"]!.AsArray();
         Assert.Equal(hero.GetProperty("itemKey").GetGuid(), Umbraco.Abilities.Entities.EntityValues.KeyOf(blocks[0]!.AsObject()));
     }
 

@@ -7,7 +7,7 @@ using Umbraco.Abilities.Entities.Models;
 namespace Umbraco.Abilities.Samples.Cms;
 
 /// <summary>
-/// A culture-variant document type shaped like real CMS content, to check the structure language can carry it:
+/// A culture-variant document type shaped like real CMS content, to check the schema language can carry it:
 /// <list type="bullet">
 /// <item>the name and some properties vary by culture (<see cref="Varying{T}"/>), others are invariant;</item>
 /// <item><c>blocks</c> is an invariant Block List whose blocks hold culture-variant values and have settings (an object);</item>
@@ -42,16 +42,16 @@ public sealed class Page
     [EntityKey("document", "media"), Description("Related pages or media.")]
     public List<EntityReference>? Related { get; set; }
 
-    [Items(CmsPageDefinition.BlockGroup), Description("The page's content blocks.")]
+    [Items(CmsPageAdapter.BlockGroup), Description("The page's content blocks.")]
     public List<PageBlock> Blocks { get; set; } = [];
 
-    [Items(CmsPageDefinition.GridRootGroup), Description("A layout grid.")]
+    [Items(CmsPageAdapter.GridRootGroup), Description("A layout grid.")]
     public List<GridBlock> Grid { get; set; } = [];
 
-    [Items(CmsPageDefinition.PromoGroup), Description("Promotions, chosen per language.")]
+    [Items(CmsPageAdapter.PromoGroup), Description("Promotions, chosen per language.")]
     public Varying<List<Promo>> Promos { get; set; } = [];
 
-    [Items(CmsPageDefinition.MediaEntryGroup, Max = 1), Description("The page image.")]
+    [Items(CmsPageAdapter.MediaEntryGroup, Max = 1), Description("The page image.")]
     public List<MediaEntry> Image { get; set; } = [];
 }
 
@@ -89,7 +89,7 @@ public sealed class CardGrid : PageBlock
     [Description("Heading above the grid.")]
     public Varying<string> Heading { get; set; } = [];
 
-    [Items(CmsPageDefinition.CardGroup, Min = 1), Description("The cards in the grid.")]
+    [Items(CmsPageAdapter.CardGroup, Min = 1), Description("The cards in the grid.")]
     public List<Card> Cards { get; set; } = [];
 }
 
@@ -114,7 +114,7 @@ public abstract class GridBlock : EntityItemModel
 
 public sealed class GridPlacement
 {
-    [Required, Range(1, CmsPageDefinition.GridColumns), Description("Columns the block spans, 1 to 12.")]
+    [Required, Range(1, CmsPageAdapter.GridColumns), Description("Columns the block spans, 1 to 12.")]
     public int? ColumnSpan { get; set; }
 
     [Description("Rows the block spans.")]
@@ -125,10 +125,10 @@ public sealed class GridPlacement
 [ItemType("twoColumn", "Two columns", Description = "A row with a left and a right area.")]
 public sealed class TwoColumn : GridBlock
 {
-    [Items(CmsPageDefinition.GridAreaGroup, Min = 1, Max = 2), Description("Left area.")]
+    [Items(CmsPageAdapter.GridAreaGroup, Min = 1, Max = 2), Description("Left area.")]
     public List<GridBlock> Left { get; set; } = [];
 
-    [Items(CmsPageDefinition.GridAreaGroup, Max = 2), Description("Right area.")]
+    [Items(CmsPageAdapter.GridAreaGroup, Max = 2), Description("Right area.")]
     public List<GridBlock> Right { get; set; } = [];
 }
 
@@ -190,10 +190,10 @@ public sealed class MediaCropRequestModel
     public int? Height { get; set; }
 }
 
-// ── Definitions ─────────────────────────────────────────────────────────────────────────────────────────
+// ── Adapters ─────────────────────────────────────────────────────────────────────────────────────────
 
-public sealed class CmsPageDefinition(InMemoryDatabase database, ItemTypeRegistry itemTypes)
-    : InMemoryModelDefinition<Page>(database, itemTypes, "/umbraco/section/content/workspace/document/edit"), IVersionedEntityDefinition
+public sealed class CmsPageAdapter(InMemoryDatabase database, ItemTypeRegistry itemTypes)
+    : InMemoryModelAdapter<Page>(database, itemTypes, "/umbraco/section/content/workspace/document/edit"), IVersionedEntityAdapter
 {
     public static readonly IReadOnlyList<string> Cultures = ["en-US", "da-DK"];
 
@@ -221,7 +221,7 @@ public sealed class CmsPageDefinition(InMemoryDatabase database, ItemTypeRegistr
         => Task.FromResult(dimension == VariationDimensions.Culture ? Cultures : null);
 
     /// <summary>Content keeps version history, so change sets don't need their own snapshot of a page.</summary>
-    public Task<EntityDocument?> LoadVersionAsync(Guid key, long version, CancellationToken cancellationToken = default)
+    public Task<Entity?> LoadVersionAsync(Guid key, long version, CancellationToken cancellationToken = default)
         => Task.FromResult(LoadVersion(key, version));
 }
 
@@ -229,12 +229,12 @@ public sealed class CmsPageDefinition(InMemoryDatabase database, ItemTypeRegistr
 /// Media items, so pickers and references can point at media created in the same change set. The model is described
 /// fluently, so the request models stay as they are.
 /// </summary>
-public sealed class CmsMediaDefinition(InMemoryDatabase database, ItemTypeRegistry itemTypes)
-    : InMemoryModelDefinition<MediaRequestModel>(database, itemTypes, "/umbraco/section/media/workspace/media/edit")
+public sealed class CmsMediaAdapter(InMemoryDatabase database, ItemTypeRegistry itemTypes)
+    : InMemoryModelAdapter<MediaRequestModel>(database, itemTypes, "/umbraco/section/media/workspace/media/edit")
 {
     public const string CropGroup = "cms.media.crop";
 
-    static CmsMediaDefinition()
+    static CmsMediaAdapter()
     {
         ModelConfiguration.Configure<MediaRequestModel>(media => media
             .IsEntity("media", "Media", "An image or file.")

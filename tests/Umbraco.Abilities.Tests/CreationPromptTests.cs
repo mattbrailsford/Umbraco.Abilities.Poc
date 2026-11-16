@@ -23,7 +23,7 @@ public class CreationPromptTests
     {
         await _agent.StartChangeSetAsync("VIP summer sale");
 
-        // 1. Discover the structure, in two steps.
+        // 1. Discover the schema, in two steps.
         var schema = await _agent.OkAsync("entity_getSchema", """{ "entityType": "umbraco-commerce-discount" }""");
         var ruleTypes = schema.GetProperty("fields").GetProperty("properties").GetProperty("rules").GetProperty("x-item-types").EnumerateArray().Select(t => t.GetProperty("alias").GetString()).ToList();
         Assert.Contains("productCollection", ruleTypes);

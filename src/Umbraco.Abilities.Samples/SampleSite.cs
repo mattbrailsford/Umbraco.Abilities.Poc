@@ -20,14 +20,14 @@ public sealed class SampleSite
 {
     private SampleSite(IBackgroundTaskQueue? background, IEventAggregator? events)
     {
-        ChangeSets = new ChangeSetService(new InMemoryChangeSetStore(), Abilities, Definitions, ItemTypes, events, background, TimeSpan.Zero);
+        ChangeSets = new ChangeSetService(new InMemoryChangeSetStore(), Abilities, Adapters, ItemTypes, events, background, TimeSpan.Zero);
         Invoker = new AbilityInvoker(Abilities, ChangeSets);
 
         // Framework: the generic entity and change set abilities.
         Abilities
-            .Add(new GetEntitySchemaAbility(Definitions, ItemTypes))
-            .Add(new FindEntityAbility(Definitions, ChangeSets))
-            .Add(new GetEntityAbility(Definitions, ChangeSets))
+            .Add(new GetEntitySchemaAbility(Adapters, ItemTypes))
+            .Add(new FindEntityAbility(Adapters, ChangeSets))
+            .Add(new GetEntityAbility(Adapters, ChangeSets))
             .Add(new CreateEntityAbility())
             .Add(new SetEntityValueAbility())
             .Add(new AddEntityItemAbility())
@@ -41,20 +41,20 @@ public sealed class SampleSite
             .Add(new ResolveConflictAbility(ChangeSets));
 
         // CMS content.
-        Pages = new CmsPageDefinition(ContentDatabase, ItemTypes);
-        Media = new CmsMediaDefinition(ContentDatabase, ItemTypes);
-        Definitions.Add(Pages).Add(Media);
-        CmsPageDefinition.RegisterItemTypes(ItemTypes);
-        CmsMediaDefinition.RegisterItemTypes(ItemTypes);
+        Pages = new CmsPageAdapter(ContentDatabase, ItemTypes);
+        Media = new CmsMediaAdapter(ContentDatabase, ItemTypes);
+        Adapters.Add(Pages).Add(Media);
+        CmsPageAdapter.RegisterItemTypes(ItemTypes);
+        CmsMediaAdapter.RegisterItemTypes(ItemTypes);
 
         // Commerce.
-        Collections = new CollectionDefinition(CommerceDatabase, ItemTypes);
+        Collections = new CollectionAdapter(CommerceDatabase, ItemTypes);
         DiscountService = new DiscountService(CommerceDatabase);
-        Discounts = new DiscountDefinition(DiscountService, RuleProviders, RewardProviders, CommerceDatabase, ItemTypes);
-        Definitions.Add(Collections).Add(Discounts);
+        Discounts = new DiscountAdapter(DiscountService, RuleProviders, RewardProviders, CommerceDatabase, ItemTypes);
+        Adapters.Add(Collections).Add(Discounts);
         RuleProviders.AddRange([new OrderTotalRuleProvider(), new CustomerGroupRuleProvider(), new ProductCollectionRuleProvider(), new GroupRuleProvider()]);
         RewardProviders.AddRange([new PercentageOffRewardProvider(), new FreeShippingRewardProvider()]);
-        DiscountDefinition.RegisterItemTypes(ItemTypes, RuleProviders, RewardProviders, user => Access.HasSection(user, "commerce"));
+        DiscountAdapter.RegisterItemTypes(ItemTypes, RuleProviders, RewardProviders, user => Access.HasSection(user, "commerce"));
         var activateDiscount = new ActivateDiscountAbility(Discounts);
         Abilities.Add(activateDiscount);
         SummerCollection = Collections.Seed("Summer collection");
@@ -68,10 +68,10 @@ public sealed class SampleSite
         Abilities.Add(sendEmail);
 
         // Automate: its step types are other packages' abilities.
-        Workflows = new WorkflowDefinition(AutomateDatabase);
-        Definitions.Add(Workflows);
+        Workflows = new WorkflowAdapter(AutomateDatabase);
+        Adapters.Add(Workflows);
         Triggers.AddRange([typeof(FormSubmittedTrigger), typeof(ScheduleTrigger)]);
-        WorkflowDefinition.RegisterItemTypes(ItemTypes, [sendEmail, activateDiscount], Triggers, Actions, Access.HasSection);
+        WorkflowAdapter.RegisterItemTypes(ItemTypes, [sendEmail, activateDiscount], Triggers, Actions, Access.HasSection);
 
         // Commerce's Automate package adds its trigger and action, as its composer would. No Abilities code.
         Triggers.Add(typeof(OrderCreatedTrigger));
@@ -104,7 +104,7 @@ public sealed class SampleSite
 
     public AbilityRegistry Abilities { get; } = new();
 
-    public EntityDefinitionRegistry Definitions { get; } = new();
+    public EntityAdapterRegistry Adapters { get; } = new();
 
     public ItemTypeRegistry ItemTypes { get; } = new();
 
@@ -114,17 +114,17 @@ public sealed class SampleSite
 
     public Outbox Outbox { get; } = new();
 
-    public CmsPageDefinition Pages { get; }
+    public CmsPageAdapter Pages { get; }
 
-    public CmsMediaDefinition Media { get; }
+    public CmsMediaAdapter Media { get; }
 
-    public CollectionDefinition Collections { get; }
+    public CollectionAdapter Collections { get; }
 
     public DiscountService DiscountService { get; }
 
-    public DiscountDefinition Discounts { get; }
+    public DiscountAdapter Discounts { get; }
 
-    public WorkflowDefinition Workflows { get; }
+    public WorkflowAdapter Workflows { get; }
 
     public Guid SummerCollection { get; }
 

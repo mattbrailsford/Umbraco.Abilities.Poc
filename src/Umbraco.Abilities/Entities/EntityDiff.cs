@@ -16,16 +16,16 @@ public sealed record ChangedPath(string Path, string VariantKey, bool Structural
 /// Compares two versions of an entity, and copies a path from one to another. This is what lets a change set rebase onto
 /// a newer live version: what someone else changed is the difference between the version the set started from and the
 /// live one, what the set changed is the difference between that start and the set's result, and a conflict is a path
-/// both changed differently. It walks the structure with the values, so items are matched by key and objects by field.
+/// both changed differently. It walks the schema with the values, so items are matched by key and objects by field.
 /// </summary>
 public static class EntityDiff
 {
     public const string Order = "@order";
 
-    public static IReadOnlyCollection<ChangedPath> Compare(JsonObject before, JsonObject after, ElementShape shape, ItemTypeRegistry itemTypes)
+    public static IReadOnlyCollection<ChangedPath> Compare(JsonObject before, JsonObject after, ObjectSchema schema, ItemTypeRegistry itemTypes)
     {
         var changes = new HashSet<ChangedPath>();
-        CompareObject(before, after, shape, itemTypes, string.Empty, VariantId.Invariant, changes);
+        CompareObject(before, after, schema, itemTypes, string.Empty, VariantId.Invariant, changes);
         return changes;
     }
 
@@ -41,8 +41,8 @@ public static class EntityDiff
     }
 
     /// <summary>The value at a path, for showing a conflict: a value, an item, a list's item keys in order, or null when absent.</summary>
-    public static JsonNode? ValueAt(JsonObject root, ElementShape shape, ItemTypeRegistry itemTypes, ChangedPath change)
-        => Find(root, shape, itemTypes, change, create: false) switch
+    public static JsonNode? ValueAt(JsonObject root, ObjectSchema schema, ItemTypeRegistry itemTypes, ChangedPath change)
+        => Find(root, schema, itemTypes, change, create: false) switch
         {
             null => null,
             { Order: true } at => new JsonArray(((at.Value as JsonArray) ?? []).OfType<JsonObject>().Select(i => (JsonNode?)EntityValues.KeyOf(i).ToString()).ToArray()),
@@ -51,10 +51,10 @@ public static class EntityDiff
         };
 
     /// <summary>Makes <paramref name="change"/>'s path in <paramref name="target"/> the same as in <paramref name="source"/>: keeping theirs.</summary>
-    public static void CopyPath(JsonObject source, JsonObject target, ElementShape shape, ItemTypeRegistry itemTypes, ChangedPath change)
+    public static void CopyPath(JsonObject source, JsonObject target, ObjectSchema schema, ItemTypeRegistry itemTypes, ChangedPath change)
     {
-        var from = Find(source, shape, itemTypes, change, create: false);
-        if (Find(target, shape, itemTypes, change, create: true) is not { } to)
+        var from = Find(source, schema, itemTypes, change, create: false);
+        if (Find(target, schema, itemTypes, change, create: true) is not { } to)
         {
             return;
         }
@@ -93,9 +93,9 @@ public static class EntityDiff
 
     private static bool Inside(string path, string container) => path.StartsWith(container + "/", StringComparison.Ordinal);
 
-    private static void CompareObject(JsonObject? a, JsonObject? b, ElementShape shape, ItemTypeRegistry itemTypes, string path, VariantId context, HashSet<ChangedPath> changes)
+    private static void CompareObject(JsonObject? a, JsonObject? b, ObjectSchema schema, ItemTypeRegistry itemTypes, string path, VariantId context, HashSet<ChangedPath> changes)
     {
-        foreach (var field in shape.Fields)
+        foreach (var field in schema.Fields)
         {
             var fieldPath = EntityValues.Join(path, field.Alias);
             var variants = Variants(a, field).Union(Variants(b, field));
@@ -109,8 +109,8 @@ public static class EntityDiff
                     case FieldType.Items:
                         CompareItems(valueA as JsonArray, valueB as JsonArray, field, itemTypes, fieldPath, variant, changes);
                         break;
-                    case FieldType.Object when field.Shape is { } objectShape && (valueA is JsonObject || valueB is JsonObject):
-                        CompareObject(valueA as JsonObject, valueB as JsonObject, objectShape, itemTypes, fieldPath, variant, changes);
+                    case FieldType.Object when field.Schema is { } objectSchema && (valueA is JsonObject || valueB is JsonObject):
+                        CompareObject(valueA as JsonObject, valueB as JsonObject, objectSchema, itemTypes, fieldPath, variant, changes);
                         break;
                     default:
                         if (!JsonNode.DeepEquals(valueA, valueB))
@@ -135,7 +135,7 @@ public static class EntityDiff
                 && EntityValues.TypeOf(itemA) == EntityValues.TypeOf(itemB)
                 && itemTypes.Find(field.ItemTypeGroup!, EntityValues.TypeOf(itemA)) is { } itemType)
             {
-                CompareObject(itemA, itemB, itemType.Shape, itemTypes, itemPath, variant, changes);
+                CompareObject(itemA, itemB, itemType.Schema, itemTypes, itemPath, variant, changes);
             }
             else if (!JsonNode.DeepEquals(itemsA.GetValueOrDefault(key), itemsB.GetValueOrDefault(key)))
             {
@@ -152,15 +152,15 @@ public static class EntityDiff
     private static IEnumerable<VariantId> Variants(JsonObject? owner, FieldDefinition field)
         => owner is null ? [] : EntityValues.Values(owner, field).Select(v => v.Variant);
 
-    // Where a change is, in a document: its own variant for each varying value on the way.
-    private static PathTarget? Find(JsonObject root, ElementShape shape, ItemTypeRegistry itemTypes, ChangedPath change, bool create)
+    // Where a change is, in an entity: its own variant for each varying value on the way.
+    private static PathTarget? Find(JsonObject root, ObjectSchema schema, ItemTypeRegistry itemTypes, ChangedPath change, bool create)
     {
         var path = change.Structural && !change.Path.EndsWith("/" + Order, StringComparison.Ordinal) && create
             ? change.Path[..change.Path.LastIndexOf('/')] // the items field, to put their item back into
             : change.Path;
         try
         {
-            return EntityValues.Find(root, shape, itemTypes, path, (field, _) => change.Variant.Narrow(field.VariesBy), create);
+            return EntityValues.Find(root, schema, itemTypes, path, (field, _) => change.Variant.Narrow(field.VariesBy), create);
         }
         catch (AbilityInputException)
         {

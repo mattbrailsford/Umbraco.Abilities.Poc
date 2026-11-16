@@ -8,7 +8,7 @@ using Umbraco.Abilities.Samples.Commerce;
 namespace Umbraco.Abilities.Tests;
 
 /// <summary>
-/// Checks the structure language carries the CMS content model: culture variance, blocks with culture-variant
+/// Checks the schema language carries the CMS content model: culture variance, blocks with culture-variant
 /// values and settings, Block Grid placement and areas, culture-variant block properties, and pickers.
 /// </summary>
 public class CmsContentTests
@@ -36,7 +36,7 @@ public class CmsContentTests
 
         await AssertValidAsync();
         await _agent.OkAsync("changeSet_apply", $$"""{ "changeSetId": "{{_agent.ChangeSetId}}" }""");
-        Assert.Equal("Summer", _site.Pages.ToRef((await _site.Pages.LoadAsync(page))!).Name);
+        Assert.Equal("Summer", _site.Pages.ToSummary((await _site.Pages.LoadAsync(page))!).Name);
     }
 
     [Fact]

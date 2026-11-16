@@ -50,7 +50,7 @@ public static class ItemTypeFields
             description = $"{description} Can be a binding to an earlier step's output, e.g. {{{{trigger.orderId}}}}.".Trim();
         }
 
-        var field = ModelShapes.FieldFor(setting.Key, description, type, setting.Rules.OfType<RequiredAttribute>().Any(), references, allowed);
+        var field = ModelSchemas.FieldFor(setting.Key, description, type, setting.Rules.OfType<RequiredAttribute>().Any(), references, allowed);
         return field with
         {
             Rules = setting.Rules.Where(r => r is not RequiredAttribute and not AllowedValuesAttribute).ToList(),
