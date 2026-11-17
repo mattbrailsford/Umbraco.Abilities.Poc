@@ -18,6 +18,10 @@
     <PackageVersion Include="Umbraco.Cms" Version="[18.0.0,19)" />
     <!-- Only for the demo: Paul Seal's Clean starter kit, for document types with blocks. 8.0.1 needs Umbraco 18.0.1+ -->
     <PackageVersion Include="Clean" Version="8.0.1" />
+    <!-- Umbraco Commerce for Umbraco 18. No licence is needed for local development. -->
+    <PackageVersion Include="Umbraco.Commerce" Version="18.1.11" />
+    <PackageVersion Include="Umbraco.Commerce.Core" Version="18.1.11" />
+    <PackageVersion Include="Umbraco.Commerce.Persistence.Sqlite" Version="18.1.11" />
     <PackageVersion Include="Umbraco.Cms.Tests.Integration" Version="[18.0.0,19)" />
     <!--
       Umbraco 18.0.0 pulls 10.0.0 in through MailKit and MimeKit, which has two denial of service advisories

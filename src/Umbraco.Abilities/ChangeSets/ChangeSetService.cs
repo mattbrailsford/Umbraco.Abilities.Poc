@@ -583,23 +583,27 @@ public sealed class ChangeSetService(
             {
                 if (step.UnitOfWork is { } unitOfWork)
                 {
-                    await using var transaction = await unitOfWork.BeginAsync(cancellationToken);
                     var entities = state.Entities.Where(e => step.Entities.Contains((e.EntityType, e.Key))).ToList();
                     // Entities a product drafts are applied with its draft, all or nothing. Other adapters can share the
                     // transaction (CMS media shares documents' Umbraco scope): their entities are saved in it too.
                     var drafted = entities.Where(e => e.Adapter is IDraftingEntityAdapter && set.Drafts.ContainsKey(e.EntityType)).ToList();
-                    foreach (var entity in entities.Except(drafted))
+                    var savedInStep = new List<EntitySummary>();
+                    await unitOfWork.RunAsync(async ct =>
                     {
-                        saved.Add(await entity.Adapter.SaveAsync(entity.Working!, cancellationToken));
-                    }
+                        // A product that retries its transaction runs this again, so start the list again too.
+                        savedInStep.Clear();
+                        foreach (var entity in entities.Except(drafted))
+                        {
+                            savedInStep.Add(await entity.Adapter.SaveAsync(entity.Working!, ct));
+                        }
 
-                    foreach (var byAdapter in drafted.GroupBy(e => e.EntityType))
-                    {
-                        saved.AddRange(byAdapter.Select(e => e.Summary));
-                        await ((IDraftingEntityAdapter)byAdapter.First().Adapter).ApplyDraftAsync(set.Drafts[byAdapter.Key], cancellationToken);
-                    }
-
-                    await transaction.CompleteAsync(cancellationToken);
+                        foreach (var byAdapter in drafted.GroupBy(e => e.EntityType))
+                        {
+                            savedInStep.AddRange(byAdapter.Select(e => e.Summary));
+                            await ((IDraftingEntityAdapter)byAdapter.First().Adapter).ApplyDraftAsync(set.Drafts[byAdapter.Key], ct);
+                        }
+                    }, cancellationToken);
+                    saved.AddRange(savedInStep);
                 }
                 else if (abilities.Find(step.Call!.AbilityId)! is { Descriptor.Retries: > 0 } retried && background is not null)
                 {

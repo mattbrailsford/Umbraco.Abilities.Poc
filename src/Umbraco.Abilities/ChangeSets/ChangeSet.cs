@@ -123,14 +123,13 @@ public interface IUnitOfWorkProvider
     /// <summary>Names the product's step when a set is applied, e.g. "Content" or "Commerce".</summary>
     string Name { get; }
 
-    /// <summary>Starts the product's transaction. Asynchronous, as most database transactions are (EF Core's included).</summary>
-    Task<IUnitOfWork> BeginAsync(CancellationToken cancellationToken = default);
-}
-
-/// <summary>One product transaction. Disposing it without completing rolls back.</summary>
-public interface IUnitOfWork : IAsyncDisposable
-{
-    Task CompleteAsync(CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Runs work in one product transaction: committed if the work returns, rolled back if it throws. A callback, not
+    /// begin and commit, because that is the shape products' transactions have: Commerce's unit of work and EF Core's
+    /// retrying execution strategies only take a callback. A product that retries a transaction may run the work more
+    /// than once, so the work must be safe to run again.
+    /// </summary>
+    Task RunAsync(Func<CancellationToken, Task> work, CancellationToken cancellationToken = default);
 }
 
 /// <summary>An entity edit: it says which entity it edits, and how its recorded input changes a working copy.</summary>

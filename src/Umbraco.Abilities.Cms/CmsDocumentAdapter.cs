@@ -232,21 +232,10 @@ public sealed class CmsScopeUnitOfWorkProvider(ICoreScopeProvider scopes) : IUni
 {
     public string Name => "Content";
 
-    // Umbraco scopes are synchronous; the interface is asynchronous for products whose transactions aren't.
-    public Task<IUnitOfWork> BeginAsync(CancellationToken cancellationToken = default) => Task.FromResult<IUnitOfWork>(new Scope(scopes.CreateCoreScope()));
-
-    private sealed class Scope(ICoreScope scope) : IUnitOfWork
+    public async Task RunAsync(Func<CancellationToken, Task> work, CancellationToken cancellationToken = default)
     {
-        public Task CompleteAsync(CancellationToken cancellationToken = default)
-        {
-            scope.Complete();
-            return Task.CompletedTask;
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            scope.Dispose();
-            return ValueTask.CompletedTask;
-        }
+        using var scope = scopes.CreateCoreScope();
+        await work(cancellationToken);
+        scope.Complete();
     }
 }

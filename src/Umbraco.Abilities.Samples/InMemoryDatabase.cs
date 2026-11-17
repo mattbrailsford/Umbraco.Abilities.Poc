@@ -51,31 +51,22 @@ public sealed class InMemoryDatabase(string name) : IUnitOfWorkProvider
         _history.Clear();
     }
 
-    public Task<IUnitOfWork> BeginAsync(CancellationToken cancellationToken = default) => Task.FromResult<IUnitOfWork>(new Transaction(this, Snapshot()));
+    public async Task RunAsync(Func<CancellationToken, Task> work, CancellationToken cancellationToken = default)
+    {
+        var snapshot = Snapshot();
+        try
+        {
+            await work(cancellationToken);
+        }
+        catch
+        {
+            _tables = snapshot;
+            throw;
+        }
+    }
 
     private Dictionary<string, Dictionary<Guid, Row>> Snapshot()
         => _tables.ToDictionary(t => t.Key, t => t.Value.ToDictionary(r => r.Key, r => r.Value with { Root = (JsonObject)r.Value.Root.DeepClone() }));
-
-    private sealed class Transaction(InMemoryDatabase database, Dictionary<string, Dictionary<Guid, Row>> snapshot) : IUnitOfWork
-    {
-        private bool _completed;
-
-        public Task CompleteAsync(CancellationToken cancellationToken = default)
-        {
-            _completed = true;
-            return Task.CompletedTask;
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            if (!_completed)
-            {
-                database._tables = snapshot;
-            }
-
-            return ValueTask.CompletedTask;
-        }
-    }
 }
 
 /// <summary>

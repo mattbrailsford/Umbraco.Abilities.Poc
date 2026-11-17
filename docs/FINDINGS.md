@@ -114,7 +114,7 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
    | Item type sources, allow lists, who may use a type | Reading a data type's allowed blocks, a user's sections | Read once at the start of each call (`ItemTypeRegistry.ResolveAsync`), only for the groups the entity's schema uses. The rest of the call looks types up in the result, `ItemTypes`, without waiting, so walking, diffing and validating values stay simple |
    | A product's edit (`ModelEditAbilityBase`) | Looking up a price or a related entity | `EditAsync`, beside `Edit` |
    | A new entity | Default values from a document type | `NewAsync` |
-   | A product's transaction | EF Core's transactions are asynchronous | `BeginAsync`, `CompleteAsync`, `IAsyncDisposable` |
+   | A product's transaction | EF Core's transactions are asynchronous | `RunAsync(work)`, a callback (finding 24) |
 
    Still synchronous, on purpose: `ToSummary` (it reads the name from the entity; an edit URL that needs a lookup, such
    as one with a store in it, would need it too), value handlers (they rearrange a value; settings they need could come
@@ -325,6 +325,13 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
     switched on inside a set is asked about there, needlessly, and its approval shows the tool's arguments, not the
     set's summary. Both would be fixed if Umbraco.AI's host used the approval requests instead: call without consent,
     show the request's question in its approval UI, and call again with the id.
+
+24. **A product's transaction is a callback, not begin and commit.** Applying a set ran each product's step between
+    `BeginAsync` and `CompleteAsync`. Real Commerce has no such pair: its unit of work only runs a callback
+    (`IUnitOfWorkProvider.ExecuteAsync`), through an execution strategy that can retry it. EF Core's retrying strategies
+    have the same rule. So `IUnitOfWorkProvider` is now `RunAsync(work)`: commit if the work returns, roll back if it
+    throws. The work may run more than once, so a step starts its list of saved entities again each time. The CMS
+    scope and the in-memory samples fit the new shape in a few lines each.
 
 ## Developer experience of adapters
 
