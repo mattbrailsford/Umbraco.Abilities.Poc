@@ -84,7 +84,7 @@ public sealed record GetEntitySchemaInput(
     Description = "Returns an entity type's fields as JSON Schema. An items field lists its item types (x-item-types). " +
                   "Call it first. Call again with itemTypes to get the fields of the item types you will add. " +
                   "capabilities lists what the type supports beyond setting values, such as delete and move.")]
-public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemTypeRegistry registry, AbilityRegistry abilities)
+public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemTypeRegistry registry)
     : AbilityBase<GetEntitySchemaInput, JsonObject>
 {
     protected override async Task<AbilityResult> ExecuteAsync(GetEntitySchemaInput input, AbilityContext context, CancellationToken cancellationToken)
@@ -115,7 +115,7 @@ public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemT
                 ["values"] = d.Values is { } values ? new JsonArray(values.Select(v => (JsonNode?)v).ToArray()) : null,
             }).ToArray()),
             ["fields"] = SchemaWriter.Fields(schema.Root, itemTypes, context.UserKey),
-            ["capabilities"] = new JsonArray(EntityBehaviours.Capabilities(adapter, schema.Root, abilities).Select(c => (JsonNode?)c).ToArray()),
+            ["capabilities"] = new JsonArray(Capabilities(adapter).Select(c => (JsonNode?)c).ToArray()),
         };
 
         if (input.ItemTypes is { Length: > 0 })
@@ -136,6 +136,20 @@ public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemT
         }
 
         return Success(output);
+    }
+
+    /// <summary>What an entity type can do beyond setting values: the optional adapter interfaces it implements.</summary>
+    private static IEnumerable<string> Capabilities(IEntityAdapter adapter)
+    {
+        if (adapter is IDeletableEntityAdapter)
+        {
+            yield return "delete";
+        }
+
+        if (adapter is ITreeEntityAdapter)
+        {
+            yield return "move";
+        }
     }
 }
 

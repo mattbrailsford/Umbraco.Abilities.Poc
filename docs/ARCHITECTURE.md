@@ -98,9 +98,7 @@ object field of the block (`blocks/{key}/settings/theme`), and so is a grid bloc
 | `x-references` | The value is the key of another entity (by UDI type), or of an item in the same entity | Reference checks, and creating referenced entities in the same change set |
 
 Three smaller notes help a model, and change nothing the framework does: `x-edit` (how a handled value is edited),
-`x-bindings` (a value can be a binding) and `x-references-item-in` (the items field a reference points into). A fourth,
-`x-role`, says what a field means, so behaviours other packages ship can find it (see
-[Behaviours](#behaviours-other-packages-ship)); changing that field is checked with its role. The
+`x-bindings` (a value can be a binding) and `x-references-item-in` (the items field a reference points into). The
 meta-schema (a schema for schemas) in `tests/Umbraco.Abilities.Tests/entity-schema.metaschema.json` defines every
 note. Each schema the framework writes is checked against it and JSON Schema 2020-12, so a new note goes there first.
 
@@ -597,7 +595,7 @@ A looser link, kept as an idea for now: a change set is a reviewed group of chan
 
 ## Proposal: what core covers, and what products write
 
-> **Status:** Proposal. Delete, move and behaviours are built and tested on real CMS documents (findings 28 and 29 in
+> **Status:** Proposal. Delete and move are built and tested on real CMS documents (finding 28 in
 > [FINDINGS](FINDINGS.md#what-building-it-taught-us)); the rest is not built. From reading the tools of Umbraco's six
 > product MCP servers (see [Checked against the existing MCP servers](FINDINGS.md#checked-against-the-existing-mcp-servers)).
 
@@ -611,7 +609,7 @@ product writes an ability only for what is truly its own: something that happens
 | Edit an entity: schema, find, get, create, set a value, add, remove and move an item, validate | Derived from the adapter | Built |
 | Delete, move to another parent | Optional adapter capabilities. `entity.getSchema` lists them for the entity types whose adapter has them | Built, for CMS documents |
 | Copy, sort | The same. Copy is a load, then a create with new keys | Not built |
-| Behaviours from other packages | An edit that works on any entity type with the field roles it needs (see [Behaviours](#behaviours-other-packages-ship)) | Built: the contract, shown by a test's behaviour |
+| Capabilities from other packages | So a capability core lacks is written once, not by every product (see [Capabilities other packages ship](#capabilities-other-packages-ship)) | Open: two designs tried, neither settled |
 | Draft and published | An optional capability for entities with a published state: publish, unpublish, schedule. Recordable in a change set, so publishing is reviewed with the edits | Not built. Least certain: it may stay a product ability per product |
 | History and references | Optional reads an adapter can add: versions, audit entries, "where is this used" | Not built |
 | File upload | One ability that stores a file and returns a reference a field can hold (see [What doesn't fit the entity approach](FINDINGS.md#what-doesnt-fit-the-entity-approach)) | Not built |
@@ -667,41 +665,18 @@ public interface IDeletableEntityAdapter : IEntityAdapter
 Suggested order from here: copy and rollback, which need almost no adapter code. Publish last, since it is still an
 open decision below.
 
-### Behaviours other packages ship
+### Capabilities other packages ship
 
-A third party can add an edit that works on other products' entities without either referencing the other. The two
-meet on **field roles**: a field says what it means (`FieldDefinition.Role`, shown as `x-role`), a behaviour names the
-roles it needs, and it works on every entity type that has a root field in each of them.
+Open. Core can't ship every capability, so another package should be able to add one that products opt in to,
+without each product writing the tool itself. Two designs were tried and neither is settled (finding 29):
 
-| Part | Who ships it | What it is |
+| Design | How a product opts in | Trade-off |
 | --- | --- | --- |
-| The behaviour | The third party | An ability on `EntityBehaviourBase<TInput>`: a name, the roles it needs, and an `Apply` that sets values by role. Registered in the `AbilityRegistry` like any ability |
-| The role on a field | The product's adapter | `Role = "archived"` on the field that means it. The role is a word both sides agree on |
-| The permission | The product's adapter | A change to a role's field is checked with the role named (`EntityAccessRequest.Role`), whichever ability made it. The product decides what it takes |
+| Field roles | Tags a field with a role word (`x-role`), such as `archived` | Neither package references the other. But it can only set values, and adds a new idea to learn |
+| Adapter interface | Implements an interface the package ships, such as `IArchivableEntityAdapter`, with one ability on a shared base. Kept on the `entity-capability-seam` branch | Plainer, and can ask the product for more than a field. The product, or a bridge package, references the third party |
 
-```csharp
-// Shipped by a package that knows no products
-[Ability("entity.archive", "Archive entity", Kind = AbilityKind.Write, Reversible = true)]
-public sealed class ArchiveBehaviour : EntityBehaviourBase<ArchiveInput>
-{
-    public override string Name => "archive";
-    public override IReadOnlyList<string> Roles => ["archived"];
-
-    protected override object? Apply(BehaviourTarget target, ArchiveInput input)
-    {
-        target.Set("archived", true);
-        return new { archived = target.Entity.Key };
-    }
-}
-
-// In a product's schema
-new FieldDefinition("hidden", "Hidden from lists.", FieldType.Boolean) { Role = "archived" }
-```
-
-A behaviour only changes values, so recording, replay, rebasing and apply need nothing more. Not covered: a behaviour
-that needs the product to do more than save a value (it would need a handler per entity type), and roles inside items.
-Move could have been a behaviour on a `parent` role; it is core because trees are common and the CMS must run a move as
-a move, not a save.
+Both stop at value changes. A capability like delete needs the change set itself to know, so it stays in core. Settle
+this against the first real package that needs it, not a made-up one.
 
 ### Products: one ability class per operation
 

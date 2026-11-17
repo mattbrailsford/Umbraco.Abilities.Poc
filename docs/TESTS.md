@@ -110,9 +110,9 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
   - `SideEffectRetryTests (all)`
   - `CmsDocumentAdapterTests.A_side_effect_with_retries_runs_on_Umbracos_background_queue_after_the_content_commits`
 
-## Delete, move and behaviours
+## Delete and move
 
-- `entity.getSchema` lists what a type can do beyond setting values: delete and move when its adapter opts in, and each installed behaviour its field roles support
+- `entity.getSchema` lists what a type can do beyond setting values: delete and move, when its adapter opts in
   - `EntityCapabilityTests.The_schema_lists_what_an_entity_type_can_do_beyond_setting_values`
 - A deleted entity is gone inside the set (get, find, further edits), still live outside it, summarized as deleted, and deleted only on apply
   - `EntityCapabilityTests.A_deleted_entity_is_gone_in_the_set_and_deleted_only_when_the_set_is_applied`
@@ -125,14 +125,6 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
 - A move is checked as a move, not an update, and setting the parent with `entity.setValue` is checked the same way
   - `EntityCapabilityTests.A_move_is_checked_as_a_move_and_setting_the_parent_directly_is_too`
   - `EntityCapabilityTests.An_entity_cannot_be_moved_under_itself`
-- A behaviour another package ships works on any entity type with a field in the roles it needs, and refuses one without
-  - `EntityCapabilityTests.A_behaviour_another_package_ships_works_on_any_entity_type_with_the_roles_it_needs`
-  - `EntityCapabilityTests.A_behaviour_refuses_an_entity_type_without_the_roles_it_needs`
-- Changing a field with a role is checked with that role, whichever ability changes it, and the product decides what the role takes
-  - `EntityCapabilityTests.Changing_a_field_with_a_role_is_checked_with_that_role_whichever_ability_changes_it`
-- A field's role (`x-role`) is one of the framework's notes in the meta-schema, so a schema with one is valid
-  - `EntityCapabilityTests.A_schema_with_a_role_is_valid_JSON_Schema_with_the_frameworks_notes`
-
 ## Plugin types and editor values
 
 - Rule and reward types come from Commerce's provider collections, with the label fallback and editor references; a provider registered later shows up; a group rule nests children and is stored as Commerce's rule tree

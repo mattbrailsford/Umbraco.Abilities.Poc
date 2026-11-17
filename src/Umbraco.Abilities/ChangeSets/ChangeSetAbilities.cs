@@ -95,7 +95,7 @@ public static class FrameworkAbilities
     /// </summary>
     public static AbilityRegistry AddFrameworkAbilities(this AbilityRegistry abilities, EntityAdapterRegistry adapters, ItemTypeRegistry itemTypes, ChangeSetService changeSets)
         => abilities
-            .Add(new GetEntitySchemaAbility(adapters, itemTypes, abilities))
+            .Add(new GetEntitySchemaAbility(adapters, itemTypes))
             .Add(new FindEntityAbility(adapters, changeSets))
             .Add(new GetEntityAbility(adapters, changeSets))
             .Add(new CreateEntityAbility())

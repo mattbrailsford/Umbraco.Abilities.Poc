@@ -413,18 +413,27 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
       since creating it was checked on its own parent.
     - **Content in the recycle bin reads as deleted.** Umbraco still loads it, so the draft set treats it as gone.
 
-29. **A behaviour another package ships meets entity types on field roles.** A field can say what it means
-    (`FieldDefinition.Role`, `x-role` in the schema). A behaviour (`EntityBehaviourBase`) names the roles it needs, and
-    works on every entity type that has them, with no reference either way. It is an ability like any other, so it is
-    recorded, replayed, rebased and applied with nothing extra. The test's archive behaviour shows it. `x-role` is a
-    new schema note, so it went into the meta-schema (finding 27) first; the folder type with a role is checked against it.
-    - **The adapter owns the role's permission.** A change to a role's field is checked with the role named
-      (`EntityAccessRequest.Role`), whichever ability made it. The product decides what that takes; one that doesn't
-      know the role checks an update.
-    - **Move stayed in core.** It could have been a behaviour on a `parent` role. It is core because a tree is common,
-      and the CMS needs a move to run as a move, not a save.
-    - **Not covered:** a behaviour that needs the product to do more than save a value (a handler per entity type), and
-      roles inside items.
+29. **Letting another package ship a capability is still open.** The aim: a capability core lacks is written once, not
+    by every product. Two designs were built and set aside (see
+    [Capabilities other packages ship](ARCHITECTURE.md#capabilities-other-packages-ship)):
+    - **Field roles.** A field said what it meant (`x-role`), and a behaviour named the roles it needed. Nothing
+      referenced anything, but it could only set values and added a new idea.
+    - **An adapter interface,** with one ability on a shared base. Plainer, but the shared base didn't feel right yet.
+      It is kept on the `entity-capability-seam` branch.
+    - **Neither had a real case.** The archive example was made up. Delete and move don't depend on either.
+    - **Who does the work splits capabilities into three kinds.** Both designs only reached the first two:
+
+      | Kind | Example | Who does the work | Works today? |
+      | --- | --- | --- | --- |
+      | Just a value | Archive as a flag | The tool sets the value. The product needs no code | Yes |
+      | A value the product acts on | Move | The tool sets a value. The adapter sees it changed when it saves, and does the product's real thing (`MoveAsync`) | Yes |
+      | An action that isn't a value | Delete, publish | The adapter implements a method, run on apply | Only for core's delete |
+
+      The second kind covers more than it seems: a third party's interface asks which field means "locked", and the
+      product's save does what locking means there. The change set still shows a plain value change, so review,
+      rebasing and discarding work. The third kind is the real gap: a recorded call would need to say "on apply, call
+      this adapter method", run in order after the saves. Publish needs that anyway, so build it there, then see if
+      delete fits on it.
 
 ## Developer experience of adapters
 
