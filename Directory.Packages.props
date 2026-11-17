@@ -10,6 +10,8 @@
     <!-- Real Umbraco CMS, for the CMS document adapter and its integration tests -->
     <PackageVersion Include="Umbraco.Cms.Core" Version="[18.0.0,19)" />
     <PackageVersion Include="Umbraco.Cms.Infrastructure" Version="[18.0.0,19)" />
+    <!-- For the Management API endpoints that expose abilities over HTTP -->
+    <PackageVersion Include="Umbraco.Cms.Api.Management" Version="[18.0.0,19)" />
     <PackageVersion Include="Umbraco.Cms.Tests.Integration" Version="[18.0.0,19)" />
     <!--
       Umbraco 18.0.0 pulls 10.0.0 in through MailKit and MimeKit, which has two denial of service advisories

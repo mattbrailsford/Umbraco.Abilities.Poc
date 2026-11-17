@@ -165,6 +165,23 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
 - A media picker and a multi-type picker refer to media and pages created in the same set
   - `CmsContentTests.Pickers_refer_to_media_and_pages_created_in_the_same_set`
 
+## Over the Management API
+
+Called over HTTP on Umbraco's test server, as the Umbraco CMS MCP Dev server would call them.
+
+- The list endpoint gives every ability with what a tool needs: tool name, description, kind, and the input schema with `changeSetId` when it uses a change set
+  - `AbilitiesManagementApiTests.The_Management_API_lists_every_ability_with_what_a_tool_needs`
+- A page built over HTTP in a change set named in the `Umb-Change-Set` header is saved only on apply, as the signed-in user
+  - `AbilitiesManagementApiTests.A_caller_builds_a_page_in_a_change_set_named_in_a_header_and_it_is_saved_as_that_user_on_apply`
+- A mistake the caller can fix is a 400 with problems, and says which change set it used
+  - `AbilitiesManagementApiTests.A_mistake_the_caller_can_fix_is_a_400_with_problems_by_path`
+- A user without the Content section is refused with a 403
+  - `AbilitiesManagementApiTests.A_user_without_the_Content_section_is_refused_with_a_403`
+- A header naming an unknown change set is refused, and nothing is written live
+  - `AbilitiesManagementApiTests.A_header_naming_an_unknown_change_set_is_refused_rather_than_writing_live`
+- A caller that isn't signed in is refused
+  - `AbilitiesManagementApiTests.A_caller_that_is_not_signed_in_is_refused`
+
 ## Against a real Umbraco
 
 - The schema comes from the document type: cultures, varying fields, block types per items field, settings, grid areas and placement

@@ -1,5 +1,7 @@
 using System.ComponentModel;
 
+using Umbraco.Abilities.Entities;
+
 namespace Umbraco.Abilities.ChangeSets;
 
 public sealed record CreateChangeSetInput([property: Description("A name a person will recognise, e.g. 'Black Friday campaign'.")] string Name);
@@ -81,4 +83,29 @@ public sealed class ResolveConflictAbility(ChangeSetService changeSets) : Abilit
         await changeSets.ResolveConflictAsync(changeSets.GetCurrent().Id, input.EntityType, input.Key, input.Path, Entities.VariantId.From(input.Variant), keep, cancellationToken);
         return Success(new { resolved = input.Path, kept = keep.ToString().ToLowerInvariant() });
     }
+}
+
+/// <summary>Registers the framework's own abilities.</summary>
+public static class FrameworkAbilities
+{
+    /// <summary>
+    /// Adds the generic entity abilities (schema, find, get, create, set a value, add, remove and move an item) and the
+    /// change set abilities. Every surface starts with these; products add their own after.
+    /// </summary>
+    public static AbilityRegistry AddFrameworkAbilities(this AbilityRegistry abilities, EntityAdapterRegistry adapters, ItemTypeRegistry itemTypes, ChangeSetService changeSets)
+        => abilities
+            .Add(new GetEntitySchemaAbility(adapters, itemTypes))
+            .Add(new FindEntityAbility(adapters, changeSets))
+            .Add(new GetEntityAbility(adapters, changeSets))
+            .Add(new CreateEntityAbility())
+            .Add(new SetEntityValueAbility())
+            .Add(new AddEntityItemAbility())
+            .Add(new RemoveEntityItemAbility())
+            .Add(new MoveEntityItemAbility())
+            .Add(new CreateChangeSetAbility(changeSets))
+            .Add(new ValidateChangeSetAbility(changeSets))
+            .Add(new SummarizeChangeSetAbility(changeSets))
+            .Add(new ApplyChangeSetAbility(changeSets))
+            .Add(new DiscardChangeSetAbility(changeSets))
+            .Add(new ResolveConflictAbility(changeSets));
 }

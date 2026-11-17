@@ -7,10 +7,22 @@
     <ProjectReference Include="../../src/Umbraco.Abilities/Umbraco.Abilities.csproj" />
     <ProjectReference Include="../../src/Umbraco.Abilities.AI/Umbraco.Abilities.AI.csproj" />
     <ProjectReference Include="../../src/Umbraco.Abilities.Cms/Umbraco.Abilities.Cms.csproj" />
+    <ProjectReference Include="../../src/Umbraco.Abilities.ManagementApi/Umbraco.Abilities.ManagementApi.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="NUnit" />
     <PackageReference Include="NUnit3TestAdapter" />
     <PackageReference Include="Umbraco.Cms.Tests.Integration" />
     <PackageReference Include="Microsoft.CodeAnalysis.Common" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Umbraco's test settings: the test server reads its database type from them -->
+    <Content Include="appsettings.Tests.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <!--
+    Umbraco's test server names Umbraco.Tests.Integration as the application, so ASP.NET Core's test host looks for
+    that name's deps.json. Give it this project's.
+  -->
+  <Target Name="CopyDepsForTestServer" AfterTargets="Build">
+    <Copy SourceFiles="$(ProjectDepsFilePath)" DestinationFiles="$(OutDir)Umbraco.Tests.Integration.deps.json" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

@@ -14,9 +14,9 @@ like), and write calls are recorded into **change sets**, then any surface can c
 with no per-product code. Creating an entity from a description is the hardest test of that, so the tests use it most.
 The same pieces serve the backoffice, the Umbraco.AI copilot, Automate and MCP.
 
-The code is about 7,400 lines of source and 2,500 lines of tests in seven projects. The source splits into the framework
-(about 4,200), the in-memory samples (about 1,600), the real CMS adapter (about 1,000), the draft sets stand-in
-(about 500) and the AI adapter (about 100). A full review takes two to three hours.
+The code is about 7,400 lines of source and 2,500 lines of tests in eight projects. The source splits into the framework
+(about 4,200), the in-memory samples (about 1,600), the real CMS adapter (about 1,100), the draft sets stand-in
+(about 500), the Management API endpoints (about 130) and the AI adapter (about 100). A full review takes two to three hours.
 A first pass over the story and the contracts (passes 1 to 3 below) takes about 45 minutes.
 
 ```bash
@@ -25,13 +25,15 @@ dotnet test   # in-memory tests (seconds), then tests against a real Umbraco 18 
 
 ## The map
 
-Five source projects and two test projects. The arrows show what references what.
+Six source projects and two test projects. The arrows show what references what.
 
 ```
 Umbraco.Abilities            the framework: abilities, entity adapters, change sets
    ↑            ↑                          (references Umbraco.Cms.Core for UDIs, notifications, the background queue)
    │            │
 Umbraco.Abilities.AI         turns every ability into an M.E.AI AIFunction: the copilot's tools
+   │     ↑      │
+   │  Umbraco.Abilities.ManagementApi   two endpoints: list the abilities, call one (for MCP Dev)
    │            │
 Umbraco.Abilities.Samples    in-memory products: CMS pages and media, Commerce, an Acme rule type, email, Automate
    │

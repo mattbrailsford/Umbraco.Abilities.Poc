@@ -729,6 +729,9 @@ public sealed class AbilityInvoker(AbilityRegistry abilities, ChangeSetService c
     /// <summary>The change sets calls are recorded into, for surfaces that choose the current one.</summary>
     public ChangeSetService ChangeSets => changeSets;
 
+    /// <summary>The abilities calls can name.</summary>
+    public AbilityRegistry Abilities => abilities;
+
     public async Task<AbilityResult> InvokeAsync(string abilityId, JsonObject input, AbilityContext context, CancellationToken cancellationToken = default)
     {
         var ability = abilities.Find(abilityId);

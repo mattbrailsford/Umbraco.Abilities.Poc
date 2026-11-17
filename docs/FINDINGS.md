@@ -202,6 +202,32 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
      and a data type. Umbraco Forms has field types and their settings instead. Covering it means describing a
      property in neutral terms (alias, name, mandatory, editor, settings) and letting each product map its own. Not
      built: there is no Forms adapter to prove it against. See [Umbraco Forms](#umbraco-forms).
+21. **A second surface costs two endpoints, and no code per product.** `Umbraco.Abilities.ManagementApi` adds two
+    Management API endpoints: `GET /umbraco/management/api/v1/abilities` lists every ability with its tool name,
+    description, kind, approval flag and input schema, and `POST .../abilities/{id}/invoke` calls one with a JSON body.
+    This is what the Umbraco CMS MCP Dev server would call: it would build one tool per listed ability, so a new
+    ability or entity type needs no new endpoint and no MCP Dev release. The tests call the endpoints over HTTP on
+    Umbraco's test server, signed in as an editor. Building it taught five things:
+    - **The tool shape isn't AI specific, but it lives in the AI adapter.** The input schema (with `changeSetId`
+      added), the change set rules and the result shape are in `AbilityAIFunction`. The endpoints reuse it, so an HTTP
+      caller sees what a model sees, but the Management API project now references M.E.AI. It belongs in the
+      contract. It stays here because the schema comes from M.E.AI's `AIJsonUtilities`, and the framework may only
+      depend on Umbraco.Cms.Core.
+    - **The framework had no DI setup.** Every surface and test wired it by hand. `AddAbilities()` now registers it on a
+      site, and `AddFrameworkAbilities()` adds the generic abilities in one call. The ability registry and the change
+      set service need each other, so they are made together.
+    - **Who saves is not passed with the call.** Adapters take the acting user as a `Func<Guid>`. On a site that is the
+      signed-in backoffice user, so a test checks the page's writer is the editor who called. With no request (an
+      Automate run, a background apply) there is no user to save as. The acting user should flow with the call, as
+      `AbilityContext` does for permission checks.
+    - **Each HTTP call stands alone.** There is no conversation to remember the open change set, so the caller names it
+      in the `Umb-Change-Set` header or in `changeSetId`. A header naming an unknown set is refused, never written live.
+    - **Approval is the caller's job.** `requiresApproval` is listed, but HTTP can't pause for a person. An MCP client
+      has its own "allow this tool?" prompt.
+
+    Failures map to status codes: a mistake the caller can fix is a 400 with problems by path, a refusal is a 403, and
+    a failure while running is a 422. The body is the same as the tool's result either way. The OpenAPI document
+    shows the invoke body as a plain object; the list endpoint carries each ability's real schema.
 
 ## Developer experience of adapters
 

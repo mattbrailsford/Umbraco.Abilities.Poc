@@ -25,20 +25,7 @@ public sealed class SampleSite
 
         // Framework: the generic entity and change set abilities.
         Abilities
-            .Add(new GetEntitySchemaAbility(Adapters, ItemTypes))
-            .Add(new FindEntityAbility(Adapters, ChangeSets))
-            .Add(new GetEntityAbility(Adapters, ChangeSets))
-            .Add(new CreateEntityAbility())
-            .Add(new SetEntityValueAbility())
-            .Add(new AddEntityItemAbility())
-            .Add(new RemoveEntityItemAbility())
-            .Add(new MoveEntityItemAbility())
-            .Add(new CreateChangeSetAbility(ChangeSets))
-            .Add(new ValidateChangeSetAbility(ChangeSets))
-            .Add(new SummarizeChangeSetAbility(ChangeSets))
-            .Add(new ApplyChangeSetAbility(ChangeSets))
-            .Add(new DiscardChangeSetAbility(ChangeSets))
-            .Add(new ResolveConflictAbility(ChangeSets));
+            .AddFrameworkAbilities(Adapters, ItemTypes, ChangeSets);
 
         // CMS content.
         Pages = new CmsPageAdapter(ContentDatabase, ItemTypes);

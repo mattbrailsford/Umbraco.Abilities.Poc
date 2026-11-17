@@ -221,20 +221,7 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
         adapters.Add(_media);
 
         abilities
-            .Add(new GetEntitySchemaAbility(adapters, itemTypes))
-            .Add(new FindEntityAbility(adapters, _changeSets))
-            .Add(new GetEntityAbility(adapters, _changeSets))
-            .Add(new CreateEntityAbility())
-            .Add(new SetEntityValueAbility())
-            .Add(new AddEntityItemAbility())
-            .Add(new RemoveEntityItemAbility())
-            .Add(new MoveEntityItemAbility())
-            .Add(new CreateChangeSetAbility(_changeSets))
-            .Add(new ValidateChangeSetAbility(_changeSets))
-            .Add(new SummarizeChangeSetAbility(_changeSets))
-            .Add(new ApplyChangeSetAbility(_changeSets))
-            .Add(new DiscardChangeSetAbility(_changeSets))
-            .Add(new ResolveConflictAbility(_changeSets))
+            .AddFrameworkAbilities(adapters, itemTypes, _changeSets)
             .Add(new FailingOperationAbility())
             .Add(new FlakyOperationAbility());
 
