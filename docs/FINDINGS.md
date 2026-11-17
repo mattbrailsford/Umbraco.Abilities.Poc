@@ -260,9 +260,10 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
     - **Umbraco's own value schema can be wrong, and validation then can't catch it.** Clean's author field is a
       multi-node tree picker. Its value schema in Umbraco 18 says an item's type is "content", "media" or "member",
       but the editor's value uses "document". Claude followed the schema, both validations passed, and apply failed.
-      It fixed the value by copying an existing article. The fix belongs in the CMS
-      (`MultiNodeTreePickerPropertyEditor.GetValueSchema`), not here. It shows that a schema from a package is trusted
-      as written: a wrong one gets past validation and fails only at save.
+      It fixed the value by copying an existing article. The CMS has already fixed the schema
+      ([#23760](https://github.com/umbraco/Umbraco-CMS/pull/23760), in 17.8.0 and 18.3.0); the demo runs 18.0.1. It
+      still shows that a schema from a package is trusted as written: a wrong one gets past validation and fails only
+      at save.
 
 ## Developer experience of adapters
 
