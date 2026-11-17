@@ -95,6 +95,9 @@ The details and the lessons are in [docs/FINDINGS.md](docs/FINDINGS.md). The tes
   model gets them right, or how it does on documents, workflows or edits.
 - **Persistence and scale.** Sets are in memory, and working state is recomputed by replaying every call
   on each read.
+- **Load balanced sites.** Change sets, waiting approvals and the side effect queue are kept in memory on one server.
+  Behind a load balancer, a call can land on a server that doesn't have them. See
+  [ARCHITECTURE.md](docs/ARCHITECTURE.md#what-the-cms-already-gives-us).
 - **Property editors shipping their own handlers.** The handler contract is in this repo, and only a test's star
   rating uses it from outside the core editors. A real editor package would have to reference Abilities until the
   contract has a home (see [FINDINGS](docs/FINDINGS.md#where-property-editor-handlers-should-live)).

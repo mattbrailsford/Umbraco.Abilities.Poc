@@ -356,7 +356,13 @@ Also used, after a second pass:
 | Side effects that need retries | `IBackgroundTaskQueue`, processed by `QueuedHostedService`, with Polly | Used. Webhooks weren't, as they're going away. See Retries below |
 | Results and problems | `Attempt<TResult, TStatus>` and `PropertyValidationError` | Mirrored: a result has a status (Success, InvalidInput, AccessDenied, Failed) and a result; a problem has error messages and a variant (culture and segment are its CMS dimensions) |
 
-Left for later: **storage**. Change sets and draft sets are held in memory, which doesn't work across load-balanced servers.
+Left for later: **storage**. Change sets, draft sets and waiting approvals are held in memory, which doesn't work across load-balanced servers: the next call can land on a server that doesn't have them. What a load balanced site needs:
+
+- **Shared storage behind a store interface.** Change sets have one (`IChangeSetStore`); approvals need the same. A database table, or a distributed cache, behind each.
+- **Move them together.** A waiting approval points at a change set and its version, so both must be in the same place.
+- **Using an approval stays atomic.** Two servers must not both use one id: a database delete that checks it removed the row, or a cache's compare-and-delete.
+- **The version check stays atomic too.** Checking a set's version and applying it should happen in one step, or a change saved on another server in between could slip through.
+- **Durable side effects.** The background queue is in memory as well (see Retries), so queued work is lost on restart.
 
 ### Authorization
 
