@@ -221,6 +221,10 @@ public sealed class CommerceDiscountAdapter(
     private const string Children = "children";
     private const string PriceEditor = "Uc.PropertyEditorUi.Price";
 
+    // How Commerce stores a setting: .NET's own form. Its enum dropdowns list member names (EnumHelper), its price
+    // editor reads amounts as numbers. Commerce's own converter for this is internal to its Management API.
+    private static readonly IPluginSettingFormat SettingFormat = DotNetPluginSettingFormat.Instance;
+
     public override async Task<string?> AuthorizeAsync(EntityAccessRequest request, CancellationToken cancellationToken = default)
     {
         var storeId = request.Entity?.Fields.TryGetPropertyValue("store", out var store) == true && Guid.TryParse(store?.ToString(), out var id)
@@ -318,8 +322,7 @@ public sealed class CommerceDiscountAdapter(
                 ? parsed
                 : GroupDiscountRuleMatchType.All,
             Rules = rules.Select((r, i) => ToRuleItem(r, DerivedKey(discount.Id, i, r.RuleProviderAlias))).ToList(),
-            Rewards = discount.Rewards.Select((r, i) => PluginSettings.ToItem(DerivedKey(discount.Id, 100 + i, r.RewardProviderAlias), r.RewardProviderAlias, r.Settings,
-                rewardProviders.FirstOrDefault(p => p.Alias == r.RewardProviderAlias) is { } p ? DescribeReward(p) : null)).ToList(),
+            Rewards = discount.Rewards.Select((r, i) => PluginSettings.ToItem(DerivedKey(discount.Id, 100 + i, r.RewardProviderAlias), r.RewardProviderAlias, r.Settings, RewardPlugin(r.RewardProviderAlias))).ToList(),
         };
     }
 
@@ -339,15 +342,14 @@ public sealed class CommerceDiscountAdapter(
         await discount.SetDateRangeAsync(ToUtc(model.StartDate), ToUtc(model.EndDate));
         await discount.SetCodesAsync(model.Codes.Distinct().Select(c => new DiscountCode(c, null, true)), SetBehavior.Replace);
         await discount.SetRulesAsync(rules, model.BlockFurtherDiscounts ?? false, model.BlockIfPreviousDiscounts ?? false);
-        await discount.SetRewardsAsync(model.Rewards.Select(r => new DiscountRewardConfig(r.Type, PluginSettings.ToSettings(r))).ToList());
+        await discount.SetRewardsAsync(model.Rewards.Select(r => new DiscountRewardConfig(r.Type, PluginSettings.ToSettings(r, RewardPlugin(r.Type)))).ToList());
         await discount.SetActiveAsync(model.Active ?? false);
         return discount;
     }
 
     private DynamicItem ToRuleItem(DiscountRuleConfig rule, Guid key)
     {
-        var plugin = rule.RuleProviderAlias == GroupRule ? DescribeGroup() : ruleProviders.FirstOrDefault(p => p.Alias == rule.RuleProviderAlias) is { } p ? DescribeRule(p) : null;
-        var item = PluginSettings.ToItem(key, rule.RuleProviderAlias, rule.Settings, plugin);
+        var item = PluginSettings.ToItem(key, rule.RuleProviderAlias, rule.Settings, RulePlugin(rule.RuleProviderAlias));
         if (rule.Children is { Count: > 0 } children)
         {
             item.SetItems(Children, children.Select((c, i) => ToRuleItem(c, DerivedKey(key, i, c.RuleProviderAlias))));
@@ -356,15 +358,21 @@ public sealed class CommerceDiscountAdapter(
         return item;
     }
 
-    private static DiscountRuleConfig ToRuleConfig(DynamicItem item)
-        => new(item.Type, PluginSettings.ToSettings(item, Children),
+    private PluginDescriptor? RulePlugin(string alias)
+        => alias == GroupRule ? DescribeGroup() : ruleProviders.FirstOrDefault(p => p.Alias == alias) is { } p ? DescribeRule(p) : null;
+
+    private PluginDescriptor? RewardPlugin(string alias)
+        => rewardProviders.FirstOrDefault(p => p.Alias == alias) is { } p ? DescribeReward(p) : null;
+
+    private DiscountRuleConfig ToRuleConfig(DynamicItem item)
+        => new(item.Type, PluginSettings.ToSettings(item, RulePlugin(item.Type), Children),
             item.Fields.ContainsKey(Children) ? item.Items(Children).Select(ToRuleConfig).ToList() : []);
 
     private static PluginDescriptor DescribeRule(IDiscountRuleProvider provider)
-        => new(provider.Alias, provider.Label, provider.Description, provider.SettingDefinitions.Select(Describe).ToList());
+        => new(provider.Alias, provider.Label, provider.Description, provider.SettingDefinitions.Select(Describe).ToList()) { SettingFormat = SettingFormat };
 
     private static PluginDescriptor DescribeReward(IDiscountRewardProvider provider)
-        => new(provider.Alias, provider.Label, provider.Description, provider.SettingDefinitions.Select(Describe).ToList());
+        => new(provider.Alias, provider.Label, provider.Description, provider.SettingDefinitions.Select(Describe).ToList()) { SettingFormat = SettingFormat };
 
     // Commerce's price editor stores one amount per currency. Say so, as the setting's type alone doesn't.
     private static SettingDescriptor Describe(UmbracoCommerceSettingDefinition s)
@@ -386,6 +394,7 @@ public sealed class CommerceDiscountAdapter(
         [new SettingDescriptor(MatchType, "Match", "'All', 'Any' or 'Funnel'.", typeof(GroupDiscountRuleMatchType), [], null, 0)])
     {
         ExtraFields = [FieldDefinition.ItemsOf(Children, "The rules in this group.", RuleGroup) with { Min = 1 }],
+        SettingFormat = SettingFormat,
     };
 
     private static string AliasFor(string name)

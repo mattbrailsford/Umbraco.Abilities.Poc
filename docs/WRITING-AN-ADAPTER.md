@@ -361,6 +361,10 @@ How the framework uses them:
 - **In a typed contract** the field is `List<DynamicItem>`: items with a type and JSON fields, items fields included.
   `PluginSettings` turns them into the most common stored form (provider alias plus string settings), using each
   setting's CLR type. A product adds only what's its own, such as a group rule's children.
+- **Stored form.** A model always sees settings in the framework's JSON: camel-case enum names, numbers as numbers.
+  How each is stored as text is the product's: `PluginDescriptor.SettingFormat`, an `IPluginSettingFormat`. The
+  default, `DotNetPluginSettingFormat`, stores .NET's own form (`TotalPrice`, invariant numbers, plain JSON for an
+  object), which is what Commerce's editors read. A product whose editors expect something else supplies its own.
 - **Abilities** can be item types too (`AbilityItemTypes`, through a plain `ItemTypeSource`), so workflow steps are
   abilities and Automate's actions side by side.
 

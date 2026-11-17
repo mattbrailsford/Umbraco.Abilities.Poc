@@ -345,6 +345,12 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
       The first run stopped there: the model could not find the store's currencies, and asked. A read-only currency
       adapter (`umbraco-commerce-currency`) and one line on the price setting's description fixed it. Stores are
       read-only adapters for the same reason.
+    - **The stored form of a setting is the product's, not the model's.** The first discounts were stored in the
+      model's JSON: `totalPrice`, and amounts as text. Commerce ran them, but its backoffice showed empty dropdowns and
+      no amounts, as its editors read enum member names (`TotalPrice`) and numbers. Now the framework turns the model's
+      JSON into the setting's CLR type, and the product's `IPluginSettingFormat` turns that into stored text. The
+      default is .NET's own form, which is Commerce's. Commerce's own converter is internal to its Management API; a
+      public one would let the adapter use exactly what the backoffice uses.
     - **A setting that is an object is stored as text.** Commerce keeps every setting as a string, so the amounts came
       back as a JSON string after being written as an object. `PluginSettings` now reads a setting whose type is an
       object or a list back as JSON. It is framework code, so every product's plugins get it.

@@ -114,6 +114,8 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
 
 - Rule and reward types come from Commerce's provider collections, with the label fallback and editor references; a provider registered later shows up; a group rule nests children and is stored as Commerce's rule tree
   - `PluginItemTypeTests (all)`
+- A model sees plugin settings in the framework's JSON, whatever the product stores: .NET's own form by default (enum member names, numbers as numbers), or the product's own format; a stored value the type can't read is shown as stored
+  - `PluginSettingFormatTests (all)`
 - Automate's triggers and actions come from its collections, settings can be bindings, and users are only offered the types they may use
   - `PluginItemTypeTests.Automates_triggers_and_actions_come_from_its_collections_and_settings_can_be_bindings`
   - `PluginItemTypeTests.A_user_is_only_offered_plugin_types_they_may_use`
