@@ -56,6 +56,13 @@ public sealed class AbilityToolSession(Guid userKey)
 /// call must name one, so an edit never lands in a set the caller didn't mean. Every result says which set the call
 /// used.
 /// </para>
+/// <para>
+/// A call to an ability that can't be undone (<see cref="AbilityDescriptor.RequiresApproval"/>) runs only when the
+/// surface says the person agreed to it. That is decided per call: in a change set the call is only recorded, which can
+/// be undone, so it needs no consent; applying the set does. This is consent, not review: the person the caller acts for says yes, so a
+/// model can't post by accident. How the surface asks is its own: an AI chat pauses for the person, an MCP server asks
+/// through its client, an HTTP caller sends a header once the person agreed. Without it, nothing is done.
+/// </para>
 /// </summary>
 public sealed class AbilityTool
 {
@@ -96,7 +103,14 @@ public sealed class AbilityTool
     /// caller can correct an input failure and stop on the others. The result is the same shape for every surface: see
     /// <see cref="AbilityToolResult"/>.
     /// </summary>
-    public async Task<AbilityToolResult> InvokeAsync(JsonObject arguments, CancellationToken cancellationToken = default)
+    /// <param name="arguments">The tool's input.</param>
+    /// <param name="approved">
+    /// True when the person the caller acts for agreed to this call. Only a call that can't be undone needs it: an
+    /// ability that requires approval, run live rather than recorded in a change set. Without it, such a call does
+    /// nothing and fails with <see cref="AbilityOperationStatus.ApprovalRequired"/>, so the surface can ask and call again.
+    /// </param>
+    /// <param name="cancellationToken">Stops the call.</param>
+    public async Task<AbilityToolResult> InvokeAsync(JsonObject arguments, bool approved = false, CancellationToken cancellationToken = default)
     {
         var changeSets = _invoker.ChangeSets;
         var input = new JsonObject();
@@ -154,6 +168,15 @@ public sealed class AbilityTool
         else
         {
             used = Descriptor.UsesChangeSet && _session.ChangeSetId is { } only ? changeSets.Find(only) : null;
+        }
+
+        // In a set, a Write is recorded, not run (see AbilityInvoker), so only a call that runs live needs consent.
+        var recorded = used is not null && Descriptor.Kind == AbilityKind.Write && _ability is not IChangeSetLifecycleAbility;
+        if (Descriptor.RequiresApproval && !recorded && !approved)
+        {
+            return AbilityToolResult.From(AbilityResult.Fail(AbilityOperationStatus.ApprovalRequired,
+                $"{Descriptor.Name} can't be undone, so the person you act for must agree to it first. Nothing was done.", []),
+                used is null ? null : new AbilityToolChangeSet(used.Id, used.Name));
         }
 
         AbilityResult result;

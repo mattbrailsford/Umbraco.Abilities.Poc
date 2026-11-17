@@ -95,6 +95,12 @@ public enum AbilityOperationStatus
 
     /// <summary>Something failed while running. Retrying the same input will not help.</summary>
     Failed,
+
+    /// <summary>
+    /// It can't be undone, and the surface didn't say the person agreed to this call. Nothing was done. The surface asks
+    /// the person, then calls again with their consent.
+    /// </summary>
+    ApprovalRequired,
 }
 
 /// <summary>

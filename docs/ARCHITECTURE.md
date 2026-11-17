@@ -301,7 +301,7 @@ The existing content operations (create, update, move, delete, sort, copy, resto
 Two things follow:
 
 - **One review across products.** A campaign of new landing pages, a discount and an automation is one set, reviewed together and applied product by product.
-- **Approval moves to apply.** Recording into a set is always safe. Only applying the set is a Write that needs approval.
+- **Approval moves to apply.** Recording into a set is always safe. Only applying the set is a Write that needs approval. The site enforces it per call: a live call that can't be undone runs only with the person's consent, which each surface asks for its own way.
 
 ## Applying across products
 
@@ -497,7 +497,7 @@ A standalone [proof of concept](../) implements all three layers, with stand-ins
 
 | Finding | What it showed | Change to the design |
 | --- | --- | --- |
-| Approval depends on the call, not just the tool | `email.send` needs approval when run directly, but inside a change set it is only recorded. M.E.AI's `ApprovalRequiredAIFunction` wraps a tool once, so it cannot express "only outside a set" | Decide approval per call from the context, and put it on applying the set |
+| Approval depends on the call, not just the tool | `email.send` needs approval when run directly, but inside a change set it is only recorded. M.E.AI's `ApprovalRequiredAIFunction` wraps a tool once, so it cannot express "only outside a set" | Decide approval per call from the context, and put it on applying the set. `AbilityTool` refuses a live call that can't be undone unless the surface says the person agreed (`ApprovalRequired`, a 428 over HTTP); the surface asks, for MCP by elicitation |
 | Side effects are not checked when recorded | An email with an invalid recipient was accepted into the set and only failed at apply | Add an optional "check this input without running it" hook to abilities, so a whole set can be checked before anyone approves it |
 | Every read must see the set's changes | Finding an entity by name inside a set first missed one renamed in the set, and a product's own Read ability showed only live data | Reads go through the change set: the generic reads use the working state, and a product's Read ability runs its own query for what's live, then reads it through `ChangeSetService.ReadAllAsync` (or `ReadModelsAsync`), which adds what the current set changed, created or deleted. The generic form of the CMS Draft Sets read overlay |
 | Keys chosen at record time work | Writing generated keys into the recorded input made replay deterministic. A discount referred to a page created in the same set, and a workflow step to a later step, with no key remapping | Settles the "new items referring to each other" risk in favour of keys chosen when the call is recorded |

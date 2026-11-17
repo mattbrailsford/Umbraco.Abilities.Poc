@@ -87,7 +87,8 @@ The details and the lessons are in [docs/FINDINGS.md](docs/FINDINGS.md). The tes
 - **Surfaces other than AI tools, HTTP and MCP.** The Umbraco.AI adapter (abilities as M.E.AI `AIFunction`s), two
   Management API endpoints and an MCP proxy that plays the Umbraco CMS MCP Dev server are built. MCP Dev itself isn't
   changed. Claude Code has used the proxy against the demo site, signed in as an API user; other MCP clients are
-  not tried. Automate actions and a backoffice editor would use the same abilities, but neither is
+  not tried. The proxy asks the person before a call that can't be undone (MCP elicitation); only headless Claude
+  Code, which can't answer, is tried. Automate actions and a backoffice editor would use the same abilities, but neither is
   built here.
 - **A real model, at scale.** The tests script the tool calls. One model built two discounts from text in a few runs
   (see [Against a real model](docs/FINDINGS.md#against-a-real-model)). That shows the tools are usable, not how often a

@@ -74,7 +74,7 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
         Assert.That(validation.GetProperty("valid").GetBoolean(), Is.True, validation.ToString());
         Assert.That(ContentService.GetById(page), Is.Null, "nothing is saved before apply");
 
-        await OkAsync("changeSet.apply", "{}", set);
+        await OkAsync("changeSet.apply", "{}", set, approved: true);
 
         var content = ContentService.GetById(page)!;
         var user = GetRequiredService<IUserService>().GetByEmail(editor)!;
@@ -84,6 +84,29 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
             Assert.That(content.GetValue<string>("title"), Is.EqualTo("Hello world"));
             Assert.That(content.WriterId, Is.EqualTo(user.Id), "saved as the signed-in user, not as a system user");
         });
+    }
+
+    [Test]
+    public async Task A_call_that_cannot_be_undone_without_the_persons_consent_is_a_428_and_does_nothing()
+    {
+        await SignInAsEditorAsync();
+        var set = (await OkAsync("changeSet.create", """{ "name": "Hello page" }""")).GetProperty("changeSetId").GetGuid();
+        var page = (await OkAsync("entity.create", """{ "entityType": "document", "subtype": "article", "fields": { "name": "Hello" } }""", set))
+            .GetProperty("key").GetGuid();
+        await OkAsync("entity.setValue", $$"""{ "entityType": "document", "key": "{{page}}", "path": "/title", "value": "Hello world" }""", set);
+
+        var (status, body) = await InvokeAsync("changeSet.apply", "{}", set);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(status, Is.EqualTo((HttpStatusCode)428), body.ToString());
+            Assert.That(body.GetProperty("status").GetString(), Is.EqualTo("ApprovalRequired"));
+            Assert.That(body.GetProperty("changeSet").GetProperty("open").GetBoolean(), Is.True, "the set is still open");
+            Assert.That(ContentService.GetById(page), Is.Null, "nothing is saved");
+        });
+
+        await OkAsync("changeSet.apply", "{}", set, approved: true);
+        Assert.That(ContentService.GetById(page), Is.Not.Null, "saved once the person agreed");
     }
 
     [Test]
@@ -142,14 +165,15 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
     }
 
-    private async Task<JsonElement> OkAsync(string ability, string json, Guid? changeSet = null)
+    private async Task<JsonElement> OkAsync(string ability, string json, Guid? changeSet = null, bool approved = false)
     {
-        var (status, body) = await InvokeAsync(ability, json, changeSet);
+        var (status, body) = await InvokeAsync(ability, json, changeSet, approved);
         Assert.That(status, Is.EqualTo(HttpStatusCode.OK), $"{ability} failed: {body}");
         return body.GetProperty("result");
     }
 
-    private async Task<(HttpStatusCode Status, JsonElement Body)> InvokeAsync(string ability, string json, Guid? changeSet = null)
+    // approved plays a caller that asked the person and got a yes.
+    private async Task<(HttpStatusCode Status, JsonElement Body)> InvokeAsync(string ability, string json, Guid? changeSet = null, bool approved = false)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, GetManagementApiUrl<AbilitiesController>(x => x.Invoke(ability, null, CancellationToken.None)))
         {
@@ -158,6 +182,11 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
         if (changeSet is { } id)
         {
             request.Headers.Add(ChangeSetAccessor.HeaderName, id.ToString());
+        }
+
+        if (approved)
+        {
+            request.Headers.Add(AbilitiesController.ApprovedHeader, "true");
         }
 
         var response = await Client.SendAsync(request);

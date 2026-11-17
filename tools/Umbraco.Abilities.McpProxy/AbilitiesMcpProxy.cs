@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -16,6 +17,12 @@ namespace Umbraco.Abilities.McpProxy;
 /// and names it in the <c>Umb-Change-Set</c> header of every call that doesn't name one. Each HTTP call stands alone,
 /// so without this a model would have to pass <c>changeSetId</c> to every call.
 /// </para>
+/// <para>
+/// A call that can't be undone runs only once the person agrees. The site decides which calls those are (a tool that
+/// requires approval, run live rather than recorded in a change set) and answers 428 without doing anything. The proxy
+/// then asks the person through the MCP client (elicitation), not the model, so the model can't agree for them. On yes
+/// it sends the call again with <c>Umb-Approved: true</c>; on no, or with a client that can't ask, it stops there.
+/// </para>
 /// </summary>
 public sealed class AbilitiesMcpProxy(HttpClient umbraco)
 {
@@ -23,6 +30,7 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
     public const string AbilitiesPath = "/umbraco/management/api/v1/abilities";
 
     private const string ChangeSetHeader = "Umb-Change-Set";
+    private const string ApprovedHeader = "Umb-Approved";
     private const string ChangeSetIdArgument = "changeSetId";
 
     private Dictionary<string, ListedAbility> _abilities = [];
@@ -41,7 +49,7 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
             {
                 Tools = (await ListAsync(cancellationToken)).Values.Select(ability => ability.Tool).ToList(),
             },
-            CallToolHandler = async (request, cancellationToken) => await CallAsync(request.Params!, cancellationToken),
+            CallToolHandler = async (request, cancellationToken) => await CallAsync(request.Server, request.Params!, cancellationToken),
         },
     };
 
@@ -52,7 +60,7 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
         return _abilities;
     }
 
-    private async Task<CallToolResult> CallAsync(CallToolRequestParams call, CancellationToken cancellationToken)
+    private async Task<CallToolResult> CallAsync(McpServer session, CallToolRequestParams call, CancellationToken cancellationToken)
     {
         if (!_abilities.TryGetValue(call.Name, out var ability) && !(await ListAsync(cancellationToken)).TryGetValue(call.Name, out ability))
         {
@@ -65,16 +73,20 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
             input[name] = JsonNode.Parse(value.GetRawText());
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"{AbilitiesPath}/{Uri.EscapeDataString(ability.Id)}/invoke")
+        var response = await SendAsync(ability, input, approved: false, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.PreconditionRequired)
         {
-            Content = JsonContent.Create(input),
-        };
-        if (ability.UsesChangeSet && !input.ContainsKey(ChangeSetIdArgument) && OpenChangeSetId is { } open)
-        {
-            request.Headers.Add(ChangeSetHeader, open.ToString());
+            // The site needs the person's consent for this call, and did nothing. Ask, then send it again.
+            response.Dispose();
+            if (await AskAsync(session, ability, input, cancellationToken) is { } refused)
+            {
+                return refused;
+            }
+
+            response = await SendAsync(ability, input, approved: true, cancellationToken);
         }
 
-        using var response = await umbraco.SendAsync(request, cancellationToken);
+        using var _ = response;
         var text = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!TryParse(text, out var body) || !body.TryGetProperty("success", out var success))
         {
@@ -88,6 +100,50 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
             Content = [new TextContentBlock { Text = text }],
             IsError = !success.GetBoolean(),
         };
+    }
+
+    private async Task<HttpResponseMessage> SendAsync(ListedAbility ability, JsonObject input, bool approved, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{AbilitiesPath}/{Uri.EscapeDataString(ability.Id)}/invoke")
+        {
+            Content = JsonContent.Create(input),
+        };
+        if (ability.UsesChangeSet && !input.ContainsKey(ChangeSetIdArgument) && OpenChangeSetId is { } open)
+        {
+            request.Headers.Add(ChangeSetHeader, open.ToString());
+        }
+
+        if (approved)
+        {
+            request.Headers.Add(ApprovedHeader, "true");
+        }
+
+        return await umbraco.SendAsync(request, cancellationToken);
+    }
+
+    // Asks the person, through their MCP client, to agree to one call that can't be undone. Null when they said yes.
+    private async Task<CallToolResult?> AskAsync(McpServer session, ListedAbility ability, JsonObject input, CancellationToken cancellationToken)
+    {
+        if (session.ClientCapabilities?.Elicitation is null)
+        {
+            return Error($"{ability.Name} can't be undone, so the person must agree to it first, but this MCP client can't ask them. Nothing was done.");
+        }
+
+        var details = input.Where(argument => argument.Key != ChangeSetIdArgument).ToList();
+        var changeSet = input[ChangeSetIdArgument]?.ToString() ?? OpenChangeSetId?.ToString();
+        var message = $"Allow \"{ability.Name}\"? It can't be undone. {ability.Tool.Description}"
+            + (ability.UsesChangeSet && changeSet is not null ? $"\nChange set: {changeSet}" : string.Empty)
+            + (details.Count > 0 ? $"\nWith: {new JsonObject(details.Select(d => KeyValuePair.Create(d.Key, d.Value?.DeepClone())))}" : string.Empty);
+
+        var answer = await session.ElicitAsync(new ElicitRequestParams
+        {
+            Message = message,
+            RequestedSchema = new ElicitRequestParams.RequestSchema { Properties = new Dictionary<string, ElicitRequestParams.PrimitiveSchemaDefinition>() },
+        }, cancellationToken);
+
+        return answer.IsAccepted
+            ? null
+            : Error($"The person didn't agree to {ability.Name} ({answer.Action}). Nothing was done. Don't try again unless they ask.");
     }
 
     // The set a call created or used stays open for the session; one applied or discarded is closed.
@@ -131,13 +187,14 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
     /// hints: a read is read only, and a write that can't be undone is destructive, so a client knows to ask the person
     /// first. A write a change set can undo is not destructive.
     /// </summary>
-    private sealed record ListedAbility(string Id, bool UsesChangeSet, Tool Tool)
+    private sealed record ListedAbility(string Id, string Name, bool UsesChangeSet, Tool Tool)
     {
         public static ListedAbility From(JsonElement listed)
         {
             var readOnly = listed.GetProperty("kind").GetString() == "Read";
             return new(
                 listed.GetProperty("id").GetString()!,
+                listed.GetProperty("name").GetString()!,
                 listed.GetProperty("usesChangeSet").GetBoolean(),
                 new Tool
                 {

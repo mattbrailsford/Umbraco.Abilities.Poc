@@ -22,12 +22,20 @@ namespace Umbraco.Abilities.ManagementApi;
 /// in the change set its <c>Umb-Change-Set</c> header names, or the one its <c>changeSetId</c> names. Each call stands
 /// alone: nothing is kept between requests but the change sets themselves.
 /// </para>
+/// <para>
+/// An ability that can't be undone (listed with <c>requiresApproval</c>) runs only when the request carries
+/// <c>Umb-Approved: true</c>. The caller sends it once the person it acts for agreed to that call, for example after its
+/// MCP client asked them. Without it the call does nothing and is a 428.
+/// </para>
 /// </summary>
 [ApiVersion("1.0")]
 [VersionedApiBackOfficeRoute("abilities")]
 [ApiExplorerSettings(GroupName = "Abilities")]
 public sealed class AbilitiesController(AbilityInvoker invoker, IBackOfficeSecurityAccessor security) : ManagementApiControllerBase
 {
+    /// <summary>The header a caller sends, set to <c>true</c>, once the person agreed to a call that can't be undone.</summary>
+    public const string ApprovedHeader = "Umb-Approved";
+
     /// <summary>
     /// Lists every ability, with what a tool needs: its id and tool name, a description, whether it changes anything
     /// or needs a person's approval, and the JSON schema of its input.
@@ -57,6 +65,7 @@ public sealed class AbilitiesController(AbilityInvoker invoker, IBackOfficeSecur
     [ProducesResponseType<JsonElement>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType<JsonElement>(StatusCodes.Status422UnprocessableEntity)]
+    [ProducesResponseType<JsonElement>(StatusCodes.Status428PreconditionRequired)]
     public async Task<IActionResult> Invoke(string id, [FromBody] JsonObject? input, CancellationToken cancellationToken)
     {
         if (invoker.Abilities.Find(id) is not { } ability)
@@ -75,7 +84,9 @@ public sealed class AbilitiesController(AbilityInvoker invoker, IBackOfficeSecur
             arguments[AbilityTool.ChangeSetIdArgument] = header.ToString();
         }
 
-        var result = await tool.InvokeAsync(arguments, cancellationToken);
+        var approved = Request.Headers.TryGetValue(ApprovedHeader, out var consent)
+            && bool.TryParse(consent.ToString(), out var agreed) && agreed;
+        var result = await tool.InvokeAsync(arguments, approved, cancellationToken);
         return StatusCode(StatusCodeOf(result), result.ToJson());
     }
 
@@ -84,6 +95,9 @@ public sealed class AbilitiesController(AbilityInvoker invoker, IBackOfficeSecur
         {
             AbilityOperationStatus.InvalidInput => StatusCodes.Status400BadRequest,
             AbilityOperationStatus.AccessDenied => StatusCodes.Status403Forbidden,
+
+            // The person hasn't agreed to a call that can't be undone. Ask them, then send it again with Umb-Approved.
+            AbilityOperationStatus.ApprovalRequired => StatusCodes.Status428PreconditionRequired,
 
             // It ran and failed, for example Umbraco refused the save. Sending the same input again won't help.
             _ => StatusCodes.Status422UnprocessableEntity,

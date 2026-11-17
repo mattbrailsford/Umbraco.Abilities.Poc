@@ -171,6 +171,10 @@ Called over HTTP on Umbraco's test server, as the Umbraco CMS MCP Dev server wou
 
 - The framework's tool schemas, from .NET's own exporter, are the ones M.E.AI would make, for every sample ability
   - `AbilityToolSchemaTests.Every_abilitys_input_schema_is_the_one_MEAI_would_make`
+- A call that can't be undone runs only when the surface says the person agreed, decided per call: recorded in a change set it needs no consent
+  - `AbilityToolConsentTests.A_call_that_cannot_be_undone_runs_only_when_the_surface_says_the_person_agreed`
+  - `AbilityToolConsentTests.A_call_that_can_be_undone_needs_no_consent`
+  - `AbilityToolConsentTests.A_call_that_needs_consent_live_needs_none_when_it_is_only_recorded_in_a_change_set`
 
 - The list endpoint gives every ability with what a tool needs: tool name, description, kind, and the input schema with `changeSetId` when it uses a change set
   - `AbilitiesManagementApiTests.The_Management_API_lists_every_ability_with_what_a_tool_needs`
@@ -182,6 +186,8 @@ Called over HTTP on Umbraco's test server, as the Umbraco CMS MCP Dev server wou
   - `AbilitiesManagementApiTests.A_user_without_the_Content_section_is_refused_with_a_403`
 - A header naming an unknown change set is refused, and nothing is written live
   - `AbilitiesManagementApiTests.A_header_naming_an_unknown_change_set_is_refused_rather_than_writing_live`
+- A call that can't be undone, without the `Umb-Approved` header, is a 428 and does nothing; with it, it runs
+  - `AbilitiesManagementApiTests.A_call_that_cannot_be_undone_without_the_persons_consent_is_a_428_and_does_nothing`
 - A caller that isn't signed in is refused
   - `AbilitiesManagementApiTests.A_caller_that_is_not_signed_in_is_refused`
 
@@ -192,6 +198,11 @@ endpoints.
   - `AbilitiesMcpProxyTests.An_MCP_client_gets_one_tool_per_ability_the_site_lists`
 - An MCP client is told which tools only read, and which can't be undone and need a person to approve them (MCP's tool hints)
   - `AbilitiesMcpProxyTests.An_MCP_client_is_told_which_tools_only_read_and_which_need_a_person_to_approve_them`
+- The proxy asks the person (MCP elicitation) before a call that can't be undone; building a page asks once, at apply
+  - `AbilitiesMcpProxyTests.An_MCP_client_builds_a_page_in_a_change_set_without_naming_it_and_it_is_saved_on_apply`
+- A person who says no stops the call, and nothing is saved; a client that can't ask is refused
+  - `AbilitiesMcpProxyTests.A_person_who_says_no_stops_a_call_that_cannot_be_undone_and_nothing_is_saved`
+  - `AbilitiesMcpProxyTests.A_client_that_cannot_ask_the_person_is_refused_a_call_that_cannot_be_undone`
 - An MCP client builds a page in a change set without naming it on each call: the session remembers the set it opened, and closes it once applied
   - `AbilitiesMcpProxyTests.An_MCP_client_builds_a_page_in_a_change_set_without_naming_it_and_it_is_saved_on_apply`
 - A refused call is an MCP tool error, with the problems to fix

@@ -12,7 +12,7 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
    approval when run directly. Inside a change set they are only recorded, so asking then is pointless; the
    approval belongs on `changeSet.apply`. M.E.AI's `ApprovalRequiredAIFunction` wraps a tool once, so the
    adapter can't express "only outside a set". The contract needs approval decided per call, from the
-   context.
+   context. `AbilityTool` now does this for HTTP and MCP (finding 23); the AI adapter still wraps once.
 2. **Side effects are not checked when recorded.** An `email.send` with a bad recipient is
    accepted into the set and only fails at apply. Abilities need an optional "check this input without
    running it" hook, so a set can be validated fully before anyone approves it.
@@ -225,10 +225,10 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
     - **Each HTTP call stands alone.** There is no conversation to remember the open change set, so the caller names it
       in the `Umb-Change-Set` header or in `changeSetId`. A header naming an unknown set is refused, never written live.
     - **Approval is the caller's job.** `requiresApproval` is listed, but HTTP can't pause for a person. An MCP client
-      has its own "allow this tool?" prompt.
+      has its own "allow this tool?" prompt. (Since finding 23 the site refuses a call that needs consent without it.)
 
     Failures map to status codes: a mistake the caller can fix is a 400 with problems by path, a refusal is a 403, and
-    a failure while running is a 422. The body is the same as the tool's result either way. The OpenAPI document
+    a failure while running is a 422. A call that needs the person's consent and came without it is a 428 (finding 23). The body is the same as the tool's result either way. The OpenAPI document
     shows the invoke body as a plain object; the list endpoint carries each ability's real schema.
 22. **MCP Dev's side is one small, generic proxy, plus the session's change set.** `tools/Umbraco.Abilities.McpProxy`
     plays MCP Dev: an MCP server whose tools are whatever the list endpoint returns, each call forwarded to the invoke
@@ -275,7 +275,37 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
       marked `requiresApproval`, but the proxy dropped that, and the site doesn't enforce it: the run switched the
       discount on with nobody asked. The proxy now maps it to MCP's tool hints: a read is `readOnlyHint`, and a
       write that can't be undone is `destructiveHint`, so a client can ask the person first. A test covers it.
-      Which clients act on the hints is not checked. The site itself still trusts the caller to have asked.
+      Which clients act on the hints is not checked. Finding 23 then made the site refuse such a call without consent.
+
+
+23. **Consent can be enforced by the site, decided per call, and asked for by the MCP server.** The goal is consent,
+    not review: the person driving the model says yes, so it can't post by accident. Three parts:
+    - **The site decides.** `AbilityTool` refuses a call that can't be undone unless the surface says the person
+      agreed. It does nothing and returns `ApprovalRequired` (a 428 over HTTP). This is decided per call, as finding 1
+      asked: a Write recorded in a change set can be undone, so it needs no consent; applying the set, or switching a
+      discount on live, does.
+    - **HTTP carries the yes in a header.** A caller sends `Umb-Approved: true` once the person agreed. There is no
+      standard header for this; it is our convention, like `Umb-Change-Set`. The closest standard, OAuth step-up
+      sign-in (RFC 9470), proves who someone is, which is more than consent needs. A body field would not do: the
+      model writes the body, so it could agree for the person. The header is not proof: any HTTP caller can send it.
+      It stops accidents, not someone set on going around it.
+    - **The MCP server asks, through the client.** On a 428 the proxy asks the person with MCP elicitation, the
+      protocol's standard way for a server to ask the user something, then sends the call again with the header. The
+      question goes to the person, not the model. A client that can't ask is refused. Headless Claude Code
+      (`claude -p`) says it can ask, but answers "cancel" with nobody there, so the set stayed unapplied
+      (17-11-2026). The interactive dialog is not tried.
+
+    Compared with MCP Dev today: its tools carry `readOnlyHint` and `destructiveHint`, and it has a read only mode
+    (`UMBRACO_READONLY`), but it calls the Management API directly, so any consent is the MCP client's own "allow this
+    tool?" prompt, which a person can switch to always allow. No elicitation was found in its code. Here the site
+    knows which calls need consent and refuses without it, and with change sets most calls need none, so the person
+    is asked once, at apply.
+
+    The Umbraco.AI tools don't change. Umbraco.AI's host already gates approval (`AIApprovalPolicy`: ask, deny, or
+    allowed up front), and only calls a tool after that, so the AI adapter passes the person's consent through. It
+    still decides once per tool, through `ApprovalRequiredAIFunction`, so a discount switched on inside a set is
+    asked about there, needlessly. Fixing that needs the host to ask per call, for example by acting on
+    `ApprovalRequired` from the tool's result.
 
 ## Developer experience of adapters
 

@@ -50,7 +50,10 @@ public sealed class AbilityAIFunction : AIFunction
             };
         }
 
-        return (await _tool.InvokeAsync(input, cancellationToken)).ToJson();
+        // Consent is the host's: an ability that needs it is wrapped in ApprovalRequiredAIFunction (see AbilityAITools),
+        // and the chat client only calls it once the person approved. Umbraco.AI's approval policy decides the same way:
+        // it asks (Interactive), skips the call (DenyAll, DenyApprovalRequired), or was told up front to run it (AllowAll).
+        return (await _tool.InvokeAsync(input, approved: true, cancellationToken)).ToJson();
     }
 }
 

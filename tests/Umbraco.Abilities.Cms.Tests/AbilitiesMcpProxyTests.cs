@@ -25,10 +25,20 @@ public sealed class AbilitiesMcpProxyTests : AbilitiesApiTestBase
     private McpServer? _server;
     private McpClient? _client;
     private AbilitiesMcpProxy _proxy = null!;
+    private readonly List<string> _asked = [];
+
+    // A person at the MCP client: they see each question and give the same answer.
+    private Func<ElicitRequestParams?, CancellationToken, ValueTask<ElicitResult>> Person(string action)
+        => (question, _) =>
+        {
+            _asked.Add(question?.Message ?? string.Empty);
+            return ValueTask.FromResult(new ElicitResult { Action = action });
+        };
 
     [TearDown]
     public async Task StopMcpAsync()
     {
+        _asked.Clear();
         if (_client is not null)
         {
             await _client.DisposeAsync();
@@ -97,10 +107,49 @@ public sealed class AbilitiesMcpProxyTests : AbilitiesApiTestBase
         var content = ContentService.GetById(page)!;
         Assert.Multiple(() =>
         {
+            Assert.That(_asked, Has.Count.EqualTo(1), "the person is asked once, for the apply only: " + string.Join(" | ", _asked));
+            Assert.That(_asked[0], Does.Contain("Apply change set"));
             Assert.That(content.GetValue<string>("title"), Is.EqualTo("Hello world"));
             Assert.That(content.WriterId, Is.EqualTo(GetRequiredService<IUserService>().GetByEmail(editor)!.Id));
             Assert.That(_proxy.OpenChangeSetId, Is.Null, "an applied set is closed in the session");
         });
+    }
+
+    [Test]
+    public async Task A_person_who_says_no_stops_a_call_that_cannot_be_undone_and_nothing_is_saved()
+    {
+        await SignInAsEditorAsync();
+        var client = await ConnectAsync(Person("decline"));
+        await OkAsync(client, "changeSet_create", new() { ["name"] = "Hello page" });
+        var page = (await OkAsync(client, "entity_create", new()
+        {
+            ["entityType"] = "document",
+            ["subtype"] = "article",
+            ["fields"] = new Dictionary<string, object?> { ["name"] = "Hello", ["title"] = "Hello world" },
+        })).GetProperty("key").GetGuid();
+
+        var result = await client.CallToolAsync("changeSet_apply", new Dictionary<string, object?>());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.IsError, Is.True);
+            Assert.That(TextOf(result), Does.Contain("didn't agree"));
+            Assert.That(ContentService.GetById(page), Is.Null, "nothing is saved");
+            Assert.That(_proxy.OpenChangeSetId, Is.Not.Null, "the set stays open");
+        });
+    }
+
+    [Test]
+    public async Task A_client_that_cannot_ask_the_person_is_refused_a_call_that_cannot_be_undone()
+    {
+        await SignInAsEditorAsync();
+        var client = await ConnectAsync(person: null);
+        await OkAsync(client, "changeSet_create", new() { ["name"] = "Hello page" });
+
+        var result = await client.CallToolAsync("changeSet_apply", new Dictionary<string, object?>());
+
+        Assert.That(result.IsError, Is.True);
+        Assert.That(TextOf(result), Does.Contain("can't ask them"));
     }
 
     [Test]
@@ -124,7 +173,10 @@ public sealed class AbilitiesMcpProxyTests : AbilitiesApiTestBase
 
     // The proxy as an MCP server, and an MCP client connected to it, over in-memory pipes. The proxy calls Umbraco with
     // the test server's signed-in HTTP client, as MCP Dev calls a site as its API user.
-    private async Task<McpClient> ConnectAsync()
+    // By default the client has a person who says yes. Null plays a client that can't ask anyone.
+    private Task<McpClient> ConnectAsync() => ConnectAsync(Person("accept"));
+
+    private async Task<McpClient> ConnectAsync(Func<ElicitRequestParams?, CancellationToken, ValueTask<ElicitResult>>? person)
     {
         var toServer = new Pipe();
         var toClient = new Pipe();
@@ -132,7 +184,8 @@ public sealed class AbilitiesMcpProxyTests : AbilitiesApiTestBase
         var options = _proxy.CreateOptions();
         _server = McpServer.Create(new StreamServerTransport(toServer.Reader.AsStream(), toClient.Writer.AsStream()), options);
         _ = _server.RunAsync();
-        _client = await McpClient.CreateAsync(new StreamClientTransport(toServer.Writer.AsStream(), toClient.Reader.AsStream()));
+        var clientOptions = person is null ? null : new McpClientOptions { Handlers = new McpClientHandlers { ElicitationHandler = person } };
+        _client = await McpClient.CreateAsync(new StreamClientTransport(toServer.Writer.AsStream(), toClient.Reader.AsStream()), clientOptions);
         return _client;
     }
 
