@@ -10,7 +10,7 @@ namespace Umbraco.Abilities.Tests;
 
 /// <summary>
 /// What an entity type can do beyond setting values: delete and move, which the framework offers when an adapter opts
-/// in, and behaviours another package ships, which work on any entity type with the field roles they need.
+/// in, and capabilities another package ships the same way, with its own adapter interface.
 /// </summary>
 public class EntityCapabilityTests
 {
@@ -22,8 +22,8 @@ public class EntityCapabilityTests
     {
         _site.Adapters.Add(_folders);
 
-        // Another package's behaviour. It knows nothing about folders; folders know nothing about it.
-        _site.Abilities.Add(new ArchiveBehaviour());
+        // Another package's capability. It knows nothing about folders; folders opt in by implementing its interface.
+        _site.Abilities.Add(new ArchiveEntityAbility());
         _agent = new ScriptedAgent(_site);
     }
 
@@ -33,9 +33,8 @@ public class EntityCapabilityTests
         var folders = await _agent.OkAsync("entity_getSchema", """{ "entityType": "folder" }""");
         var discounts = await _agent.OkAsync("entity_getSchema", """{ "entityType": "umbraco-commerce-discount" }""");
 
-        Assert.Equal(["delete", "move", "archive"], folders.GetProperty("capabilities").EnumerateArray().Select(c => c.GetString()));
+        Assert.Equal(["archive", "delete", "move"], folders.GetProperty("capabilities").EnumerateArray().Select(c => c.GetString()));
         Assert.Empty(discounts.GetProperty("capabilities").EnumerateArray());
-        Assert.Equal("archived", folders.GetProperty("fields").GetProperty("properties").GetProperty("hidden").GetProperty("x-role").GetString());
     }
 
     [Fact]
@@ -138,7 +137,7 @@ public class EntityCapabilityTests
     }
 
     [Fact]
-    public async Task A_behaviour_another_package_ships_works_on_any_entity_type_with_the_roles_it_needs()
+    public async Task A_capability_another_package_ships_works_on_any_entity_type_whose_adapter_implements_its_interface()
     {
         var docs = _folders.Seed("Docs");
 
@@ -147,12 +146,14 @@ public class EntityCapabilityTests
         var read = await _agent.OkAsync("entity_get", $$"""{ "entityType": "folder", "key": "{{docs}}" }""");
         Assert.True(read.GetProperty("fields").GetProperty("hidden").GetBoolean());
 
+        // It only set a value, so it is checked as an update and saved like any edit.
+        Assert.Equal([EntityPermission.Update], _folders.Checked.Select(r => r.Permission));
         await _agent.OkAsync("changeSet_apply", $$"""{ "changeSetId": "{{_agent.ChangeSetId}}" }""");
         Assert.True(_folders.Live[docs]["hidden"]!.GetValue<bool>());
     }
 
     [Fact]
-    public async Task A_behaviour_refuses_an_entity_type_without_the_roles_it_needs()
+    public async Task A_capability_refuses_an_entity_type_whose_adapter_does_not_implement_its_interface()
     {
         await _agent.StartChangeSetAsync("Archive");
         var refused = await _agent.FailAsync("entity_archive", $$"""{ "entityType": "umbraco-commerce-collection", "key": "{{_site.SummerCollection}}" }""");
@@ -161,73 +162,44 @@ public class EntityCapabilityTests
         Assert.Contains("doesn't support archive", refused.GetProperty("message").GetString());
     }
 
-    [Fact]
-    public async Task Changing_a_field_with_a_role_is_checked_with_that_role_whichever_ability_changes_it()
+    // ── Another package's capability ──────────────────────────────────────────────────────────
+
+    /// <summary>The interface the archive package ships. A product implements it to say which field hides an entity.</summary>
+    public interface IArchivableEntityAdapter : IEntityAdapter
     {
-        var docs = _folders.Seed("Docs");
-
-        await _agent.StartChangeSetAsync("Archive");
-        await _agent.OkAsync("entity_archive", $$"""{ "entityType": "folder", "key": "{{docs}}" }""");
-        Assert.Equal(["Update:archived"], _folders.Checked.Select(r => $"{r.Permission}:{r.Role}"));
-
-        // A rename and an unarchive together: the role's check, and a plain update for the rest.
-        _folders.Checked.Clear();
-        await _agent.OkAsync("entity_setValue", $$"""{ "entityType": "folder", "key": "{{docs}}", "path": "name", "value": "Documents" }""");
-        await _agent.OkAsync("entity_setValue", $$"""{ "entityType": "folder", "key": "{{docs}}", "path": "hidden", "value": false }""");
-        Assert.Equal([":", "Update:archived"], _folders.Checked.Select(r => r.Role is null ? ":" : $"{r.Permission}:{r.Role}"));
-
-        // The product decides what the role takes: here, archiving is refused.
-        _folders.Checked.Clear();
-        _folders.RefuseRole = "archived";
-        var refused = await _agent.FailAsync("entity_archive", $$"""{ "entityType": "folder", "key": "{{docs}}" }""");
-        Assert.Equal("AccessDenied", refused.GetProperty("status").GetString());
+        string ArchivedField { get; }
     }
-
-    [Fact]
-    public async Task A_schema_with_a_role_is_valid_JSON_Schema_with_the_frameworks_notes()
-    {
-        var (checkedSchemas, problems) = await SchemaMetaschema.CheckEntitySchemasAsync(
-            ["folder"],
-            arguments => _agent.OkAsync("entity_getSchema", arguments));
-
-        Assert.Equal(1, checkedSchemas);
-        Assert.True(problems.Count == 0, string.Join("\n", problems));
-    }
-
-    // ── Another package's behaviour ───────────────────────────────────────────────────────────
 
     public sealed record ArchiveInput(
         [property: Description("Entity type.")] string EntityType,
         [property: Description("Key of the entity to archive.")] Guid? Key) : IEntityEditInput;
 
-    /// <summary>Hides an entity, on any entity type with a field in the "archived" role. Shipped by a package that knows no products.</summary>
+    /// <summary>Hides an entity, on any entity type whose adapter implements <see cref="IArchivableEntityAdapter"/>. Shipped by a package that knows no products.</summary>
     [Ability("entity.archive", "Archive entity", Kind = AbilityKind.Write, Reversible = true,
         Description = "Archives an entity, in the active change set.")]
-    public sealed class ArchiveBehaviour : EntityBehaviourBase<ArchiveInput>
+    public sealed class ArchiveEntityAbility : EntityCapabilityBase<IArchivableEntityAdapter, ArchiveInput>
     {
-        public override string Name => "archive";
+        public override string Capability => "archive";
 
-        public override IReadOnlyList<string> Roles => ["archived"];
-
-        protected override object? Apply(BehaviourTarget target, ArchiveInput input)
+        protected override object? Apply(Entity entity, IArchivableEntityAdapter adapter, ArchiveInput input, EntityEditContext context)
         {
-            target.Set("archived", true);
-            return new { archived = target.Entity.Key };
+            EntityEditor.SetValue(Target(entity, input, context), adapter.ArchivedField, true);
+            return new { archived = entity.Key };
         }
     }
 
     // ── A product with a tree of folders ─────────────────────────────────────────────────────
 
     /// <summary>
-    /// Folders in a tree, kept in memory: they can be deleted (not restored) and moved, and their "hidden" field has the
-    /// "archived" role. Its authorizer records every check and refuses what a test asks it to.
+    /// Folders in a tree, kept in memory: they can be deleted (not restored), moved and archived. Its authorizer records
+    /// every check and refuses what a test asks it to.
     /// </summary>
-    private sealed class FolderAdapter : IAuthorizingEntityAdapter, IDeletableEntityAdapter, ITreeEntityAdapter
+    private sealed class FolderAdapter : IAuthorizingEntityAdapter, IDeletableEntityAdapter, ITreeEntityAdapter, IArchivableEntityAdapter
     {
         private static readonly ObjectSchema Schema = ObjectSchema.Of(
             new FieldDefinition("name", "The folder's name.", FieldType.String, Required: true),
             new FieldDefinition("parent", "The parent folder; none at the root.", FieldType.EntityReference) { ReferencesEntityType = "folder" },
-            new FieldDefinition("hidden", "Hidden from lists.", FieldType.Boolean) { Role = "archived" });
+            new FieldDefinition("hidden", "Hidden from lists.", FieldType.Boolean));
 
         public Dictionary<Guid, JsonObject> Live { get; } = [];
 
@@ -239,8 +211,6 @@ public class EntityCapabilityTests
 
         public EntityPermission? Refuse { get; set; }
 
-        public string? RefuseRole { get; set; }
-
         public string EntityType => "folder";
 
         public bool CanCreate => true;
@@ -248,6 +218,8 @@ public class EntityCapabilityTests
         public bool CanRestore => false;
 
         public string ParentField => "parent";
+
+        public string ArchivedField => "hidden";
 
         public IUnitOfWorkProvider UnitOfWork { get; } = new InMemoryDatabase("Folders");
 
@@ -315,7 +287,7 @@ public class EntityCapabilityTests
             }
 
             Checked.Add(request);
-            return Task.FromResult<string?>(request.Permission == Refuse || (request.Role is not null && request.Role == RefuseRole) ? "No." : null);
+            return Task.FromResult<string?>(request.Permission == Refuse ? "No." : null);
         }
     }
 }

@@ -413,18 +413,17 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
       since creating it was checked on its own parent.
     - **Content in the recycle bin reads as deleted.** Umbraco still loads it, so the draft set treats it as gone.
 
-29. **A behaviour another package ships meets entity types on field roles.** A field can say what it means
-    (`FieldDefinition.Role`, `x-role` in the schema). A behaviour (`EntityBehaviourBase`) names the roles it needs, and
-    works on every entity type that has them, with no reference either way. It is an ability like any other, so it is
-    recorded, replayed, rebased and applied with nothing extra. The test's archive behaviour shows it. `x-role` is a
-    new schema note, so it went into the meta-schema (finding 27) first; the folder type with a role is checked against it.
-    - **The adapter owns the role's permission.** A change to a role's field is checked with the role named
-      (`EntityAccessRequest.Role`), whichever ability made it. The product decides what that takes; one that doesn't
-      know the role checks an update.
-    - **Move stayed in core.** It could have been a behaviour on a `parent` role. It is core because a tree is common,
-      and the CMS needs a move to run as a move, not a save.
-    - **Not covered:** a behaviour that needs the product to do more than save a value (a handler per entity type), and
-      roles inside items.
+29. **A capability another package ships is an adapter interface plus one ability.** So that a capability core
+    doesn't have is written once, not by every product, a package ships an adapter interface and one ability on
+    `EntityCapabilityBase<TAdapter, TInput>`. A product opts in by implementing the interface. Core's delete and
+    move are built on the same base, and `entity.getSchema` lists every capability a type's adapter supports. The test's
+    archive capability shows it.
+    - **Field roles were tried first, and dropped.** A field said what it meant (`x-role`), and a behaviour named the
+      roles it needed, so neither package referenced the other. It could only set values, added a new idea to learn,
+      and had no real case behind it. An interface is plainer and can ask the product for more than a field.
+    - **The cost:** the product references the third party's package, or a small bridge package does.
+    - **Not covered:** a permission of its own (a value change is checked as an update), and anything that isn't a value
+      change, like delete, which needs the change set to know.
 
 ## Developer experience of adapters
 

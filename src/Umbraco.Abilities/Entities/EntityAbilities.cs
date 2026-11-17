@@ -115,7 +115,7 @@ public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemT
                 ["values"] = d.Values is { } values ? new JsonArray(values.Select(v => (JsonNode?)v).ToArray()) : null,
             }).ToArray()),
             ["fields"] = SchemaWriter.Fields(schema.Root, itemTypes, context.UserKey),
-            ["capabilities"] = new JsonArray(EntityBehaviours.Capabilities(adapter, schema.Root, abilities).Select(c => (JsonNode?)c).ToArray()),
+            ["capabilities"] = new JsonArray(EntityCapabilities.Of(adapter, abilities).Select(c => (JsonNode?)c).ToArray()),
         };
 
         if (input.ItemTypes is { Length: > 0 })
@@ -334,21 +334,14 @@ public sealed record DeleteEntityInput(
 [Ability("entity.delete", "Delete entity", Kind = AbilityKind.Write, Reversible = true,
     Description = "Deletes an entity, in the active change set. It stays live until the set is applied; inside the set it " +
                   "reads as gone. Only for entity types whose capabilities (from entity.getSchema) include delete.")]
-public sealed class DeleteEntityAbility : EntityEditAbilityBase<DeleteEntityInput>
+public sealed class DeleteEntityAbility : EntityCapabilityBase<IDeletableEntityAdapter, DeleteEntityInput>
 {
+    public override string Capability => "delete";
+
     protected override bool Deletes => true;
 
-    protected override object? Apply(Entity entity, DeleteEntityInput input, EntityEditContext context)
-    {
-        if (context.Adapter is not IDeletableEntityAdapter deletable)
-        {
-            throw new AbilityInputException(
-                $"{context.Adapter.DisplayName} can't be deleted here. entity.getSchema lists what an entity type supports under capabilities.",
-                [new Problem("entityType", "Can't be deleted.")]);
-        }
-
-        return new { deleted = entity.Key, canRestore = deletable.CanRestore };
-    }
+    protected override object? Apply(Entity entity, IDeletableEntityAdapter adapter, DeleteEntityInput input, EntityEditContext context)
+        => new { deleted = entity.Key, canRestore = adapter.CanRestore };
 }
 
 public sealed record MoveEntityInput(
@@ -359,17 +352,12 @@ public sealed record MoveEntityInput(
 [Ability("entity.move", "Move entity", Kind = AbilityKind.Write, Reversible = true,
     Description = "Moves an entity to another parent in its tree, in the active change set. Leave parent out for the root. " +
                   "Only for entity types whose capabilities (from entity.getSchema) include move.")]
-public sealed class MoveEntityAbility : EntityEditAbilityBase<MoveEntityInput>
+public sealed class MoveEntityAbility : EntityCapabilityBase<ITreeEntityAdapter, MoveEntityInput>
 {
-    protected override object? Apply(Entity entity, MoveEntityInput input, EntityEditContext context)
-    {
-        if (context.Adapter is not ITreeEntityAdapter tree)
-        {
-            throw new AbilityInputException(
-                $"{context.Adapter.DisplayName} can't be moved. entity.getSchema lists what an entity type supports under capabilities.",
-                [new Problem("entityType", "Can't be moved.")]);
-        }
+    public override string Capability => "move";
 
+    protected override object? Apply(Entity entity, ITreeEntityAdapter tree, MoveEntityInput input, EntityEditContext context)
+    {
         if (input.Parent == entity.Key)
         {
             throw new AbilityInputException("An entity can't be its own parent.", [new Problem("parent", "Can't be the entity itself.")]);

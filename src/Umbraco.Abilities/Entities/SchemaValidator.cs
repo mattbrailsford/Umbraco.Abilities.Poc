@@ -245,11 +245,6 @@ public static class SchemaWriter
                 fieldJson["x-bindings"] = true;
             }
 
-            if (field.Role is { } role)
-            {
-                fieldJson["x-role"] = role;
-            }
-
             if (field.Default is { } preset)
             {
                 fieldJson["default"] = preset.DeepClone();
