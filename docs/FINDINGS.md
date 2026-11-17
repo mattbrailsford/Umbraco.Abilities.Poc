@@ -242,10 +242,13 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
       the cost of state on the server.
     - **The result shape works as MCP's.** The invoke response goes back as the tool's text, and a failed call is an
       MCP tool error (`isError`) with the problems inside, so a model can correct it as it does with the AI tools.
-    - **What the test doesn't show.** The C# SDK's client accepts any schema. Whether real clients (Claude Code,
-      VS Code, Cursor) accept ours, with "string or null" types, `format` and `default`, is still to try by hand.
-      The proxy signs in as an API user (client credentials), as MCP Dev does, but the test signs in as a backoffice
-      user, and the token is never refreshed.
+    - **A real client takes the schemas.** The test's C# SDK client accepts any schema, so the proxy was also run by
+      hand against the demo site (`demo/Umbraco.Abilities.Demo`), signed in as an API user with client credentials,
+      as MCP Dev does. Claude Code (headless, `claude -p`) loaded all 14 tools, with their "string or null" types,
+      `format` and `default`, and built an article from one sentence on 17-11-2026: it started a change set, created
+      the article, validated and applied it, and read it back, in 8 turns, with no failed calls. The site saved it
+      as the API user. Other clients (VS Code, Cursor) are not tried. The token is never refreshed, so a long session
+      must restart the proxy.
 
 ## Developer experience of adapters
 

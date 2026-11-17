@@ -15,4 +15,7 @@
     <Project Path="tools/Umbraco.Abilities.ModelRun/Umbraco.Abilities.ModelRun.csproj" />
     <Project Path="tools/Umbraco.Abilities.McpProxy/Umbraco.Abilities.McpProxy.csproj" />
   </Folder>
+  <Folder Name="/demo/">
+    <Project Path="demo/Umbraco.Abilities.Demo/Umbraco.Abilities.Demo.csproj" />
+  </Folder>
 </Solution>
