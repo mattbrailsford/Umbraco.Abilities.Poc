@@ -22,6 +22,9 @@
     -->
     <PackageReference Include="Umbraco.Cms" VersionOverride="[18.3.0,19)" />
     <PackageReference Include="Clean" />
+    <PackageReference Include="Umbraco.Commerce" />
+    <PackageReference Include="Umbraco.Commerce.Persistence.Sqlite" />
+    <PackageReference Include="Azure.Identity" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
   </ItemGroup>
 </Project>

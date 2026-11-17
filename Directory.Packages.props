@@ -22,6 +22,12 @@
     <PackageVersion Include="Umbraco.Commerce" Version="18.1.11" />
     <PackageVersion Include="Umbraco.Commerce.Core" Version="18.1.11" />
     <PackageVersion Include="Umbraco.Commerce.Persistence.Sqlite" Version="18.1.11" />
+    <!--
+      Commerce's migrations use dbup-sqlserver, built against Microsoft.Data.SqlClient 5, which brought Azure.Identity
+      (and Azure.Core). Umbraco 18.3 uses SqlClient 7, which doesn't, and Umbraco loads every referenced assembly at
+      start, so the site fails without them.
+    -->
+    <PackageVersion Include="Azure.Identity" Version="1.13.1" />
     <PackageVersion Include="Umbraco.Cms.Tests.Integration" Version="[18.0.0,19)" />
     <!--
       Umbraco 18.0.0 pulls 10.0.0 in through MailKit and MimeKit, which has two denial of service advisories
