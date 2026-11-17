@@ -190,6 +190,8 @@ endpoints.
 
 - An MCP client gets one tool per ability the site lists, with its description and input schema
   - `AbilitiesMcpProxyTests.An_MCP_client_gets_one_tool_per_ability_the_site_lists`
+- An MCP client is told which tools only read, and which can't be undone and need a person to approve them (MCP's tool hints)
+  - `AbilitiesMcpProxyTests.An_MCP_client_is_told_which_tools_only_read_and_which_need_a_person_to_approve_them`
 - An MCP client builds a page in a change set without naming it on each call: the session remembers the set it opened, and closes it once applied
   - `AbilitiesMcpProxyTests.An_MCP_client_builds_a_page_in_a_change_set_without_naming_it_and_it_is_saved_on_apply`
 - A refused call is an MCP tool error, with the problems to fix

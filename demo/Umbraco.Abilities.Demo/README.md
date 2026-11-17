@@ -1,11 +1,13 @@
 # Demo site
 
-A small Umbraco 18 site to try the abilities by hand, through MCP. It runs on SQLite and installs itself on first run.
+A small Umbraco 18.3 site to try the abilities by hand, through MCP. It runs on SQLite and installs itself on first run.
 It has:
 
 - the **Clean starter kit** (`Clean` 8.0.1): a blog site whose articles are built from blocks (rich text, code,
   images, videos), and live under the Blog page
 - the abilities and their Management API endpoints (`builder.AddAbilities()`)
+- the **sample Commerce package**: discounts and two product collections ("Summer collection", "Winter coats"). They
+  live in memory, so they are gone when the site stops
 - an **API user** for the MCP proxy, in the Editors group, with client id `umbraco-back-office-mcp`
 
 No password or secret is stored in the repo. You choose them when you run it.
@@ -42,5 +44,9 @@ Then ask for something, for example: "Start a change set and create a blog artic
 under the page that lists articles. Build its content from a rich text block and a code snippet block, then validate
 and apply it." Clean's article needs an author and a date, so the model picks them. Applied articles are saved, not
 published.
+
+Or a discount: "Start a change set and create a discount called 'Summer sale': 15% off when the order has a product
+from the Summer collection and totals at least 500, with the code SUMMER27 and the article as its landing page.
+Validate and apply it, then switch it on."
 
 The proxy needs the site's HTTPS development certificate to be trusted (`dotnet dev-certs https --trust`).

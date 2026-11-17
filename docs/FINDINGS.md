@@ -261,9 +261,21 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
       multi-node tree picker. Its value schema in Umbraco 18 says an item's type is "content", "media" or "member",
       but the editor's value uses "document". Claude followed the schema, both validations passed, and apply failed.
       It fixed the value by copying an existing article. The CMS has already fixed the schema
-      ([#23760](https://github.com/umbraco/Umbraco-CMS/pull/23760), in 17.8.0 and 18.3.0); the demo runs 18.0.1. It
+      ([#23760](https://github.com/umbraco/Umbraco-CMS/pull/23760), in 17.8.0 and 18.3.0); the demo now runs 18.3.0. It
       still shows that a schema from a package is trusted as written: a wrong one gets past validation and fails only
       at save.
+    - **A second product works over the same proxy, with no change to it.** The demo then got the sample Commerce
+      package (discounts, in memory), added at startup to the site's registries by one small class
+      (`DemoCommerce`), as a product's composer would. The proxy listed its two tools with the rest. Claude built a
+      discount from one sentence on 17-11-2026: a collection rule, an order total rule, a 15% reward, dates, a code,
+      and a landing page that is the real Clean article. It validated, applied, switched the discount on and listed
+      it, in 16 turns (about 0.34 USD), with no failed calls. Adding a product to a real site has no collection
+      builder yet; it adds to the registries directly.
+    - **MCP clients weren't told which tools need approval.** `changeSet_apply` and `commerce_activateDiscount` are
+      marked `requiresApproval`, but the proxy dropped that, and the site doesn't enforce it: the run switched the
+      discount on with nobody asked. The proxy now maps it to MCP's tool hints: a read is `readOnlyHint`, and a
+      write that can't be undone is `destructiveHint`, so a client can ask the person first. A test covers it.
+      Which clients act on the hints is not checked. The site itself still trusts the caller to have asked.
 
 ## Developer experience of adapters
 

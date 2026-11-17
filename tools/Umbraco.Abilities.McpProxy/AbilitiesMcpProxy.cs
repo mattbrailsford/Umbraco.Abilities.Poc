@@ -126,11 +126,17 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
     private static CallToolResult Error(string message)
         => new() { Content = [new TextContentBlock { Text = message }], IsError = true };
 
-    /// <summary>One ability as the site lists it, and the MCP tool made from it.</summary>
+    /// <summary>
+    /// One ability as the site lists it, and the MCP tool made from it. Its kind and approval flag become MCP's tool
+    /// hints: a read is read only, and a write that can't be undone is destructive, so a client knows to ask the person
+    /// first. A write a change set can undo is not destructive.
+    /// </summary>
     private sealed record ListedAbility(string Id, bool UsesChangeSet, Tool Tool)
     {
         public static ListedAbility From(JsonElement listed)
-            => new(
+        {
+            var readOnly = listed.GetProperty("kind").GetString() == "Read";
+            return new(
                 listed.GetProperty("id").GetString()!,
                 listed.GetProperty("usesChangeSet").GetBoolean(),
                 new Tool
@@ -138,6 +144,13 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
                     Name = listed.GetProperty("toolName").GetString()!,
                     Description = listed.GetProperty("description").GetString(),
                     InputSchema = listed.GetProperty("inputSchema").Clone(),
+                    Annotations = new ToolAnnotations
+                    {
+                        Title = listed.GetProperty("name").GetString(),
+                        ReadOnlyHint = readOnly,
+                        DestructiveHint = readOnly ? null : listed.GetProperty("requiresApproval").GetBoolean(),
+                    },
                 });
+        }
     }
 }

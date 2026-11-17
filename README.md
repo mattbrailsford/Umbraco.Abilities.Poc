@@ -145,7 +145,7 @@ It is not a test: each run calls the Claude API, costs money, and can give a dif
 | `Umbraco.Abilities.Tests` | A scripted model calling the AI tools with JSON arguments | Contract, AI adapter, samples |
 | `Umbraco.Abilities.Cms.Tests` | The same, against a real Umbraco on SQLite, and the Management API endpoints over HTTP | Contract, AI adapter, CMS adapter, Management API endpoints, MCP proxy, Umbraco test host |
 | `tools/Umbraco.Abilities.McpProxy` | The Umbraco CMS MCP Dev server: an MCP server (stdio) whose tools are the abilities a site lists, each call forwarded to the Management API | `ModelContextProtocol` only: no Abilities project |
-| `demo/Umbraco.Abilities.Demo` | A small Umbraco 18 site to try the abilities through MCP by hand: SQLite, the Clean starter kit (articles built from blocks) and an API user for the proxy. See its README | CMS adapter, Management API endpoints, `Umbraco.Cms` |
+| `demo/Umbraco.Abilities.Demo` | A small Umbraco 18 site to try the abilities through MCP by hand: SQLite, the Clean starter kit (articles built from blocks), sample Commerce discounts and an API user for the proxy. See its README | CMS adapter, Management API endpoints, Samples, `Umbraco.Cms` |
 | `tools/Umbraco.Abilities.ModelRun` | A "Create with AI" surface: a real model (Claude, through M.E.AI's `IChatClient`) builds an entity in a change set from a description | Contract, AI adapter, samples, `Anthropic` |
 
 ## Words we use

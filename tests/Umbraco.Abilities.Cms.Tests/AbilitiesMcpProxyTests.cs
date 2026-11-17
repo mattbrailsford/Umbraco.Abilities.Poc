@@ -55,6 +55,23 @@ public sealed class AbilitiesMcpProxyTests : AbilitiesApiTestBase
     }
 
     [Test]
+    public async Task An_MCP_client_is_told_which_tools_only_read_and_which_need_a_person_to_approve_them()
+    {
+        await SignInAsEditorAsync();
+        var client = await ConnectAsync();
+
+        var tools = (await client.ListToolsAsync()).ToDictionary(t => t.Name, t => t.ProtocolTool.Annotations);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(tools["entity_get"]?.ReadOnlyHint, Is.True, "a read");
+            Assert.That(tools["entity_setValue"]?.ReadOnlyHint, Is.False, "a write");
+            Assert.That(tools["entity_setValue"]?.DestructiveHint, Is.False, "a change set can undo it");
+            Assert.That(tools["changeSet_apply"]?.DestructiveHint, Is.True, "it can't be undone, so a person approves it");
+        });
+    }
+
+    [Test]
     public async Task An_MCP_client_builds_a_page_in_a_change_set_without_naming_it_and_it_is_saved_on_apply()
     {
         var editor = await SignInAsEditorAsync();

@@ -10,6 +10,7 @@ builder.CreateUmbracoBuilder()
     .AddComposers()
     .AddAbilities()
     .AddNotificationAsyncHandler<UmbracoApplicationStartedNotification, DemoSetup>()
+    .AddNotificationHandler<UmbracoApplicationStartingNotification, DemoCommerce>()
     .Build();
 
 WebApplication app = builder.Build();
