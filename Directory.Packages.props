@@ -16,6 +16,8 @@
     <PackageVersion Include="Umbraco.Cms.Api.Management" Version="[18.0.0,19)" />
     <!-- Only for demo/Umbraco.Abilities.Demo, a site to try the MCP proxy against -->
     <PackageVersion Include="Umbraco.Cms" Version="[18.0.0,19)" />
+    <!-- Only for the demo: Paul Seal's Clean starter kit, for document types with blocks. 8.0.1 needs Umbraco 18.0.1+ -->
+    <PackageVersion Include="Clean" Version="8.0.1" />
     <PackageVersion Include="Umbraco.Cms.Tests.Integration" Version="[18.0.0,19)" />
     <!--
       Umbraco 18.0.0 pulls 10.0.0 in through MailKit and MimeKit, which has two denial of service advisories

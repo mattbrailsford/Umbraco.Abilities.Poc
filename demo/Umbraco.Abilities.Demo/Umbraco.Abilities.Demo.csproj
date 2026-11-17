@@ -14,7 +14,9 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Umbraco.Abilities.Cms/Umbraco.Abilities.Cms.csproj" />
     <ProjectReference Include="../../src/Umbraco.Abilities.ManagementApi/Umbraco.Abilities.ManagementApi.csproj" />
-    <PackageReference Include="Umbraco.Cms" />
+    <!-- The Clean starter kit needs Umbraco 18.0.1 or later; the rest of the repo builds against 18.0.0 -->
+    <PackageReference Include="Umbraco.Cms" VersionOverride="[18.0.1,19)" />
+    <PackageReference Include="Clean" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
   </ItemGroup>
 </Project>

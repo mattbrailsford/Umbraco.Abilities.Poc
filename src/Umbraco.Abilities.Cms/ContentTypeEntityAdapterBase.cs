@@ -73,7 +73,11 @@ public sealed class CmsContentSchemas
 /// <param name="Names">Its name by culture, with <c>""</c> for an invariant name.</param>
 /// <param name="Values">Its property values, one per property, culture and segment.</param>
 /// <param name="Version">Its version, to tell an existing item from a new one.</param>
-public sealed record StoredContent(Guid Key, Guid TypeKey, IReadOnlyDictionary<string, string> Names, IReadOnlyList<StoredValue> Values, long? Version);
+/// <param name="ParentKey">
+/// Its parent, for a new item not saved yet (a draft), so the parent survives being read back and edited again. Null
+/// for a saved item: the parent is only used when creating.
+/// </param>
+public sealed record StoredContent(Guid Key, Guid TypeKey, IReadOnlyDictionary<string, string> Names, IReadOnlyList<StoredValue> Values, long? Version, Guid? ParentKey = null);
 
 /// <summary>One stored property value, in editor format.</summary>
 public sealed record StoredValue(string Alias, string? Culture, string? Segment, JsonNode? Value);
@@ -277,6 +281,11 @@ public abstract class ContentTypeEntityAdapterBase<TType>(CmsContentSchemas sche
         foreach (var (culture, name) in content.Names)
         {
             EntityValues.Set(entity.Fields, nameField, CmsVariants.Of(culture.Length == 0 ? null : culture, null), name);
+        }
+
+        if (HasParent && content.ParentKey is { } parent)
+        {
+            entity.Fields[ContentFields.Parent] = parent.ToString();
         }
 
         await ReadValuesAsync(entity.Fields, content.Values.Select(v => (v.Alias, v.Culture, v.Segment, v.Value)), map);

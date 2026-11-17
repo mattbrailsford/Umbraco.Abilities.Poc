@@ -249,6 +249,20 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
       the article, validated and applied it, and read it back, in 8 turns, with no failed calls. The site saved it
       as the API user. Other clients (VS Code, Cursor) are not tried. The token is never refreshed, so a long session
       must restart the proxy.
+    - **A real site's blocks found two bugs the tests missed.** The demo site then got the Clean starter kit, whose
+      article is built from a Block List (rich text, code, images and more) and is allowed only under the Blog page.
+      Claude was asked for an article with a rich text block and a code block. The first run (23 turns) failed at
+      apply: Umbraco said "NotAllowed". Two bugs caused it. A new page read back from its draft lost its parent, so
+      the next edit staged it at the root, where Clean doesn't allow articles. And `entity.get` of a page created in
+      the same set was refused as "Not found", because the read check looked for it in Umbraco. Both are fixed, and a
+      CMS test covers both. The rerun (20 turns, about 0.34 USD) built and saved the article under Blog, with both
+      blocks, and read it back.
+    - **Umbraco's own value schema can be wrong, and validation then can't catch it.** Clean's author field is a
+      multi-node tree picker. Its value schema in Umbraco 18 says an item's type is "content", "media" or "member",
+      but the editor's value uses "document". Claude followed the schema, both validations passed, and apply failed.
+      It fixed the value by copying an existing article. The fix belongs in the CMS
+      (`MultiNodeTreePickerPropertyEditor.GetValueSchema`), not here. It shows that a schema from a package is trusted
+      as written: a wrong one gets past validation and fails only at save.
 
 ## Developer experience of adapters
 
@@ -488,7 +502,7 @@ The tests that show it are listed in [TESTS.md](TESTS.md#against-a-real-umbraco)
    each of the page's cultures.
 
 Not covered yet: templates (an update would clear one), publishing, rich text with blocks, culture-variant block
-properties against real Umbraco, a parent created in the same set, a third party's editor inside a block, and saving
+properties against real Umbraco, a parent created in the same set (an existing parent is covered), a third party's editor inside a block, and saving
 most editors that pass through as JSON (only the eyedropper is saved in a test), and defaults for editors other than
 the toggle and numbers.
 

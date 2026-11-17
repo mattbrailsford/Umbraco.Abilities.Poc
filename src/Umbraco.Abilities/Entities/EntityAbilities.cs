@@ -191,7 +191,13 @@ public sealed class GetEntityAbility(EntityAdapterRegistry adapters, ChangeSetSe
     protected override async Task<AbilityResult> ExecuteAsync(GetEntityInput input, AbilityContext context, CancellationToken cancellationToken)
     {
         var adapter = adapters.Get(input.EntityType);
-        if (await EntityAccess.CheckAsync(adapter, new EntityAccessRequest(context.UserKey, EntityPermission.Read, input.Key, null, new HashSet<VariantId>()), cancellationToken) is { } denied)
+
+        // What the current set touches was checked when it was recorded, as in entity.find. A new entity exists only in
+        // the set, so the product couldn't check it anyway: it would say it doesn't exist.
+        var inSet = changeSets.CurrentId is { } id
+            && changeSets.Get(id).Changes.Any(c => c.EntityType == input.EntityType && c.EntityKey == input.Key);
+        if (!inSet
+            && await EntityAccess.CheckAsync(adapter, new EntityAccessRequest(context.UserKey, EntityPermission.Read, input.Key, null, new HashSet<VariantId>()), cancellationToken) is { } denied)
         {
             return EntityAccess.Denied(denied, "key");
         }

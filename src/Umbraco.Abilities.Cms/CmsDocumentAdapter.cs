@@ -222,7 +222,7 @@ public sealed class CmsDocumentAdapter(
     private static string PathOf(string alias) => alias == DraftSetService.NameAlias ? ContentFields.Name : alias;
 
     private static StoredContent Stored(DraftContent content)
-        => new(content.Key, content.ContentTypeKey, content.Names, content.Values.Select(v => new StoredValue(v.Alias, v.Culture, v.Segment, v.Value)).ToList(), content.Version);
+        => new(content.Key, content.ContentTypeKey, content.Names, content.Values.Select(v => new StoredValue(v.Alias, v.Culture, v.Segment, v.Value)).ToList(), content.Version, content.ParentKey);
 }
 
 /// <summary>Content's step of applying a change set runs in one Umbraco scope, so every document saves or none does.</summary>

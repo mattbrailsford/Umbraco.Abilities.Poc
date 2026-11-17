@@ -445,6 +445,37 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
         });
     }
 
+    [Test]
+    public async Task A_page_allowed_only_under_a_parent_is_created_under_it_and_reads_back_in_the_set()
+    {
+        // A post may only be created under a blog, as Clean's articles only go under an article list.
+        var post = new ContentTypeBuilder().WithAlias("post").WithName("Post").WithContentVariation(ContentVariation.Nothing).Build();
+        await ContentTypeService.CreateAsync(post, Constants.Security.SuperUserKey);
+        var blogType = new ContentTypeBuilder().WithAlias("blog").WithName("Blog").WithContentVariation(ContentVariation.Nothing).Build();
+        blogType.AllowedAsRoot = true;
+        blogType.AllowedContentTypes = [new ContentTypeSort(post.Key, 0, post.Alias)];
+        await ContentTypeService.CreateAsync(blogType, Constants.Security.SuperUserKey);
+        var blog = (await ContentEditingService.CreateAsync(
+            new ContentCreateModel { ContentTypeKey = blogType.Key, Variants = [new VariantModel { Name = "Blog" }] },
+            Constants.Security.SuperUserKey)).Result.Content!;
+
+        await _agent.StartChangeSetAsync("A post");
+        var created = await _agent.OkAsync("entity_create", $$"""{ "entityType": "document", "subtype": "post", "fields": { "name": "Hello", "parent": "{{blog.Key}}" } }""");
+        var key = created.GetProperty("key").GetGuid();
+
+        // Read back in the set before it exists in Umbraco: access is checked on its parent.
+        var read = await _agent.OkAsync("entity_get", $$"""{ "entityType": "document", "key": "{{key}}" }""");
+        Assert.That(read.GetProperty("fields").GetProperty("parent").GetString(), Is.EqualTo(blog.Key.ToString()));
+
+        // A later edit stages the new page again: it must keep its parent.
+        await _agent.OkAsync("entity_setValue", $$"""{ "entityType": "document", "key": "{{key}}", "path": "/name", "value": "Hello again" }""");
+
+        await _agent.OkAsync("changeSet_apply", SetJson());
+        var saved = ContentService.GetById(key)!;
+        Assert.That(saved.ParentId, Is.EqualTo(blog.Id));
+        Assert.That(saved.Name, Is.EqualTo("Hello again"));
+    }
+
     private async Task CreateBrochureTypeAsync()
     {
         var brochure = new MediaTypeBuilder().WithAlias("brochure").WithName("Brochure")

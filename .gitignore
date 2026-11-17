@@ -11,3 +11,7 @@ obj/
 .idea/
 *.user
 .DS_Store
+
+# Copied into the demo site by the Clean starter kit package on build
+demo/Umbraco.Abilities.Demo/Views/
+demo/Umbraco.Abilities.Demo/wwwroot/

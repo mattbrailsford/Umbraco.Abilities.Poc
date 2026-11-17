@@ -223,3 +223,5 @@ endpoints.
 - A value that varies by segment only is shared by every culture, saved per segment, and a missing one is a problem with no culture
   - `CmsDocumentAdapterTests.A_value_that_varies_by_segment_only_is_shared_by_every_culture_and_saved_per_segment`
   - `CmsDocumentAdapterTests.A_required_segment_only_value_missing_in_a_segment_is_a_problem_with_no_culture`
+- A page allowed only under a parent is created under it, reads back in the set with its parent, and keeps that parent when edited again
+  - `CmsDocumentAdapterTests.A_page_allowed_only_under_a_parent_is_created_under_it_and_reads_back_in_the_set`

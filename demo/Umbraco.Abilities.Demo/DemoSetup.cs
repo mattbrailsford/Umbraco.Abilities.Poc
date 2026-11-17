@@ -5,19 +5,16 @@ using Umbraco.Cms.Core.Models.Membership;
 using Umbraco.Cms.Core.Notifications;
 using Umbraco.Cms.Core.Security;
 using Umbraco.Cms.Core.Services;
-using Umbraco.Cms.Core.Strings;
 
 namespace Umbraco.Abilities.Demo;
 
 /// <summary>
-/// Gives a new demo site something to work with, once it is installed: an article document type, and an API user the
-/// MCP proxy signs in as. Both are made only if missing, so it is safe on every start. The API user's secret comes from
-/// configuration (<c>Demo:Mcp:ClientSecret</c>), never from a file in the repo.
+/// Adds the API user the MCP proxy signs in as, once the site is installed. It is made only if missing, so it is safe
+/// on every start. Its secret comes from configuration (<c>Demo:Mcp:ClientSecret</c>), never from a file in the repo.
+/// The document types and content come from the Clean starter kit.
 /// </summary>
 public sealed class DemoSetup(
     IRuntimeState runtime,
-    IContentTypeService contentTypes,
-    IShortStringHelper shortStrings,
     IUserService users,
     IUserGroupService userGroups,
     IBackOfficeUserClientCredentialsManager clientCredentials,
@@ -34,41 +31,7 @@ public sealed class DemoSetup(
             return;
         }
 
-        await EnsureArticleTypeAsync();
         await EnsureMcpUserAsync();
-    }
-
-    private async Task EnsureArticleTypeAsync()
-    {
-        if (contentTypes.Get("article") is not null)
-        {
-            return;
-        }
-
-        var article = new ContentType(shortStrings, -1)
-        {
-            Alias = "article",
-            Name = "Article",
-            Description = "A news article: a title and a short summary.",
-            Icon = "icon-newspaper",
-            AllowedAsRoot = true,
-        };
-        article.AddPropertyType(new PropertyType(shortStrings, Constants.PropertyEditors.Aliases.TextBox, ValueStorageType.Nvarchar, "title")
-        {
-            Name = "Title",
-            Description = "The headline.",
-            Mandatory = true,
-            DataTypeId = Constants.DataTypes.Textbox,
-        });
-        article.AddPropertyType(new PropertyType(shortStrings, Constants.PropertyEditors.Aliases.TextArea, ValueStorageType.Ntext, "summary")
-        {
-            Name = "Summary",
-            Description = "One or two sentences for lists and search results.",
-            DataTypeId = Constants.DataTypes.Textarea,
-        });
-
-        await contentTypes.CreateAsync(article, Constants.Security.SuperUserKey);
-        logger.LogInformation("Demo: created the article document type.");
     }
 
     private async Task EnsureMcpUserAsync()

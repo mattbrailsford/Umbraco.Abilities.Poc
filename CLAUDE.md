@@ -46,7 +46,7 @@ dotnet test
 | `tests/Umbraco.Abilities.Tests` | A scripted model (`ScriptedAgent`) calling the AI tools with JSON |
 | `tests/Umbraco.Abilities.Cms.Tests` | The same, against a real Umbraco, and the Management API endpoints over HTTP on Umbraco's test server |
 | `tools/Umbraco.Abilities.McpProxy` | Plays the Umbraco CMS MCP Dev server: an MCP server whose tools are the abilities a site lists over the Management API |
-| `demo/Umbraco.Abilities.Demo` | A small Umbraco 18 site to try the MCP proxy against by hand. Secrets come from environment variables, never files |
+| `demo/Umbraco.Abilities.Demo` | A small Umbraco 18 site with the Clean starter kit, to try the MCP proxy against by hand. Secrets come from environment variables, never files |
 | `tools/Umbraco.Abilities.ModelRun` | Runs a real model (Claude) against the samples. Not a test: it costs money and needs `ANTHROPIC_API_KEY` |
 
 ## Dependency rules
