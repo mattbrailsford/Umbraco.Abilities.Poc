@@ -19,9 +19,11 @@ namespace Umbraco.Abilities.McpProxy;
 /// </para>
 /// <para>
 /// A call that can't be undone runs only once the person agrees. The site decides which calls those are (a tool that
-/// requires approval, run live rather than recorded in a change set) and answers 428 without doing anything. The proxy
-/// then asks the person through the MCP client (elicitation), not the model, so the model can't agree for them. On yes
-/// it sends the call again with <c>Umb-Approved: true</c>; on no, or with a client that can't ask, it stops there.
+/// requires approval, run live rather than recorded in a change set) and answers 428 without doing anything, with the
+/// question to ask and an approval id. The proxy asks the person through the MCP client (elicitation), not the model, so
+/// the model never sees the id and can't agree for them. On yes it sends the call again with the id in
+/// <c>Umb-Approval</c>; on no, or with a client that can't ask, it stops there. If the change set changed in between,
+/// the site asks again, with what it now holds.
 /// </para>
 /// </summary>
 public sealed class AbilitiesMcpProxy(HttpClient umbraco)
@@ -30,7 +32,10 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
     public const string AbilitiesPath = "/umbraco/management/api/v1/abilities";
 
     private const string ChangeSetHeader = "Umb-Change-Set";
-    private const string ApprovedHeader = "Umb-Approved";
+    private const string ApprovalHeader = "Umb-Approval";
+
+    // A set that keeps changing while the person is asked would ask forever.
+    private const int MaxAsks = 3;
     private const string ChangeSetIdArgument = "changeSetId";
 
     private Dictionary<string, ListedAbility> _abilities = [];
@@ -73,17 +78,26 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
             input[name] = JsonNode.Parse(value.GetRawText());
         }
 
-        var response = await SendAsync(ability, input, approved: false, cancellationToken);
-        if (response.StatusCode == HttpStatusCode.PreconditionRequired)
+        var response = await SendAsync(ability, input, approvalId: null, cancellationToken);
+        for (var asks = 0; response.StatusCode == HttpStatusCode.PreconditionRequired; asks++)
         {
-            // The site needs the person's consent for this call, and did nothing. Ask, then send it again.
+            // The site needs the person's consent for this call, and did nothing. Ask, then send it again with the id.
+            var approval = TryParse(await response.Content.ReadAsStringAsync(cancellationToken), out var refusal)
+                && refusal.TryGetProperty("approval", out var request) && request.ValueKind == JsonValueKind.Object
+                ? request
+                : default;
             response.Dispose();
-            if (await AskAsync(session, ability, input, cancellationToken) is { } refused)
+            if (approval.ValueKind != JsonValueKind.Object || asks == MaxAsks)
+            {
+                return Error($"{ability.Name} needs the person's consent, and it couldn't be settled. Nothing was done.");
+            }
+
+            if (await AskAsync(session, ability, approval.GetProperty("question").GetString()!, cancellationToken) is { } refused)
             {
                 return refused;
             }
 
-            response = await SendAsync(ability, input, approved: true, cancellationToken);
+            response = await SendAsync(ability, input, approval.GetProperty("id").GetGuid(), cancellationToken);
         }
 
         using var _ = response;
@@ -102,7 +116,7 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
         };
     }
 
-    private async Task<HttpResponseMessage> SendAsync(ListedAbility ability, JsonObject input, bool approved, CancellationToken cancellationToken)
+    private async Task<HttpResponseMessage> SendAsync(ListedAbility ability, JsonObject input, Guid? approvalId, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{AbilitiesPath}/{Uri.EscapeDataString(ability.Id)}/invoke")
         {
@@ -113,31 +127,25 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
             request.Headers.Add(ChangeSetHeader, open.ToString());
         }
 
-        if (approved)
+        if (approvalId is { } id)
         {
-            request.Headers.Add(ApprovedHeader, "true");
+            request.Headers.Add(ApprovalHeader, id.ToString());
         }
 
         return await umbraco.SendAsync(request, cancellationToken);
     }
 
-    // Asks the person, through their MCP client, to agree to one call that can't be undone. Null when they said yes.
-    private async Task<CallToolResult?> AskAsync(McpServer session, ListedAbility ability, JsonObject input, CancellationToken cancellationToken)
+    // Asks the person, through their MCP client, the site's question about one call. Null when they said yes.
+    private static async Task<CallToolResult?> AskAsync(McpServer session, ListedAbility ability, string question, CancellationToken cancellationToken)
     {
         if (session.ClientCapabilities?.Elicitation is null)
         {
             return Error($"{ability.Name} can't be undone, so the person must agree to it first, but this MCP client can't ask them. Nothing was done.");
         }
 
-        var details = input.Where(argument => argument.Key != ChangeSetIdArgument).ToList();
-        var changeSet = input[ChangeSetIdArgument]?.ToString() ?? OpenChangeSetId?.ToString();
-        var message = $"Allow \"{ability.Name}\"? It can't be undone. {ability.Tool.Description}"
-            + (ability.UsesChangeSet && changeSet is not null ? $"\nChange set: {changeSet}" : string.Empty)
-            + (details.Count > 0 ? $"\nWith: {new JsonObject(details.Select(d => KeyValuePair.Create(d.Key, d.Value?.DeepClone())))}" : string.Empty);
-
         var answer = await session.ElicitAsync(new ElicitRequestParams
         {
-            Message = message,
+            Message = question,
             RequestedSchema = new ElicitRequestParams.RequestSchema { Properties = new Dictionary<string, ElicitRequestParams.PrimitiveSchemaDefinition>() },
         }, cancellationToken);
 

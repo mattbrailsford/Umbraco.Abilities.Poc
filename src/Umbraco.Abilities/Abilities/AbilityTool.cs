@@ -104,13 +104,14 @@ public sealed class AbilityTool
     /// <see cref="AbilityToolResult"/>.
     /// </summary>
     /// <param name="arguments">The tool's input.</param>
-    /// <param name="approved">
-    /// True when the person the caller acts for agreed to this call. Only a call that can't be undone needs it: an
-    /// ability that requires approval, run live rather than recorded in a change set. Without it, such a call does
-    /// nothing and fails with <see cref="AbilityOperationStatus.ApprovalRequired"/>, so the surface can ask and call again.
+    /// <param name="consent">
+    /// The person's consent to this call. Only a call that can't be undone needs it: an ability that requires approval,
+    /// run live rather than recorded in a change set. Without it, such a call does nothing and fails with
+    /// <see cref="AbilityOperationStatus.ApprovalRequired"/> and an <see cref="AbilityToolResult.Approval"/> request:
+    /// the surface asks the person that question and, on yes, calls again with <see cref="AbilityConsent.For"/> its id.
     /// </param>
     /// <param name="cancellationToken">Stops the call.</param>
-    public async Task<AbilityToolResult> InvokeAsync(JsonObject arguments, bool approved = false, CancellationToken cancellationToken = default)
+    public async Task<AbilityToolResult> InvokeAsync(JsonObject arguments, AbilityConsent consent = default, CancellationToken cancellationToken = default)
     {
         var changeSets = _invoker.ChangeSets;
         var input = new JsonObject();
@@ -170,19 +171,16 @@ public sealed class AbilityTool
             used = Descriptor.UsesChangeSet && _session.ChangeSetId is { } only ? changeSets.Find(only) : null;
         }
 
-        // In a set, a Write is recorded, not run (see AbilityInvoker), so only a call that runs live needs consent.
-        var recorded = used is not null && Descriptor.Kind == AbilityKind.Write && _ability is not IChangeSetLifecycleAbility;
-        if (Descriptor.RequiresApproval && !recorded && !approved)
+        var context = new AbilityContext(_session.UserKey);
+        if (await CheckConsentAsync(input, used, consent, context, cancellationToken) is { } refused)
         {
-            return AbilityToolResult.From(AbilityResult.Fail(AbilityOperationStatus.ApprovalRequired,
-                $"{Descriptor.Name} can't be undone, so the person you act for must agree to it first. Nothing was done.", []),
-                used is null ? null : new AbilityToolChangeSet(used.Id, used.Name));
+            return refused;
         }
 
         AbilityResult result;
         using (changeSets.Use(used?.Id))
         {
-            result = await _invoker.InvokeAsync(_ability.Descriptor.Id, input, new AbilityContext(_session.UserKey), cancellationToken);
+            result = await _invoker.InvokeAsync(_ability.Descriptor.Id, input, context, cancellationToken);
         }
 
         var usedSet = used is null ? null : new AbilityToolChangeSet(used.Id, used.Name);
@@ -199,6 +197,63 @@ public sealed class AbilityTool
         }
 
         return AbilityToolResult.From(result, usedSet);
+    }
+
+    // Null when the call may run. In a set, a Write is recorded, not run (see AbilityInvoker), so only a call that runs
+    // live needs consent. Applying with no set open needs none: it fails on its own.
+    private async Task<AbilityToolResult?> CheckConsentAsync(JsonObject input, ChangeSet? used, AbilityConsent consent, AbilityContext context, CancellationToken cancellationToken)
+    {
+        var lifecycle = _ability is IChangeSetLifecycleAbility;
+        var recorded = used is not null && Descriptor.Kind == AbilityKind.Write && !lifecycle;
+        if (!Descriptor.RequiresApproval || recorded || (lifecycle && used is null) || consent.IsGiven)
+        {
+            return null;
+        }
+
+        // The approval binds to the call as the ability gets it: the input without the change set id, which is bound apart.
+        var call = input.ToJsonString();
+        var set = lifecycle ? used : null;
+        string? why = null;
+        if (consent.ApprovalId is { } id)
+        {
+            why = _invoker.Approvals.Consume(id, context, Descriptor.Id, call, set);
+            if (why is null)
+            {
+                return null;
+            }
+        }
+
+        var summary = set is null ? null : await _invoker.ChangeSets.SummarizeAsync(set.Id, cancellationToken);
+        var request = _invoker.Approvals.Request(context, Descriptor.Id, call, set, Question(input, summary), summary);
+        var message = $"{(why is null ? string.Empty : why + " ")}{Descriptor.Name} can't be undone, so the person you act for must agree to it first. Nothing was done.";
+        return AbilityToolResult.From(AbilityResult.Fail(AbilityOperationStatus.ApprovalRequired, message, []),
+            used is null ? null : new AbilityToolChangeSet(used.Id, used.Name)) with { Approval = request };
+    }
+
+    // What to ask the person: the call in plain words, and for a change set what applying it does.
+    private string Question(JsonObject input, ChangeSetSummary? summary)
+    {
+        if (summary is null)
+        {
+            return input.Count == 0
+                ? $"Allow \"{Descriptor.Name}\"? It can't be undone."
+                : $"Allow \"{Descriptor.Name}\"? It can't be undone.\nWith: {input.ToJsonString()}";
+        }
+
+        var lines = new List<string> { $"{Descriptor.Name} \"{summary.Name}\"? It can't be undone." };
+        lines.AddRange(summary.Entities.Select(e => $"- {e.Change} {e.Entity.EntityType} \"{e.Entity.Name}\""));
+        if (summary.NeedsConsent is { Count: > 0 } needs)
+        {
+            lines.Add("It also does these, which can't be undone either:");
+            lines.AddRange(needs.Select(n => $"- {n}"));
+        }
+
+        if (summary.Rebased.Count > 0)
+        {
+            lines.Add($"{summary.Rebased.Count} of these were changed by someone else since; their changes are kept.");
+        }
+
+        return string.Join("\n", lines);
     }
 
     private static JsonElement WithChangeSetId(JsonElement schema)
@@ -233,6 +288,12 @@ public sealed record AbilityToolResult(
     IReadOnlyList<Problem>? Problems,
     AbilityToolChangeSet? ChangeSet)
 {
+    /// <summary>
+    /// When the call needs the person's consent (<see cref="AbilityOperationStatus.ApprovalRequired"/>): the question to
+    /// ask them, and the id that approves this call once they agree.
+    /// </summary>
+    public AbilityApprovalRequest? Approval { get; init; }
+
     internal static AbilityToolResult From(AbilityResult result, AbilityToolChangeSet? changeSet)
         => result.Success
             ? new(true, result.Status, result.Result, null, null, null, changeSet)
@@ -251,6 +312,7 @@ public sealed record AbilityToolResult(
                     message = Message,
                     problems = Problems,
                     changeSet = ChangeSet,
+                    approval = Approval,
                 },
             AbilityJson.Options);
 }

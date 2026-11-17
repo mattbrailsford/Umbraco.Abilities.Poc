@@ -171,10 +171,17 @@ Called over HTTP on Umbraco's test server, as the Umbraco CMS MCP Dev server wou
 
 - The framework's tool schemas, from .NET's own exporter, are the ones M.E.AI would make, for every sample ability
   - `AbilityToolSchemaTests.Every_abilitys_input_schema_is_the_one_MEAI_would_make`
-- A call that can't be undone runs only when the surface says the person agreed, decided per call: recorded in a change set it needs no consent
-  - `AbilityToolConsentTests.A_call_that_cannot_be_undone_runs_only_when_the_surface_says_the_person_agreed`
+- A call that can't be undone runs only with the approval made for it, decided per call: recorded in a change set it needs no consent
+  - `AbilityToolConsentTests.A_call_that_cannot_be_undone_runs_only_with_the_approval_made_for_it`
   - `AbilityToolConsentTests.A_call_that_can_be_undone_needs_no_consent`
   - `AbilityToolConsentTests.A_call_that_needs_consent_live_needs_none_when_it_is_only_recorded_in_a_change_set`
+  - `AbilityToolConsentTests.A_surface_that_asked_the_person_itself_needs_no_approval_id`
+- An approval approves only its own call, by the person asked, once; several can wait at once
+  - `AbilityToolConsentTests.An_approval_approves_only_its_own_call_and_only_once_so_several_can_wait_at_once`
+  - `AbilityToolConsentTests.An_approval_is_for_the_person_who_was_asked`
+- Asking to apply a set shows what it holds, names what couldn't be undone on its own, and asks again if the set changed
+  - `AbilityToolConsentTests.Asking_to_apply_a_set_shows_what_it_holds_and_names_what_could_not_be_undone_on_its_own`
+  - `AbilityToolConsentTests.An_approval_for_a_change_set_is_refused_once_the_set_changed_and_the_person_is_asked_again`
 
 - The list endpoint gives every ability with what a tool needs: tool name, description, kind, and the input schema with `changeSetId` when it uses a change set
   - `AbilitiesManagementApiTests.The_Management_API_lists_every_ability_with_what_a_tool_needs`
@@ -186,8 +193,8 @@ Called over HTTP on Umbraco's test server, as the Umbraco CMS MCP Dev server wou
   - `AbilitiesManagementApiTests.A_user_without_the_Content_section_is_refused_with_a_403`
 - A header naming an unknown change set is refused, and nothing is written live
   - `AbilitiesManagementApiTests.A_header_naming_an_unknown_change_set_is_refused_rather_than_writing_live`
-- A call that can't be undone, without the `Umb-Approved` header, is a 428 and does nothing; with it, it runs
-  - `AbilitiesManagementApiTests.A_call_that_cannot_be_undone_without_the_persons_consent_is_a_428_and_does_nothing`
+- A call that can't be undone is a 428 with a question and an approval id, and does nothing; sent again with that id in `Umb-Approval`, it runs. A made-up id approves nothing
+  - `AbilitiesManagementApiTests.A_call_that_cannot_be_undone_is_a_428_with_a_question_and_runs_with_that_approvals_id`
 - A caller that isn't signed in is refused
   - `AbilitiesManagementApiTests.A_caller_that_is_not_signed_in_is_refused`
 
@@ -198,7 +205,7 @@ endpoints.
   - `AbilitiesMcpProxyTests.An_MCP_client_gets_one_tool_per_ability_the_site_lists`
 - An MCP client is told which tools only read, and which can't be undone and need a person to approve them (MCP's tool hints)
   - `AbilitiesMcpProxyTests.An_MCP_client_is_told_which_tools_only_read_and_which_need_a_person_to_approve_them`
-- The proxy asks the person (MCP elicitation) before a call that can't be undone; building a page asks once, at apply
+- The proxy asks the person the site's question (MCP elicitation) before a call that can't be undone; building a page asks once, at apply, listing the page
   - `AbilitiesMcpProxyTests.An_MCP_client_builds_a_page_in_a_change_set_without_naming_it_and_it_is_saved_on_apply`
 - A person who says no stops the call, and nothing is saved; a client that can't ask is refused
   - `AbilitiesMcpProxyTests.A_person_who_says_no_stops_a_call_that_cannot_be_undone_and_nothing_is_saved`

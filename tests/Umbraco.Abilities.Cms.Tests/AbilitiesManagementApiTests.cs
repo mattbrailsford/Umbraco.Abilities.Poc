@@ -74,7 +74,7 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
         Assert.That(validation.GetProperty("valid").GetBoolean(), Is.True, validation.ToString());
         Assert.That(ContentService.GetById(page), Is.Null, "nothing is saved before apply");
 
-        await OkAsync("changeSet.apply", "{}", set, approved: true);
+        await ApplyWithConsentAsync(set);
 
         var content = ContentService.GetById(page)!;
         var user = GetRequiredService<IUserService>().GetByEmail(editor)!;
@@ -87,7 +87,7 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
     }
 
     [Test]
-    public async Task A_call_that_cannot_be_undone_without_the_persons_consent_is_a_428_and_does_nothing()
+    public async Task A_call_that_cannot_be_undone_is_a_428_with_a_question_and_runs_with_that_approvals_id()
     {
         await SignInAsEditorAsync();
         var set = (await OkAsync("changeSet.create", """{ "name": "Hello page" }""")).GetProperty("changeSetId").GetGuid();
@@ -97,15 +97,21 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
 
         var (status, body) = await InvokeAsync("changeSet.apply", "{}", set);
 
+        var approval = body.GetProperty("approval");
         Assert.Multiple(() =>
         {
             Assert.That(status, Is.EqualTo((HttpStatusCode)428), body.ToString());
             Assert.That(body.GetProperty("status").GetString(), Is.EqualTo("ApprovalRequired"));
+            Assert.That(approval.GetProperty("question").GetString(), Does.Contain("created document \"Hello\""), "the person sees what it saves");
             Assert.That(body.GetProperty("changeSet").GetProperty("open").GetBoolean(), Is.True, "the set is still open");
             Assert.That(ContentService.GetById(page), Is.Null, "nothing is saved");
         });
 
-        await OkAsync("changeSet.apply", "{}", set, approved: true);
+        var (madeUp, _) = await InvokeAsync("changeSet.apply", "{}", set, approval: Guid.NewGuid());
+        Assert.That(madeUp, Is.EqualTo((HttpStatusCode)428), "an id nobody was asked about approves nothing");
+
+        // The made-up id asked again, so the first request is still waiting and approves the call.
+        await OkAsync("changeSet.apply", "{}", set, approval: approval.GetProperty("id").GetGuid());
         Assert.That(ContentService.GetById(page), Is.Not.Null, "saved once the person agreed");
     }
 
@@ -165,15 +171,22 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
     }
 
-    private async Task<JsonElement> OkAsync(string ability, string json, Guid? changeSet = null, bool approved = false)
+    // Plays a caller that asks the person, gets a yes, and sends the call again with the approval's id.
+    private async Task ApplyWithConsentAsync(Guid set)
     {
-        var (status, body) = await InvokeAsync(ability, json, changeSet, approved);
+        var (status, body) = await InvokeAsync("changeSet.apply", "{}", set);
+        Assert.That(status, Is.EqualTo((HttpStatusCode)428), body.ToString());
+        await OkAsync("changeSet.apply", "{}", set, approval: body.GetProperty("approval").GetProperty("id").GetGuid());
+    }
+
+    private async Task<JsonElement> OkAsync(string ability, string json, Guid? changeSet = null, Guid? approval = null)
+    {
+        var (status, body) = await InvokeAsync(ability, json, changeSet, approval);
         Assert.That(status, Is.EqualTo(HttpStatusCode.OK), $"{ability} failed: {body}");
         return body.GetProperty("result");
     }
 
-    // approved plays a caller that asked the person and got a yes.
-    private async Task<(HttpStatusCode Status, JsonElement Body)> InvokeAsync(string ability, string json, Guid? changeSet = null, bool approved = false)
+    private async Task<(HttpStatusCode Status, JsonElement Body)> InvokeAsync(string ability, string json, Guid? changeSet = null, Guid? approval = null)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, GetManagementApiUrl<AbilitiesController>(x => x.Invoke(ability, null, CancellationToken.None)))
         {
@@ -184,9 +197,9 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
             request.Headers.Add(ChangeSetAccessor.HeaderName, id.ToString());
         }
 
-        if (approved)
+        if (approval is { } approvalId)
         {
-            request.Headers.Add(AbilitiesController.ApprovedHeader, "true");
+            request.Headers.Add(AbilitiesController.ApprovalHeader, approvalId.ToString());
         }
 
         var response = await Client.SendAsync(request);

@@ -24,6 +24,12 @@ public sealed class ChangeSet
 
     public required string Name { get; set; }
 
+    /// <summary>
+    /// Goes up whenever something is recorded in the set or a conflict is resolved. A person's consent to apply the set
+    /// is for one version: if it changed since, they are asked again.
+    /// </summary>
+    public long Version { get; set; }
+
     /// <summary>Changes to entities: reviewable, validated, and saved product by product.</summary>
     public List<RecordedCall> Changes { get; } = [];
 
@@ -190,10 +196,18 @@ public sealed record ChangeSetChange(EntitySummary Entity, string Change, int Ed
 /// <summary>One step of applying a set: a product's changes in its own transaction, or one side effect after them.</summary>
 public sealed record ApplyStep(string Name, string Description, bool Applied);
 
+/// <param name="Version">The set's version this summary describes. Consent to apply it is for this version only.</param>
+/// <param name="NeedsConsent">
+/// The recorded calls that would have needed the person's consent had they run live, such as switching a discount on or
+/// sending an email. Recorded, they wait for apply, so applying is when the person agrees to them; a question about
+/// applying names them, so they are not buried in the list.
+/// </param>
 public sealed record ChangeSetSummary(
     Guid Id,
     string Name,
     IReadOnlyList<ChangeSetChange> Entities,
     IReadOnlyList<string> AfterApply,
     IReadOnlyList<ApplyStep> ApplyPlan,
-    IReadOnlyList<RebasedEntity> Rebased);
+    IReadOnlyList<RebasedEntity> Rebased,
+    long Version = 0,
+    IReadOnlyList<string>? NeedsConsent = null);

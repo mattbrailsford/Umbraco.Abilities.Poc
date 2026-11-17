@@ -110,6 +110,9 @@ public sealed class ChangeSetService(
         try
         {
             var set = Get(setId);
+
+            // Any attempt counts, even one that fails: a person asked to apply the set is then asked again.
+            set.Version++;
             var recorded = (JsonObject)input.DeepClone();
 
             if (ability is not IEntityEditAbility edit)
@@ -343,6 +346,7 @@ public sealed class ChangeSetService(
     public async Task ResolveConflictAsync(Guid setId, string entityType, Guid key, string path, VariantId variant, ConflictSide keep, CancellationToken cancellationToken = default)
     {
         var set = Get(setId);
+        set.Version++;
         if (adapters.Get(entityType) is IDraftingEntityAdapter drafting
             && set.Drafts.TryGetValue(drafting.EntityType, out var draftId))
         {
@@ -478,7 +482,27 @@ public sealed class ChangeSetService(
 
         var afterApply = set.AfterApply.Select(c => c.AbilityId).ToList();
         var plan = Plan(set).Select(s => new ApplyStep(s.Name, s.Description, set.AppliedSteps.Contains(s.Key))).ToList();
-        return new ChangeSetSummary(set.Id, set.Name, changes, afterApply, plan, state.Rebased);
+        return new ChangeSetSummary(set.Id, set.Name, changes, afterApply, plan, state.Rebased, set.Version, NeedsConsent(set, changes));
+    }
+
+    // The recorded calls that would need consent run live, named for a person: what it does, and to what.
+    private List<string> NeedsConsent(ChangeSet set, IReadOnlyList<ChangeSetChange> changes)
+    {
+        var needs = new List<string>();
+        foreach (var call in set.Changes.Concat(set.AfterApply))
+        {
+            if (abilities.Find(call.AbilityId)?.Descriptor is not { RequiresApproval: true } descriptor)
+            {
+                continue;
+            }
+
+            var entity = changes.FirstOrDefault(c => c.Entity.EntityType == call.EntityType && c.Entity.Key == call.EntityKey)?.Entity;
+            needs.Add(entity is not null
+                ? $"{descriptor.Name}: {entity.Name}"
+                : $"{descriptor.Name} {call.Input.ToJsonString()} (runs after the changes are saved)");
+        }
+
+        return needs;
     }
 
     /// <summary>
@@ -731,6 +755,9 @@ public sealed class AbilityInvoker(AbilityRegistry abilities, ChangeSetService c
 
     /// <summary>The abilities calls can name.</summary>
     public AbilityRegistry Abilities => abilities;
+
+    /// <summary>Calls waiting for a person's consent, for surfaces that ask between two calls.</summary>
+    public AbilityApprovals Approvals { get; } = new();
 
     public async Task<AbilityResult> InvokeAsync(string abilityId, JsonObject input, AbilityContext context, CancellationToken cancellationToken = default)
     {

@@ -108,7 +108,8 @@ public sealed class AbilitiesMcpProxyTests : AbilitiesApiTestBase
         Assert.Multiple(() =>
         {
             Assert.That(_asked, Has.Count.EqualTo(1), "the person is asked once, for the apply only: " + string.Join(" | ", _asked));
-            Assert.That(_asked[0], Does.Contain("Apply change set"));
+            Assert.That(_asked[0], Does.Contain("Apply change set \"Hello page\""));
+            Assert.That(_asked[0], Does.Contain("created document \"Hello\""), "the person sees what it saves");
             Assert.That(content.GetValue<string>("title"), Is.EqualTo("Hello world"));
             Assert.That(content.WriterId, Is.EqualTo(GetRequiredService<IUserService>().GetByEmail(editor)!.Id));
             Assert.That(_proxy.OpenChangeSetId, Is.Null, "an applied set is closed in the session");

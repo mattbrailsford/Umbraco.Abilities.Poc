@@ -281,19 +281,31 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
 23. **Consent can be enforced by the site, decided per call, and asked for by the MCP server.** The goal is consent,
     not review: the person driving the model says yes, so it can't post by accident. Three parts:
     - **The site decides.** `AbilityTool` refuses a call that can't be undone unless the surface says the person
-      agreed. It does nothing and returns `ApprovalRequired` (a 428 over HTTP). This is decided per call, as finding 1
+      agreed. It does nothing and returns `ApprovalRequired` (a 428 over HTTP), with an approval request. This is decided per call, as finding 1
       asked: a Write recorded in a change set can be undone, so it needs no consent; applying the set, or switching a
       discount on live, does.
-    - **HTTP carries the yes in a header.** A caller sends `Umb-Approved: true` once the person agreed. There is no
-      standard header for this; it is our convention, like `Umb-Change-Set`. The closest standard, OAuth step-up
-      sign-in (RFC 9470), proves who someone is, which is more than consent needs. A body field would not do: the
-      model writes the body, so it could agree for the person. The header is not proof: any HTTP caller can send it.
-      It stops accidents, not someone set on going around it.
-    - **The MCP server asks, through the client.** On a 428 the proxy asks the person with MCP elicitation, the
-      protocol's standard way for a server to ask the user something, then sends the call again with the header. The
-      question goes to the person, not the model. A client that can't ask is refused. Headless Claude Code
-      (`claude -p`) says it can ask, but answers "cancel" with nobody there, so the set stayed unapplied
-      (17-11-2026). The interactive dialog is not tried.
+    - **A yes is tied to one call.** The refusal carries an approval request: a question for the person and an id. The
+      caller sends the same call again with the id in `Umb-Approval`. The id approves that call only: the same ability,
+      input and user, used once, within 15 minutes. So several can wait at once, and a yes never approves the next
+      call. A first version used `Umb-Approved: true`, which approved whatever it was sent with.
+    - **For a change set, the yes is for what the person saw.** Each set has a version that goes up whenever something
+      is recorded or a conflict resolved. The question lists what applying saves, and an approval is for that version
+      only. If the model, or another editor, adds a change after the person was asked, the approval is refused and the
+      person is asked again with the new list. This is optimistic concurrency, like HTTP's `If-Match` with an ETag,
+      which is what 428 was made for; here the version lives in the approval instead of a second header.
+    - **The question names what can't be undone on its own.** A discount switched on, or an email sent, inside a set
+      needs no consent when recorded. Applying is when the person agrees to them, so the summary's `NeedsConsent` lists
+      them, and the question calls them out instead of burying them in the list.
+    - **There is no standard header for consent.** `Umb-Approval` is our convention, like `Umb-Change-Set`. The closest
+      standard, OAuth step-up sign-in (RFC 9470), proves who someone is, which is more than consent needs. A body field
+      would not do over MCP: the model writes the body, but never sees the id, which stays in the proxy. Over plain HTTP
+      the caller does see it, so the id is not proof a person agreed. It stops accidents, not someone set on going
+      around it.
+    - **The MCP server asks, through the client.** On a 428 the proxy asks the person the site's question with MCP
+      elicitation, the protocol's standard way for a server to ask the user something, then sends the call again with
+      the id. If the set changed meanwhile, it asks again, up to three times. A client that can't ask is refused.
+      Headless Claude Code (`claude -p`) says it can ask, but answers "cancel" with nobody there, so the set stayed
+      unapplied (17-11-2026). The interactive dialog is not tried.
 
     Compared with MCP Dev today: its tools carry `readOnlyHint` and `destructiveHint`, and it has a read only mode
     (`UMBRACO_READONLY`), but it calls the Management API directly, so any consent is the MCP client's own "allow this
@@ -302,10 +314,11 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
     is asked once, at apply.
 
     The Umbraco.AI tools don't change. Umbraco.AI's host already gates approval (`AIApprovalPolicy`: ask, deny, or
-    allowed up front), and only calls a tool after that, so the AI adapter passes the person's consent through. It
-    still decides once per tool, through `ApprovalRequiredAIFunction`, so a discount switched on inside a set is
-    asked about there, needlessly. Fixing that needs the host to ask per call, for example by acting on
-    `ApprovalRequired` from the tool's result.
+    allowed up front), and only calls a tool after that, so the AI adapter passes the person's consent through
+    (`AbilityConsent.Given`). It still decides once per tool, through `ApprovalRequiredAIFunction`, so a discount
+    switched on inside a set is asked about there, needlessly, and its approval shows the tool's arguments, not the
+    set's summary. Both would be fixed if Umbraco.AI's host used the approval requests instead: call without consent,
+    show the request's question in its approval UI, and call again with the id.
 
 ## Developer experience of adapters
 
