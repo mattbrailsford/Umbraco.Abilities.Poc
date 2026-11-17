@@ -161,6 +161,14 @@ public sealed record FieldDefinition(string Alias, string Description, FieldType
     /// </summary>
     public IValueHandler? Handler { get; init; }
 
+    /// <summary>
+    /// What the field means, in words other packages agree on, such as <c>"archived"</c>. A behaviour another package
+    /// ships (<see cref="IEntityBehaviour"/>) works on any entity type with a root field in each role it needs, so the
+    /// adapter and the behaviour never reference each other. Changing the field is checked with the role named, so the
+    /// adapter decides what permission it takes.
+    /// </summary>
+    public string? Role { get; init; }
+
     // ── For FieldType.Items ──────────────────────────────────────────────────────────────────────
 
     /// <summary>The group whose registered item types the field holds. Item types come from a registry, so other packages add them.</summary>

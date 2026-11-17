@@ -393,6 +393,39 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
     before; now the meta-schema is their definition. On the library: json-everything's JsonSchema.Net asks companies
     for a maintenance fee to use its published packages, so the tests use Corvus.Json.Validator (Apache 2.0).
 
+28. **Delete is a state; move is a value.** Building `entity.delete` and `entity.move` for CMS documents showed they
+    need different things:
+    - **Delete needed the change set to change.** A deleted entity has no working state, so a recorded call now says it
+      deletes, the set tells "deleted by the set" from "deleted by someone else", and applying saves first and deletes
+      last, so a child moved out of a deleted parent is moved first. An adapter opts in with
+      `IDeletableEntityAdapter`; a drafting one stages the delete in its draft (`StageDeleteAsync`).
+    - **Move needed nothing new in the change set.** The parent is a field the adapter names (`ITreeEntityAdapter`), so
+      a move is a value edit. Reading in the set, rebasing onto a move made in the backoffice, and a conflict when both
+      moved it all worked unchanged. The CMS draft set stand-in keeps the parent as one more value (`#parent`), and
+      applies it with Umbraco's `MoveAsync` after its saves.
+    - **Permissions follow what changed, not which tool changed it.** Before, setting `parent` on an existing page did
+      nothing; once it moved the page, `entity.setValue` would have moved it with update permission only. Checks are now
+      worked out from the difference (`EntityAccess.RequestsFor`): a move, an update, or both. A pure move needs no
+      update permission, as in the backoffice.
+    - **Umbraco checks a move only when it runs.** Validating an update doesn't look at the parent, so the adapter checks
+      what `MoveAsync` would refuse (a type not allowed there, a page under itself) and reports it on `parent`.
+    - **A parent created in the same set isn't live.** Checking create permission on it found nothing. It's now allowed,
+      since creating it was checked on its own parent.
+    - **Content in the recycle bin reads as deleted.** Umbraco still loads it, so the draft set treats it as gone.
+
+29. **A behaviour another package ships meets entity types on field roles.** A field can say what it means
+    (`FieldDefinition.Role`, `x-role` in the schema). A behaviour (`EntityBehaviourBase`) names the roles it needs, and
+    works on every entity type that has them, with no reference either way. It is an ability like any other, so it is
+    recorded, replayed, rebased and applied with nothing extra. The test's archive behaviour shows it. `x-role` is a
+    new schema note, so it went into the meta-schema (finding 27) first; the folder type with a role is checked against it.
+    - **The adapter owns the role's permission.** A change to a role's field is checked with the role named
+      (`EntityAccessRequest.Role`), whichever ability made it. The product decides what that takes; one that doesn't
+      know the role checks an update.
+    - **Move stayed in core.** It could have been a behaviour on a `parent` role. It is core because a tree is common,
+      and the CMS needs a move to run as a move, not a save.
+    - **Not covered:** a behaviour that needs the product to do more than save a value (a handler per entity type), and
+      roles inside items.
+
 ## Developer experience of adapters
 
 Making things easy for a model is one side. The other is what a package developer writes. Reading the samples as
@@ -705,6 +738,55 @@ What still does not fit, and needs a decision rather than more code:
 Two existing Umbraco.AI defects turned up on the way and were raised as issues:
 [#746](https://github.com/umbraco/Umbraco.AI/issues/746) (Multi URL Picker links saved without a target)
 and [#747](https://github.com/umbraco/Umbraco.AI/issues/747) (block settings use the content element type).
+
+## Checked against the existing MCP servers
+
+The Umbraco GitHub organization has six product MCP servers and three repos that host them. Their tools were
+read on 17-11-2026, to see which ones abilities could replace and what the PoC is missing. The tools were
+listed from the code. Which tool falls into which bucket is a judgement, not a measurement.
+
+| MCP server | Tools | Generic entity tools could replace | Would be product abilities | Doesn't fit yet |
+| --- | --- | --- | --- | --- |
+| [CMS Dev](https://github.com/umbraco/Umbraco-CMS-MCP-Dev) 18.1.11 | 433 | Create, get and edit for documents, elements, media, members and dictionary items, including the hand-written block tools (`create-document-block` is 384 lines) | Publish, move, copy, sort, recycle bin, rollback | Schema and developer tools (document types, templates, scripts, logs, indexes). Media upload |
+| [CMS Editor](https://github.com/umbraco/Umbraco-CMS-MCP-Editor) 18.0.0-beta.11 | 115 | Page, block and element edits, and bulk "set property" | Publish, schedule, public access, redirects | Its reports, which are reads written one by one. Its plain-language rules (no ids, preview links) belong to the surface |
+| [Forms](https://github.com/umbraco/Umbraco-Forms-MCP-Dev) 18.3.0 | 118 | Forms, fields, data sources, prevalue sources. Today a helper expands a short field list into the full form design, about 30 required properties deep | Exports, record actions (approve, reject), retrying a workflow | Public form submission uses the Delivery API. Import is a file |
+| [Automate](https://github.com/umbraco/Umbraco-Automate-MCP-Dev) 18.6.0 | 64 | Automations, steps, connections between steps, triggers. Today these are separate tools (`add-automation-step`, `connect-automation-steps`, ...) | Trigger, publish, run control (replay, suspend, terminate), deciding approvals, testing a connection | Fan-out and Switch exits, as listed in the README |
+| [Engage](https://github.com/umbraco/Umbraco-Engage-MCP-Dev) 17.5.0 | 137 | Segments, personas, customer journeys, A/B tests, goals | Start and stop a test, lock and unlock, reports, heatmaps | Segment rule settings are `z.unknown()` and undocumented, so no schema can describe them |
+| [Commerce](https://github.com/umbraco/Umbraco.Commerce.Mcp) (archived) | 18 | Discounts. It shelved `create_discount` because rules and rewards were "impractical to describe to AI". The PoC builds them with the generic tools | Capture, cancel and refund a payment; order notes and tags | No order adapter |
+
+The other three repos are about hosting, not tools. [Umbraco-MCP-Base](https://github.com/umbraco/Umbraco-MCP-Base) is
+the shared SDK and the Cloudflare Workers kit. [Umbraco.Mcp.HostedAuth](https://github.com/umbraco/Umbraco.Mcp.HostedAuth)
+lets a hosted MCP server sign in as the backoffice user. [Umbraco-Cloud-MCP-Infrastructure](https://github.com/umbraco/Umbraco-Cloud-MCP-Infrastructure)
+provisions the Workers. Abilities change none of that: an MCP server built on abilities still needs hosting and sign-in.
+
+What the MCP servers do today, and what abilities would change:
+
+- **Every tool is written by hand.** Each tool is a file over a client generated from the product's OpenAPI spec. A new
+  entity type or field means a new MCP release. None of the six added server endpoints of its own.
+- **Products reach the CMS by chaining.** Forms, Automate, Engage and the Editor start the CMS Dev server inside
+  themselves and pass its tools on with a prefix. With abilities, the site lists every product's tools in one place.
+- **Version checks move to the site.** Forms checks which Forms version has which endpoint. A site that lists its own
+  abilities only lists what it has.
+- **Nested values are where they struggle most.** Blocks (CMS), the form design (Forms), steps and connections
+  (Automate), segment rules (Engage) and discount rules (Commerce) each have their own helper, or were given up on.
+  This is the case the generic entity tools were built for.
+- **Dry-run mode is server-wide.** CMS Dev and the Editor can preview every write instead of running it. A change set
+  does this per call, and can still be applied afterwards.
+- **Consent is per tool.** The Editor asks before 34 risky writes, by elicitation, but saves drafts without asking.
+  That matches the PoC's rule: ask before a write that can't be undone (finding 23).
+
+Gaps the MCP servers show in the PoC:
+
+| Gap | Seen in | Note |
+| --- | --- | --- |
+| No publish, unpublish or schedule | CMS Dev, Editor, Automate | A change set applies saves. Publishing is a separate step a person may want in the same review |
+| No delete, copy, sort, or move to another parent | CMS Dev, Editor, Forms | `entity.moveItem` moves an item within a list, not an entity in a tree |
+| No file upload | CMS media, Forms import, user avatars | Already noted in [What doesn't fit the entity approach](#what-doesnt-fit-the-entity-approach): an upload step that returns a reference |
+| No long jobs, and no file downloads | Publish with descendants, Engage reports, Forms and Engage exports | An ability is one call with a JSON result. These start work, then poll, then return a file |
+| The tool list is the same for every user | All | The MCP servers hide tools the user's sections don't allow. The abilities list endpoint doesn't; a refused call is caught when it runs |
+| No way to group tools | All | The MCP servers use modes and slices to keep a client's tool list short. The generic entity tools need none, but product abilities will add up |
+| No reads for history, audit or references | CMS Dev, Editor, Forms, Automate | Version history, audit log and "where is this used" are common reads with no generic form |
+| Settings with no described shape | Engage segment rules | A product change: Engage would have to describe its rule settings, as Commerce providers do |
 
 ## What the CMS already gives us
 

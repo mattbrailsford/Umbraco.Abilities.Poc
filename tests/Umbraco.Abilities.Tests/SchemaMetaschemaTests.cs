@@ -45,6 +45,7 @@ public class SchemaMetaschemaTests
     [InlineData("""{ "type": "string", "description": "d", "x-edit": "e", "x-oops": 1 }""")]
     [InlineData("""{ "type": "array", "x-item-types": [{ "alias": "hero" }] }""")]
     [InlineData("""{ "type": "string", "x-variations": "culture" }""")]
+    [InlineData("""{ "type": "boolean", "x-role": true }""")]
     public void The_meta_schema_catches_a_mistake_in_a_field_deep_inside_a_schema(string field)
     {
         // A type JSON Schema doesn't have, a null description, an x- keyword the framework doesn't define, an item type

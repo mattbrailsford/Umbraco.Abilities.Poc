@@ -21,7 +21,7 @@ public static class ContentFields
     /// <summary>The name, per culture when the type varies by culture.</summary>
     public const string Name = "name";
 
-    /// <summary>The parent, used when creating. Moving is a separate operation.</summary>
+    /// <summary>The parent. For an adapter that is an <see cref="ITreeEntityAdapter"/>, changing it moves the item; otherwise it is only used when creating.</summary>
     public const string Parent = "parent";
 }
 
@@ -74,8 +74,8 @@ public sealed class CmsContentSchemas
 /// <param name="Values">Its property values, one per property, culture and segment.</param>
 /// <param name="Version">Its version, to tell an existing item from a new one.</param>
 /// <param name="ParentKey">
-/// Its parent, for a new item not saved yet (a draft), so the parent survives being read back and edited again. Null
-/// for a saved item: the parent is only used when creating.
+/// Its parent: for a new item not saved yet (a draft), so the parent survives being read back and edited again, and for
+/// a saved item whose adapter can move it. Null at the root, and for a saved item that can't be moved.
 /// </param>
 public sealed record StoredContent(Guid Key, Guid TypeKey, IReadOnlyDictionary<string, string> Names, IReadOnlyList<StoredValue> Values, long? Version, Guid? ParentKey = null);
 
@@ -237,7 +237,10 @@ public abstract class ContentTypeEntityAdapterBase<TType>(CmsContentSchemas sche
         ];
         if (HasParent)
         {
-            fields.Add(new FieldDefinition(ContentFields.Parent, $"The parent {EntityType}. Only used when creating; moving is a separate operation.", FieldType.EntityReference)
+            var description = this is ITreeEntityAdapter
+                ? $"The parent {EntityType}; none at the root. To move an existing one, use entity.move."
+                : $"The parent {EntityType}. Only used when creating.";
+            fields.Add(new FieldDefinition(ContentFields.Parent, description, FieldType.EntityReference)
             {
                 ReferencesEntityType = EntityType,
             });

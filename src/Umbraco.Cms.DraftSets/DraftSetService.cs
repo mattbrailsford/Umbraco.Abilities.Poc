@@ -31,7 +31,8 @@ public sealed class DraftContent
 
     public required Guid ContentTypeKey { get; init; }
 
-    public Guid? ParentKey { get; init; }
+    /// <summary>The parent's key; null at the root. A draft set that moves the content changes it.</summary>
+    public Guid? ParentKey { get; set; }
 
     /// <summary>Names by culture; the invariant name under <c>""</c>.</summary>
     public Dictionary<string, string> Names { get; init; } = [];
@@ -116,6 +117,9 @@ internal sealed class DraftEntry
 
     /// <summary>Conflicts resolved by keeping the draft: the live value it was kept over, by id.</summary>
     public Dictionary<string, JsonNode?> KeptOver { get; } = [];
+
+    /// <summary>For existing content: the draft set deletes it (to the recycle bin). It then reads as gone.</summary>
+    public bool Deleted { get; set; }
 }
 
 /// <summary>
@@ -130,10 +134,18 @@ public sealed class DraftSetService(
     IJsonSerializer json,
     ICoreScopeProvider scopes,
     IEventAggregator events,
-    IAuditService audit)
+    IAuditService audit,
+    IIdKeyMap idKeys)
 {
     /// <summary>The alias a name has in <see cref="DraftValue"/>s and conflicts.</summary>
     public const string NameAlias = "#name";
+
+    /// <summary>
+    /// The alias the parent has in <see cref="DraftValue"/>s and conflicts: its key as a string, or null for the root.
+    /// Staging a new parent for existing content moves it when the set is applied. Kept as a value, so rebasing onto a
+    /// move made in the backoffice, and conflicts with one, work as they do for any value.
+    /// </summary>
+    public const string ParentAlias = "#parent";
 
     private static readonly JsonSerializerOptions ModelValueOptions = new() { Converters = { new JsonObjectConverter() } };
 
@@ -203,6 +215,29 @@ public sealed class DraftSetService(
         }
     }
 
+    /// <summary>
+    /// Stages a delete. Content the draft set created is simply dropped. Existing content reads as gone from now on, and
+    /// is moved to the recycle bin when the set is applied, after the set's other changes.
+    /// </summary>
+    public async Task StageDeleteAsync(Guid id, GuidUdi entity)
+    {
+        var set = Open(id);
+        if (set.Entries.TryGetValue(entity, out var existing) && existing.Created is not null)
+        {
+            set.Entries.Remove(entity);
+            return;
+        }
+
+        if (existing is null)
+        {
+            existing = new DraftEntry { Base = await GetLiveAsync(entity) ?? throw new InvalidOperationException($"No {entity}.") };
+            set.Entries[entity] = existing;
+        }
+
+        existing.Changes.Clear();
+        existing.Deleted = true;
+    }
+
     // ── Reading ─────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>The live content in editor format, as the backoffice loads it.</summary>
@@ -210,9 +245,9 @@ public sealed class DraftSetService(
     {
         var key = DocumentKey(entity);
         var content = await editing.GetAsync(key);
-        if (content is null)
+        if (content is null || content.Trashed)
         {
-            return null;
+            return null; // Content in the recycle bin is deleted, as far as editing it goes.
         }
 
         var names = content.ContentType.VariesByCulture()
@@ -231,7 +266,8 @@ public sealed class DraftSetService(
             }
         }
 
-        return new DraftContent { Key = key, ContentTypeKey = content.ContentType.Key, Names = names, Values = values, Version = content.UpdateDate.Ticks };
+        var parent = content.ParentId == Constants.System.Root ? (Guid?)null : idKeys.GetKeyForId(content.ParentId, UmbracoObjectTypes.Document).Result;
+        return new DraftContent { Key = key, ContentTypeKey = content.ContentType.Key, ParentKey = parent, Names = names, Values = values, Version = content.UpdateDate.Ticks };
     }
 
     /// <summary>The content as the draft set would leave it: live with the set's changes over it, or the set's new content.</summary>
@@ -246,6 +282,11 @@ public sealed class DraftSetService(
         if (entry.Created is { } created)
         {
             return created.Clone();
+        }
+
+        if (entry.Deleted)
+        {
+            return null;
         }
 
         var live = await GetLiveAsync(entity);
@@ -273,7 +314,12 @@ public sealed class DraftSetService(
             var live = await GetLiveAsync(key);
             if (live is null)
             {
-                result.Add(new DraftRebase(key, DeletedLive: true, [], []));
+                // Deleted by someone else: a conflict, unless the set deletes it too.
+                if (!entry.Deleted)
+                {
+                    result.Add(new DraftRebase(key, DeletedLive: true, [], []));
+                }
+
                 continue;
             }
 
@@ -324,7 +370,7 @@ public sealed class DraftSetService(
     public async Task<IReadOnlyDictionary<GuidUdi, IReadOnlyList<PropertyValidationError>>> ValidateAsync(Guid id, Guid userKey)
     {
         var result = new Dictionary<GuidUdi, IReadOnlyList<PropertyValidationError>>();
-        foreach (var entity in Open(id).Entities)
+        foreach (var entity in Open(id).Entries.Where(e => !e.Value.Deleted).Select(e => e.Key))
         {
             var content = (await GetAsync(id, entity))!;
             var key = content.Key;
@@ -353,10 +399,21 @@ public sealed class DraftSetService(
         }
 
         using var scope = scopes.CreateCoreScope();
-        foreach (var entity in set.Entities)
+        var moves = new List<DraftContent>();
+        foreach (var (entity, entry) in set.Entries.Where(e => !e.Value.Deleted))
         {
             var content = (await GetAsync(id, entity))!;
             var key = content.Key;
+            if (!content.IsNew && entry.Changes.ContainsKey(new DraftValue(ParentAlias, null, null, null).Id))
+            {
+                moves.Add(content);
+            }
+
+            if (!content.IsNew && entry.Changes.Values.All(c => c.Alias == ParentAlias))
+            {
+                continue; // Only moved: nothing to save.
+            }
+
             ContentEditingOperationStatus status;
             ContentValidationResult validation;
             IContent? saved;
@@ -385,6 +442,30 @@ public sealed class DraftSetService(
             {
                 await audit.AddAsync(AuditType.Custom, userKey, saved.Id, "Document", $"Applied with draft set '{set.Name}'", null);
             }
+        }
+
+        // Moves after every save, so a new parent created in the set exists. Deletes last, so content the set moves out
+        // from under a deleted parent is moved first.
+        foreach (var content in moves)
+        {
+            var moved = await editing.MoveAsync(content.Key, content.ParentKey, userKey);
+            if (!moved.Success)
+            {
+                throw new InvalidOperationException($"Umbraco did not move {content.Names.Values.FirstOrDefault() ?? content.Key.ToString()}: {moved.Status}.");
+            }
+
+            await audit.AddAsync(AuditType.Custom, userKey, moved.Result!.Id, "Document", $"Moved with draft set '{set.Name}'", null);
+        }
+
+        foreach (var (entity, entry) in set.Entries.Where(e => e.Value.Deleted))
+        {
+            var deleted = await editing.MoveToRecycleBinAsync(entity.Guid, userKey);
+            if (!deleted.Success)
+            {
+                throw new InvalidOperationException($"Umbraco did not delete {entry.Base!.Names.Values.FirstOrDefault() ?? entity.Guid.ToString()}: {deleted.Status}.");
+            }
+
+            await audit.AddAsync(AuditType.Custom, userKey, deleted.Result!.Id, "Document", $"Moved to the recycle bin with draft set '{set.Name}'", null);
         }
 
         // Through the scope, so it fires only once the outermost scope commits, and never on a rollback: a change set
@@ -431,15 +512,28 @@ public sealed class DraftSetService(
     }
 
     private static IEnumerable<DraftValue> AllValues(DraftContent content)
-        => content.Names.Select(n => new DraftValue(NameAlias, n.Key.Length == 0 ? null : n.Key, null, n.Value)).Concat(content.Values);
+        => content.Names.Select(n => new DraftValue(NameAlias, n.Key.Length == 0 ? null : n.Key, null, n.Value))
+            .Append(new DraftValue(ParentAlias, null, null, ParentValue(content)))
+            .Concat(content.Values);
 
     private static JsonNode? ValueIn(DraftContent content, DraftValue value)
-        => value.Alias == NameAlias
-            ? content.Names.TryGetValue(value.Culture ?? string.Empty, out var name) ? JsonValue.Create(name) : null
-            : content.Values.FirstOrDefault(v => v.Id == value.Id)?.Value;
+        => value.Alias switch
+        {
+            NameAlias => content.Names.TryGetValue(value.Culture ?? string.Empty, out var name) ? JsonValue.Create(name) : null,
+            ParentAlias => ParentValue(content),
+            _ => content.Values.FirstOrDefault(v => v.Id == value.Id)?.Value,
+        };
+
+    private static JsonNode? ParentValue(DraftContent content) => content.ParentKey is { } parent ? JsonValue.Create(parent.ToString()) : null;
 
     private static void Overlay(DraftContent content, DraftValue change)
     {
+        if (change.Alias == ParentAlias)
+        {
+            content.ParentKey = change.Value is null ? null : Guid.Parse(change.Value.GetValue<string>());
+            return;
+        }
+
         if (change.Alias == NameAlias)
         {
             if (change.Value is null)

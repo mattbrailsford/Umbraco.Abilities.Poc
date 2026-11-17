@@ -186,25 +186,34 @@ public sealed class ChangeSetService(
             var itemTypes = await registry.ResolveAsync(schema.Root, context.UserKey, cancellationToken);
             var output = await edit.ApplyAsync(working, recorded, new EntityEditContext(adapter, schema, itemTypes), cancellationToken);
 
-            // The user the edit is made for must be allowed to make it, in the cultures it touches.
-            var permission = working.Version is null ? EntityPermission.Create : EntityPermission.Update;
-            if (await EntityAccess.CheckAsync(adapter, new EntityAccessRequest(context.UserKey, permission, target.EntityKey, working, EntityAccess.VariantsChanged(before, working, schema.Root, itemTypes)), cancellationToken) is { } denied)
+            // The user the edit is made for must be allowed to make it: to create, update, move or delete it, in the
+            // cultures it touches.
+            var requests = EntityAccess.RequestsFor(context.UserKey, adapter, target.EntityKey, before, target.Deletes ? null : working, schema.Root, itemTypes);
+            if (await EntityAccess.CheckAllAsync(adapter, requests, cancellationToken) is { } denied)
             {
                 return EntityAccess.Denied(denied);
             }
 
             // And to use every item type it adds: a plugin's type can need access the entity doesn't.
-            if (EntityAccess.NewItemTypesNotAvailable(before, working, schema.Root, itemTypes) is { Count: > 0 } unavailable)
+            if (!target.Deletes && EntityAccess.NewItemTypesNotAvailable(before, working, schema.Root, itemTypes) is { Count: > 0 } unavailable)
             {
                 return EntityAccess.Denied($"You may not use {string.Join(", ", unavailable)}.");
             }
             if (adapter is IDraftingEntityAdapter drafting)
             {
                 // The product's draft records the change; the set only remembers that it touched the entity.
-                await drafting.StageAsync(await EnsureDraftAsync(set, drafting, cancellationToken), target.Creates ? null : before, working, cancellationToken);
+                var draftId = await EnsureDraftAsync(set, drafting, cancellationToken);
+                if (target.Deletes)
+                {
+                    await drafting.StageDeleteAsync(draftId, before!, cancellationToken);
+                }
+                else
+                {
+                    await drafting.StageAsync(draftId, target.Creates ? null : before, working, cancellationToken);
+                }
             }
 
-            set.Changes.Add(new RecordedCall(ability.Descriptor.Id, recorded, target.EntityType, target.EntityKey, target.Creates, working.Subtype));
+            set.Changes.Add(new RecordedCall(ability.Descriptor.Id, recorded, target.EntityType, target.EntityKey, target.Creates, working.Subtype, target.Deletes));
             store.Save(set);
             return AbilityResult.Ok(output);
         }
@@ -234,8 +243,12 @@ public sealed class ChangeSetService(
     public async Task<IReadOnlyList<RebasedEntity>> GetRebasedAsync(ChangeSet set, CancellationToken cancellationToken = default)
         => (await ComputeAllAsync(set, cancellationToken)).Rebased;
 
-    /// <summary>One entity's state in a set, worked out once: what's live, the set's result, and how it rebased.</summary>
-    private sealed record EntityState(string EntityType, Guid Key, IEntityAdapter Adapter, Entity? Live, Entity? Working, RebasedEntity? Rebased)
+    /// <summary>
+    /// One entity's state in a set, worked out once: what's live, the set's result, and how it rebased. An entity the set
+    /// deletes has no working state and <see cref="Deleted"/> set; one with no working state otherwise was deleted by
+    /// someone else.
+    /// </summary>
+    private sealed record EntityState(string EntityType, Guid Key, IEntityAdapter Adapter, Entity? Live, Entity? Working, RebasedEntity? Rebased, bool Deleted = false)
     {
         public EntitySummary Summary => (Working ?? Live) is { } entity ? Adapter.ToSummary(entity) : Rebased?.Entity ?? new EntitySummary(EntityType, Key, "(deleted)");
     }
@@ -269,7 +282,9 @@ public sealed class ChangeSetService(
     {
         var adapter = adapters.Get(entityType);
         var live = await adapter.LoadAsync(key, cancellationToken);
-        EntityState State(Entity? working, RebasedEntity? rebased = null) => new(entityType, key, adapter, live, working, rebased);
+        var calls = set.Changes.Where(c => c.EntityType == entityType && c.EntityKey == key).ToList();
+        var deleted = calls.Any(c => c.Deletes);
+        EntityState State(Entity? working, RebasedEntity? rebased = null) => new(entityType, key, adapter, live, working, rebased, deleted);
 
         if (adapter is IDraftingEntityAdapter drafting)
         {
@@ -279,7 +294,11 @@ public sealed class ChangeSetService(
                 : live?.Clone());
         }
 
-        var calls = set.Changes.Where(c => c.EntityType == entityType && c.EntityKey == key).ToList();
+        if (deleted)
+        {
+            // Nothing to replay: whatever the set did to it before, it is gone. (Edits after the delete are refused.)
+            return State(null);
+        }
         if (calls.FirstOrDefault() is { Creates: true } create)
         {
             return State(await ReplayAsync(adapter, await adapter.NewAsync(key, create.Subtype, cancellationToken), calls, skipUnder: [], cancellationToken));
@@ -433,6 +452,11 @@ public sealed class ChangeSetService(
         {
             if (entity.Working is not { } working)
             {
+                if (entity.Deleted)
+                {
+                    continue; // The set deletes it: nothing to check. Entities in the set that still refer to it are.
+                }
+
                 result.Add(new EntityProblems(entity.Summary, [new Problem(string.Empty, "Someone else deleted this since the set started editing it.")]));
                 continue;
             }
@@ -477,7 +501,7 @@ public sealed class ChangeSetService(
             // Entities whose product is already applied aren't pending, so aren't in the set's state.
             var entity = state.Entities.FirstOrDefault(e => e.EntityType == entityType && e.Key == key) ?? await ComputeAsync(set, entityType, key, cancellationToken);
             var calls = set.Changes.Where(c => c.EntityType == entityType && c.EntityKey == key).ToList();
-            changes.Add(new ChangeSetChange(entity.Summary, calls[0].Creates ? "created" : "updated", calls.Count, adapters.Get(entityType).DisplayName));
+            changes.Add(new ChangeSetChange(entity.Summary, entity.Deleted ? "deleted" : calls[0].Creates ? "created" : "updated", calls.Count, adapters.Get(entityType).DisplayName));
         }
 
         var afterApply = set.AfterApply.Select(c => c.AbilityId).ToList();
@@ -526,13 +550,12 @@ public sealed class ChangeSetService(
         // permissions can change while a set is open.
         var state = await ComputeAllAsync(set, cancellationToken);
         var denials = new List<Problem>();
-        foreach (var entity in state.Entities.Where(e => e.Working is not null))
+        foreach (var entity in state.Entities.Where(e => e.Working is not null || (e.Deleted && e.Live is not null)))
         {
-            var permission = entity.Live is null ? EntityPermission.Create : EntityPermission.Update;
-            var schema = (await entity.Adapter.GetSchemaAsync(entity.Working!.Subtype, cancellationToken)).Root;
+            var schema = (await entity.Adapter.GetSchemaAsync((entity.Working ?? entity.Live)!.Subtype, cancellationToken)).Root;
             var itemTypes = await registry.ResolveAsync(schema, context.UserKey, cancellationToken);
-            var request = new EntityAccessRequest(context.UserKey, permission, entity.Key, entity.Working, EntityAccess.VariantsChanged(entity.Live, entity.Working, schema, itemTypes));
-            if (await EntityAccess.CheckAsync(entity.Adapter, request, cancellationToken) is { } denied)
+            var requests = EntityAccess.RequestsFor(context.UserKey, entity.Adapter, entity.Key, entity.Live, entity.Working, schema, itemTypes);
+            if (await EntityAccess.CheckAllAsync(entity.Adapter, requests, cancellationToken) is { } denied)
             {
                 denials.Add(new Problem($"{entity.EntityType}:{entity.Key}", denied));
             }
@@ -592,9 +615,17 @@ public sealed class ChangeSetService(
                     {
                         // A product that retries its transaction runs this again, so start the list again too.
                         savedInStep.Clear();
-                        foreach (var entity in entities.Except(drafted))
+                        foreach (var entity in entities.Except(drafted).Where(e => !e.Deleted))
                         {
                             savedInStep.Add(await entity.Adapter.SaveAsync(entity.Working!, ct));
+                        }
+
+                        // Deletes last, so an entity the set moves out from under a deleted parent is moved first. One
+                        // the set created and deleted again was never saved, so there is nothing to delete.
+                        foreach (var entity in entities.Except(drafted).Where(e => e.Deleted && e.Live is not null))
+                        {
+                            await ((IDeletableEntityAdapter)entity.Adapter).DeleteAsync(entity.Key, ct);
+                            savedInStep.Add(entity.Summary);
                         }
 
                         foreach (var byAdapter in drafted.GroupBy(e => e.EntityType))

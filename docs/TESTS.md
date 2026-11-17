@@ -110,6 +110,29 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
   - `SideEffectRetryTests (all)`
   - `CmsDocumentAdapterTests.A_side_effect_with_retries_runs_on_Umbracos_background_queue_after_the_content_commits`
 
+## Delete, move and behaviours
+
+- `entity.getSchema` lists what a type can do beyond setting values: delete and move when its adapter opts in, and each installed behaviour its field roles support
+  - `EntityCapabilityTests.The_schema_lists_what_an_entity_type_can_do_beyond_setting_values`
+- A deleted entity is gone inside the set (get, find, further edits), still live outside it, summarized as deleted, and deleted only on apply
+  - `EntityCapabilityTests.A_deleted_entity_is_gone_in_the_set_and_deleted_only_when_the_set_is_applied`
+- An entity created and deleted in one set is never saved
+  - `EntityCapabilityTests.An_entity_created_and_deleted_in_one_set_is_never_saved`
+- On apply, saves come before deletes, so a child moved out of a deleted parent is moved first
+  - `EntityCapabilityTests.Children_moved_out_of_a_deleted_parent_are_saved_before_it_is_deleted`
+- An entity type whose adapter didn't opt in can't be deleted or moved: a problem on `entityType`
+  - `EntityCapabilityTests.Entity_types_whose_adapters_did_not_opt_in_cannot_be_deleted_or_moved`
+- A move is checked as a move, not an update, and setting the parent with `entity.setValue` is checked the same way
+  - `EntityCapabilityTests.A_move_is_checked_as_a_move_and_setting_the_parent_directly_is_too`
+  - `EntityCapabilityTests.An_entity_cannot_be_moved_under_itself`
+- A behaviour another package ships works on any entity type with a field in the roles it needs, and refuses one without
+  - `EntityCapabilityTests.A_behaviour_another_package_ships_works_on_any_entity_type_with_the_roles_it_needs`
+  - `EntityCapabilityTests.A_behaviour_refuses_an_entity_type_without_the_roles_it_needs`
+- Changing a field with a role is checked with that role, whichever ability changes it, and the product decides what the role takes
+  - `EntityCapabilityTests.Changing_a_field_with_a_role_is_checked_with_that_role_whichever_ability_changes_it`
+- A field's role (`x-role`) is one of the framework's notes in the meta-schema, so a schema with one is valid
+  - `EntityCapabilityTests.A_schema_with_a_role_is_valid_JSON_Schema_with_the_frameworks_notes`
+
 ## Plugin types and editor values
 
 - Rule and reward types come from Commerce's provider collections, with the label fallback and editor references; a provider registered later shows up; a group rule nests children and is stored as Commerce's rule tree
@@ -257,6 +280,20 @@ endpoints.
   - `CmsDocumentAdapterTests.A_required_segment_only_value_missing_in_a_segment_is_a_problem_with_no_culture`
 - A page allowed only under a parent is created under it, reads back in the set with its parent, and keeps that parent when edited again
   - `CmsDocumentAdapterTests.A_page_allowed_only_under_a_parent_is_created_under_it_and_reads_back_in_the_set`
+- A page moved in a set is under its new parent in the set, under the old one live, and is moved by Umbraco on apply, including under a parent created in the same set
+  - `CmsDocumentAdapterTests.A_page_moved_in_a_change_set_is_under_its_new_parent_in_the_set_and_moves_when_applied`
+  - `CmsDocumentAdapterTests.A_page_can_be_moved_under_a_parent_created_in_the_same_set`
+- A move Umbraco would refuse (a type not allowed at the root, a page under itself) is a problem on `parent` before applying
+  - `CmsDocumentAdapterTests.A_move_Umbraco_would_refuse_is_a_problem_on_the_parent_before_it_is_applied`
+- A page deleted in a set is gone in the set, live outside it, and goes to the recycle bin on apply
+  - `CmsDocumentAdapterTests.A_page_deleted_in_a_change_set_is_gone_in_the_set_and_goes_to_the_recycle_bin_when_applied`
+  - `CmsDocumentAdapterTests.A_page_created_and_deleted_in_one_set_is_never_saved`
+- A page moved out of a page deleted in the same set is moved first, and not deleted with it
+  - `CmsDocumentAdapterTests.A_page_moved_out_of_a_page_deleted_in_the_same_set_is_moved_first_and_not_deleted`
+- Moving takes the CMS's move permission on the page and create permission on the new parent, deleting its delete permission, whether through `entity.move` or `entity.setValue`
+  - `CmsDocumentAdapterTests.Moving_and_deleting_take_the_CMS_permissions_for_them_however_the_change_is_made`
+- A page moved both in the set and in the backoffice is a conflict on `parent`, resolved like any value
+  - `CmsDocumentAdapterTests.A_page_moved_in_both_the_set_and_the_backoffice_is_a_conflict_on_its_parent`
 
 ## Against real Umbraco Commerce
 

@@ -58,6 +58,31 @@ public interface IVersionedEntityAdapter : IEntityAdapter
     Task<Entity?> LoadVersionAsync(Guid key, long version, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// An adapter whose entities can be deleted. The framework then offers <c>entity.delete</c> for its entity type: the
+/// delete is recorded in a change set like any edit, the entity reads as gone inside the set, and it is deleted when the
+/// set is applied, after the set's other changes to the product are saved.
+/// </summary>
+public interface IDeletableEntityAdapter : IEntityAdapter
+{
+    /// <summary>True when the product can restore a deleted entity, such as from the CMS recycle bin.</summary>
+    bool CanRestore { get; }
+
+    /// <summary>Deletes the entity, in the product's unit of work. Not called for adapters that keep their own drafts: their draft applies the delete.</summary>
+    Task DeleteAsync(Guid key, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// An adapter whose entities sit in a tree. The framework then offers <c>entity.move</c> for its entity type, which sets
+/// <see cref="ParentField"/>. The adapter saves a changed parent as a move, in <see cref="IEntityAdapter.SaveAsync"/>
+/// (or its draft). A change to the parent field, by any ability, is checked as <see cref="EntityPermission.Move"/>.
+/// </summary>
+public interface ITreeEntityAdapter : IEntityAdapter
+{
+    /// <summary>The alias of a root reference field holding the parent's key; no value means the entity is at the root.</summary>
+    string ParentField { get; }
+}
+
 public sealed record EntitySubtype(string Alias, string Name);
 
 public sealed class EntityAdapterRegistry

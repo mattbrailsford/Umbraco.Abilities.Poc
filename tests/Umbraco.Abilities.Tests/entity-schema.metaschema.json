@@ -11,6 +11,7 @@
     "x-variations": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
     "x-references": { "type": "string" },
     "x-references-item-in": { "type": "string" },
+    "x-role": { "type": "string", "minLength": 1 },
     "x-item-types": {
       "type": "array",
       "items": {
@@ -27,6 +28,6 @@
     }
   },
   "patternProperties": {
-    "^x-(?!(edit|bindings|variations|references|references-item-in|item-types)$)": false
+    "^x-(?!(edit|bindings|variations|references|references-item-in|item-types|role)$)": false
   }
 }
