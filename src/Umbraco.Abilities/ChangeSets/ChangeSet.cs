@@ -10,15 +10,13 @@ namespace Umbraco.Abilities.ChangeSets;
 /// </summary>
 /// <param name="EntityType">Set for a change to an entity; null for a side effect that runs after the set is applied.</param>
 /// <param name="Creates">The call creates the entity, so its working state starts from <see cref="IEntityAdapter.New"/>.</param>
-/// <param name="Deletes">The call deletes the entity: inside the set it reads as gone, and applying the set deletes it.</param>
 public sealed record RecordedCall(
     string AbilityId,
     JsonObject Input,
     string? EntityType = null,
     Guid? EntityKey = null,
     bool Creates = false,
-    string? Subtype = null,
-    bool Deletes = false);
+    string? Subtype = null);
 
 public sealed class ChangeSet
 {
@@ -150,7 +148,7 @@ public interface IEntityEditAbility : IAbility
     Task<object?> ApplyAsync(Entity entity, JsonObject input, EntityEditContext context, CancellationToken cancellationToken = default);
 }
 
-public sealed record EntityEditTarget(string EntityType, Guid EntityKey, bool Creates, string? Subtype = null, bool Deletes = false);
+public sealed record EntityEditTarget(string EntityType, Guid EntityKey, bool Creates, string? Subtype = null);
 
 public sealed record EntityEditContext(IEntityAdapter Adapter, EntitySchema Schema, ItemTypes ItemTypes);
 
@@ -170,16 +168,10 @@ public interface IDraftingEntityAdapter : IEntityAdapter
 
     /// <summary>
     /// Records an edit into the draft. <paramref name="before"/> is the entity as the draft had it (null when the edit
-    /// creates it), so the product can record only what changed.
+    /// creates it), so the product can record only what changed. <paramref name="after"/> is marked
+    /// <see cref="Entity.Deleted"/> when the edit deletes it; after that the draft loads it as gone.
     /// </summary>
     Task StageAsync(Guid draftId, Entity? before, Entity after, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Records a delete into the draft, for an adapter that is also an <see cref="IDeletableEntityAdapter"/>.
-    /// <paramref name="before"/> is the entity as the draft had it. After this the draft loads it as gone.
-    /// </summary>
-    Task StageDeleteAsync(Guid draftId, Entity before, CancellationToken cancellationToken = default)
-        => throw new NotSupportedException($"{EntityType} can't be deleted.");
 
     /// <summary>Entities someone else changed since the draft started editing them, and where that conflicts.</summary>
     Task<IReadOnlyList<RebasedEntity>> GetRebasedAsync(Guid draftId, CancellationToken cancellationToken = default);

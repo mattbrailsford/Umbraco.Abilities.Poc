@@ -120,6 +120,8 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
   - `EntityCapabilityTests.A_deleted_entity_is_gone_in_the_set_and_deleted_only_when_the_set_is_applied`
 - An entity created and deleted in one set is never saved
   - `EntityCapabilityTests.An_entity_created_and_deleted_in_one_set_is_never_saved`
+- An entity someone else deleted is not a conflict when the set deletes it too
+  - `EntityCapabilityTests.An_entity_someone_else_deleted_is_not_a_conflict_when_the_set_deletes_it_too`
 - On apply, saves come before deletes, so a child moved out of a deleted parent is moved first
   - `EntityCapabilityTests.Children_moved_out_of_a_deleted_parent_are_saved_before_it_is_deleted`
 - An entity type whose adapter didn't opt in can't be deleted or moved: a problem on `entityType`

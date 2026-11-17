@@ -640,7 +640,7 @@ entity type whose adapter has the interface.
 
 | Capability | What the adapter adds | How it fits change sets |
 | --- | --- | --- |
-| Delete (built) | `IDeletableEntityAdapter.DeleteAsync(key)`. The product decides whether that means a recycle bin, and says so with `CanRestore`. A drafting adapter stages it instead (`StageDeleteAsync`) | The recorded call says it deletes. The entity reads as gone in the set, and is deleted on apply after the product's saves. References to it from other entities in the set become problems |
+| Delete (built) | `IDeletableEntityAdapter.DeleteAsync(key)`. The product decides whether that means a recycle bin, and says so with `CanRestore`. A drafting adapter stages it instead (`StageAsync` gets the entity marked deleted) | `entity.delete` marks the working copy deleted (`Entity.Deleted`), as EF Core's `Remove` does. The entity reads as gone in the set, and is deleted on apply after the product's saves. References to it from other entities in the set become problems |
 | Move (built) | `ITreeEntityAdapter.ParentField`: the root reference field holding the parent. The adapter saves a changed parent as a move | A move sets that field, so it is a value edit: reads, rebasing and conflicts work unchanged |
 | Sort | Not designed yet: a sort order changes the entity's siblings too | |
 | Copy | Nothing. An optional hook clears values that must be unique, such as an alias or a code | The framework loads the entity, gives it and its items new keys at record time, and creates it |

@@ -395,10 +395,14 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 28. **Delete is a state; move is a value.** Building `entity.delete` and `entity.move` for CMS documents showed they
     need different things:
-    - **Delete needed the change set to change.** A deleted entity has no working state, so a recorded call now says it
-      deletes, the set tells "deleted by the set" from "deleted by someone else", and applying saves first and deletes
-      last, so a child moved out of a deleted parent is moved first. An adapter opts in with
-      `IDeletableEntityAdapter`; a drafting one stages the delete in its draft (`StageDeleteAsync`).
+    - **Delete needed the change set to change.** The set must tell "deleted by the set" from "deleted by someone
+      else", and applying saves first and deletes last, so a child moved out of a deleted parent is moved first. An
+      adapter opts in with `IDeletableEntityAdapter`.
+    - **Delete is a mark on the entity, as in EF Core.** It was first a flag on the ability (`Deletes`) that the change
+      set looked for, so the ability didn't say what it did. Now `entity.delete` marks the working copy
+      (`Entity.Deleted`), as EF Core's `Remove` does, and the set works out the rest from before and after: gone in the
+      set means a Delete check, a delete on apply, or a delete staged in a product's draft (`StageAsync` gets the
+      marked entity). No ability needs a flag, and apply follows the same rule as permissions.
     - **Move needed nothing new in the change set.** The parent is a field the adapter names (`ITreeEntityAdapter`), so
       a move is a value edit. Reading in the set, rebasing onto a move made in the backoffice, and a conflict when both
       moved it all worked unchanged. The CMS draft set stand-in keeps the parent as one more value (`#parent`), and

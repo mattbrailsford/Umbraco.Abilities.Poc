@@ -185,17 +185,24 @@ public sealed class ChangeSetService(
             var schema = await adapter.GetSchemaAsync(working.Subtype, cancellationToken);
             var itemTypes = await registry.ResolveAsync(schema.Root, context.UserKey, cancellationToken);
             var output = await edit.ApplyAsync(working, recorded, new EntityEditContext(adapter, schema, itemTypes), cancellationToken);
+            if (working.Deleted && adapter is not IDeletableEntityAdapter)
+            {
+                throw new AbilityInputException($"{adapter.DisplayName} can't be deleted here.", [new Problem("entityType", "Can't be deleted.")]);
+            }
+
+            // What the edit leaves: nothing, when it deletes the entity.
+            var after = working.Deleted ? null : working;
 
             // The user the edit is made for must be allowed to make it: to create, update, move or delete it, in the
             // cultures it touches.
-            var requests = EntityAccess.RequestsFor(context.UserKey, adapter, target.EntityKey, before, target.Deletes ? null : working, schema.Root, itemTypes);
+            var requests = EntityAccess.RequestsFor(context.UserKey, adapter, target.EntityKey, before, after, schema.Root, itemTypes);
             if (await EntityAccess.CheckAllAsync(adapter, requests, cancellationToken) is { } denied)
             {
                 return EntityAccess.Denied(denied);
             }
 
             // And to use every item type it adds: a plugin's type can need access the entity doesn't.
-            if (!target.Deletes && EntityAccess.NewItemTypesNotAvailable(before, working, schema.Root, itemTypes) is { Count: > 0 } unavailable)
+            if (after is not null && EntityAccess.NewItemTypesNotAvailable(before, after, schema.Root, itemTypes) is { Count: > 0 } unavailable)
             {
                 return EntityAccess.Denied($"You may not use {string.Join(", ", unavailable)}.");
             }
@@ -203,17 +210,10 @@ public sealed class ChangeSetService(
             {
                 // The product's draft records the change; the set only remembers that it touched the entity.
                 var draftId = await EnsureDraftAsync(set, drafting, cancellationToken);
-                if (target.Deletes)
-                {
-                    await drafting.StageDeleteAsync(draftId, before!, cancellationToken);
-                }
-                else
-                {
-                    await drafting.StageAsync(draftId, target.Creates ? null : before, working, cancellationToken);
-                }
+                await drafting.StageAsync(draftId, target.Creates ? null : before, working, cancellationToken);
             }
 
-            set.Changes.Add(new RecordedCall(ability.Descriptor.Id, recorded, target.EntityType, target.EntityKey, target.Creates, working.Subtype, target.Deletes));
+            set.Changes.Add(new RecordedCall(ability.Descriptor.Id, recorded, target.EntityType, target.EntityKey, target.Creates, working.Subtype));
             store.Save(set);
             return AbilityResult.Ok(output);
         }
@@ -245,8 +245,8 @@ public sealed class ChangeSetService(
 
     /// <summary>
     /// One entity's state in a set, worked out once: what's live, the set's result, and how it rebased. An entity the set
-    /// deletes has no working state and <see cref="Deleted"/> set; one with no working state otherwise was deleted by
-    /// someone else.
+    /// deletes (its replayed copy is marked <see cref="Entity.Deleted"/>) has no working state and <see cref="Deleted"/>
+    /// set; one with no working state otherwise was deleted by someone else.
     /// </summary>
     private sealed record EntityState(string EntityType, Guid Key, IEntityAdapter Adapter, Entity? Live, Entity? Working, RebasedEntity? Rebased, bool Deleted = false)
     {
@@ -283,21 +283,24 @@ public sealed class ChangeSetService(
         var adapter = adapters.Get(entityType);
         var live = await adapter.LoadAsync(key, cancellationToken);
         var calls = set.Changes.Where(c => c.EntityType == entityType && c.EntityKey == key).ToList();
-        var deleted = calls.Any(c => c.Deletes);
-        EntityState State(Entity? working, RebasedEntity? rebased = null) => new(entityType, key, adapter, live, working, rebased, deleted);
+
+        // A replayed copy marked deleted is gone in the set. Whatever else the set or anyone else did to it no longer
+        // matters, so it has no conflicts either.
+        EntityState State(Entity? working, RebasedEntity? rebased = null) => working is { Deleted: true }
+            ? new(entityType, key, adapter, live, null, null, Deleted: true)
+            : new(entityType, key, adapter, live, working, rebased);
 
         if (adapter is IDraftingEntityAdapter drafting)
         {
-            // The product's draft holds the working state and reports its own rebase.
-            return State(set.Drafts.TryGetValue(adapter.EntityType, out var draftId)
-                ? await drafting.LoadDraftAsync(draftId, key, cancellationToken)
-                : live?.Clone());
-        }
+            // The product's draft holds the working state and reports its own rebase. It loads an entity the set
+            // deleted as gone: one the set touched that is gone in the draft was deleted by it.
+            if (!set.Drafts.TryGetValue(adapter.EntityType, out var draftId))
+            {
+                return State(live?.Clone());
+            }
 
-        if (deleted)
-        {
-            // Nothing to replay: whatever the set did to it before, it is gone. (Edits after the delete are refused.)
-            return State(null);
+            var draft = await drafting.LoadDraftAsync(draftId, key, cancellationToken);
+            return new(entityType, key, adapter, live, draft, null, Deleted: draft is null && calls.Count > 0);
         }
         if (calls.FirstOrDefault() is { Creates: true } create)
         {
@@ -312,6 +315,12 @@ public sealed class ChangeSetService(
         var start = await GetStartAsync(set, adapter, key, cancellationToken);
         if (live is null)
         {
+            // Someone else deleted it. Not a conflict when the set deletes it too.
+            if (start is not null && await ReplayAsync(adapter, start.Clone(), calls, skipUnder: [], cancellationToken) is { Deleted: true } gone)
+            {
+                return State(gone);
+            }
+
             return State(null, start is null ? null : CantRebase(adapter.ToSummary(start), "(deleted)"));
         }
 

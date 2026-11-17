@@ -56,7 +56,7 @@ public sealed class CmsDocumentAdapter(
 
     public string ParentField => ContentFields.Parent;
 
-    /// <summary>Not used: a document in a change set is deleted through its draft set (<see cref="StageDeleteAsync"/>).</summary>
+    /// <summary>Not used: a document in a change set is deleted through its draft set (<see cref="StageAsync"/>).</summary>
     public Task DeleteAsync(Guid key, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Content is deleted through its CMS draft set.");
 
@@ -224,6 +224,12 @@ public sealed class CmsDocumentAdapter(
     /// </summary>
     public async Task StageAsync(Guid draftId, Entity? before, Entity after, CancellationToken cancellationToken = default)
     {
+        if (after.Deleted)
+        {
+            await _draftSets.StageDeleteAsync(draftId, EntityUdis.For(Type, after.Key));
+            return;
+        }
+
         var content = await ToContentAsync(after, cancellationToken);
         var values = content.Values.Select(v => new DraftValue(v.Alias, v.Culture, v.Segment, v.Value)).ToList();
         if (before is null || before.Version is null)
@@ -251,9 +257,6 @@ public sealed class CmsDocumentAdapter(
 
         await _draftSets.StageChangesAsync(draftId, EntityUdis.For(Type, after.Key), changed);
     }
-
-    public Task StageDeleteAsync(Guid draftId, Entity before, CancellationToken cancellationToken = default)
-        => _draftSets.StageDeleteAsync(draftId, EntityUdis.For(Type, before.Key));
 
     public async Task<IReadOnlyList<RebasedEntity>> GetRebasedAsync(Guid draftId, CancellationToken cancellationToken = default)
     {

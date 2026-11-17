@@ -28,9 +28,6 @@ public abstract class EntityEditAbilityBase<TInput> : AbilityBase<TInput, object
 {
     protected virtual bool Creates => false;
 
-    /// <summary>The edit deletes the entity: inside the set it reads as gone, and it is deleted when the set is applied.</summary>
-    protected virtual bool Deletes => false;
-
     public EntityEditTarget Prepare(JsonObject input)
     {
         FillKeys(input);
@@ -41,7 +38,7 @@ public abstract class EntityEditAbilityBase<TInput> : AbilityBase<TInput, object
         }
 
         var key = typed.Key ?? throw new AbilityInputException("key is required.", [new Problem("key", "Required.")]);
-        return new EntityEditTarget(typed.EntityType, key, Creates, (typed as CreateEntityInput)?.Subtype, Deletes);
+        return new EntityEditTarget(typed.EntityType, key, Creates, (typed as CreateEntityInput)?.Subtype);
     }
 
     public Task<object?> ApplyAsync(Entity entity, JsonObject input, EntityEditContext context, CancellationToken cancellationToken = default)
@@ -350,8 +347,6 @@ public sealed record DeleteEntityInput(
                   "reads as gone. Only for entity types whose capabilities (from entity.getSchema) include delete.")]
 public sealed class DeleteEntityAbility : EntityEditAbilityBase<DeleteEntityInput>
 {
-    protected override bool Deletes => true;
-
     protected override object? Apply(Entity entity, DeleteEntityInput input, EntityEditContext context)
     {
         if (context.Adapter is not IDeletableEntityAdapter deletable)
@@ -361,6 +356,8 @@ public sealed class DeleteEntityAbility : EntityEditAbilityBase<DeleteEntityInpu
                 [new Problem("entityType", "Can't be deleted.")]);
         }
 
+        // Marked, not deleted: the change set reads it as gone, and deletes it when the set is applied.
+        entity.Deleted = true;
         return new { deleted = entity.Key, canRestore = deletable.CanRestore };
     }
 }

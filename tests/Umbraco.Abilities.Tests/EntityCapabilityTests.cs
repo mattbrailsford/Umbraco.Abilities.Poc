@@ -70,6 +70,20 @@ public class EntityCapabilityTests
     }
 
     [Fact]
+    public async Task An_entity_someone_else_deleted_is_not_a_conflict_when_the_set_deletes_it_too()
+    {
+        var docs = _folders.Seed("Docs");
+
+        await _agent.StartChangeSetAsync("Tidy up");
+        await _agent.OkAsync("entity_setValue", $$"""{ "entityType": "folder", "key": "{{docs}}", "path": "name", "value": "Old docs" }""");
+        await _agent.OkAsync("entity_delete", $$"""{ "entityType": "folder", "key": "{{docs}}" }""");
+        _folders.Live.Remove(docs); // someone else deletes it first
+
+        await _agent.OkAsync("changeSet_apply", $$"""{ "changeSetId": "{{_agent.ChangeSetId}}" }""");
+        Assert.Empty(_folders.Deleted);
+    }
+
+    [Fact]
     public async Task Children_moved_out_of_a_deleted_parent_are_saved_before_it_is_deleted()
     {
         var old = _folders.Seed("Old");
