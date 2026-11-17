@@ -27,6 +27,7 @@ public sealed class DemoShop(
     PropertyEditorCollection editors,
     IConfigurationEditorJsonSerializer serializer,
     IShortStringHelper shortStrings,
+    IUserGroupService userGroups,
     ILogger<DemoShop> logger)
     : INotificationAsyncHandler<UmbracoApplicationStartedNotification>
 {
@@ -48,6 +49,7 @@ public sealed class DemoShop(
         }
 
         var store = await EnsureStoreAsync(cancellationToken);
+        await EnsureEditorsCanUseStoreAsync(store, cancellationToken);
         var storePicker = await EnsureDataTypeAsync("Umbraco Commerce: Store Picker", "Umbraco.Commerce.StorePicker", "Uc.PropertyEditorUi.StorePicker", ValueStorageType.Nvarchar);
         var price = await EnsureDataTypeAsync("Umbraco Commerce: Price", "Umbraco.Commerce.Price", "Uc.PropertyEditorUi.Price", ValueStorageType.Ntext);
         var textbox = await dataTypes.GetAsync(Constants.DataTypes.Guids.TextstringGuid);
@@ -115,6 +117,36 @@ public sealed class DemoShop(
         }, cancellationToken);
         logger.LogInformation("Demo shop: created the store '{Alias}'.", StoreAlias);
         return (await commerce.GetStoreAsync(store.Id))!;
+    }
+
+    // Editors (the MCP API user's group) and administrators get the Commerce section and the store, so discounts
+    // can be made through the abilities. Commerce allows a store to users and groups by name.
+    private async Task EnsureEditorsCanUseStoreAsync(StoreReadOnly store, CancellationToken cancellationToken)
+    {
+        Guid[] groupKeys = [Constants.Security.EditorGroupKey, Constants.Security.AdminGroupKey];
+        foreach (var key in groupKeys)
+        {
+            if (await userGroups.GetAsync(key) is { } group && !group.AllowedSections.Contains("commerce"))
+            {
+                group.AddAllowedSection("commerce");
+                await userGroups.UpdateAsync(group, Constants.Security.SuperUserKey);
+            }
+        }
+
+        var roles = groupKeys.Select(k => k.ToString()).ToList();
+        if (roles.All(r => store.IsAllowed(string.Empty, [r])))
+        {
+            return;
+        }
+
+        await commerce.Uow.ExecuteAsync(async (uow, ct) =>
+        {
+            var writable = await store.AsWritableAsync(uow);
+            await writable.AllowUserRolesAsync(roles);
+            await commerce.SaveStoreAsync(writable, ct);
+            uow.Complete();
+        }, cancellationToken);
+        logger.LogInformation("Demo shop: editors and administrators can use the store.");
     }
 
     private async Task<IDataType> EnsureDataTypeAsync(string name, string editorAlias, string editorUiAlias, ValueStorageType storage)

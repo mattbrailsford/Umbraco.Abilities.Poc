@@ -78,9 +78,10 @@ The details and the lessons are in [docs/FINDINGS.md](docs/FINDINGS.md). The tes
 
 ## What it does not prove
 
-- **Real Commerce and Automate.** Only CMS documents and media have real adapters. Members would use the same base
-  class, but no member adapter is built. The Commerce and Automate
-  adapters are still stand-ins.
+- **Real Automate, and Commerce under test.** CMS documents, media and Commerce discounts have real adapters. Members
+  would use the same base class, but no member adapter is built. The Automate adapter is still a stand-in. The real
+  Commerce adapter is tried by hand on the demo site, not in a test, and Commerce discounts have no version, so a
+  backoffice change made while a set is open isn't noticed.
 - **Every Automate connection.** Each exit leads to one step. Automate can also send one exit to several steps, filter
   a connection, give a step with outcomes an "any result" exit, and build Switch's outcomes from its cases. None has a
   field yet; Switch would need exits that change with its settings.
@@ -144,12 +145,13 @@ It is not a test: each run calls the Claude API, costs money, and can give a dif
 | `Umbraco.Abilities.AI` | Umbraco.AI's adapter: every ability's tool becomes an M.E.AI `AIFunction` | Contract, `Microsoft.Extensions.AI.Abstractions` |
 | `Umbraco.Abilities.Samples` | Product packages: CMS pages with nested blocks, Commerce collections and discounts, a third-party rule type, an email package, Automate workflows | Contract only |
 | `Umbraco.Abilities.Cms` | The real entity adapter for CMS documents, on `IContentEditingService`, the adapter that stages content changes into a CMS draft set, and the `Umb-Change-Set` header middleware | Contract, Umbraco 18, the draft sets stand-in |
+| `Umbraco.Abilities.Commerce` | The real entity adapters for Commerce: discounts (rules and rewards from Commerce's own providers), and read-only stores and currencies | Contract, `Umbraco.Commerce.Core` |
 | `Umbraco.Abilities.ManagementApi` | Two Management API endpoints: list the abilities, and call one. For HTTP callers such as the Umbraco CMS MCP Dev server | Contract, `Umbraco.Cms.Api.Management` |
 | `Umbraco.Cms.DraftSets` | A stand-in for a Draft Sets feature in CMS core: per-property content changes held apart from live, read-through, rebase and conflicts, apply in one scope | Umbraco 18 only: no Abilities |
 | `Umbraco.Abilities.Tests` | A scripted model calling the AI tools with JSON arguments | Contract, AI adapter, samples |
 | `Umbraco.Abilities.Cms.Tests` | The same, against a real Umbraco on SQLite, and the Management API endpoints over HTTP | Contract, AI adapter, CMS adapter, Management API endpoints, MCP proxy, Umbraco test host |
 | `tools/Umbraco.Abilities.McpProxy` | The Umbraco CMS MCP Dev server: an MCP server (stdio) whose tools are the abilities a site lists, each call forwarded to the Management API | `ModelContextProtocol` only: no Abilities project |
-| `demo/Umbraco.Abilities.Demo` | A small Umbraco 18 site to try the abilities through MCP by hand: SQLite, the Clean starter kit (articles built from blocks), sample Commerce discounts and an API user for the proxy. See its README | CMS adapter, Management API endpoints, Samples, `Umbraco.Cms` |
+| `demo/Umbraco.Abilities.Demo` | A small Umbraco 18 site to try the abilities through MCP by hand: SQLite, the Clean starter kit (articles built from blocks), real Umbraco Commerce with a store and products, and an API user for the proxy. See its README | CMS and Commerce adapters, Management API endpoints, `Umbraco.Cms`, `Umbraco.Commerce` |
 | `tools/Umbraco.Abilities.ModelRun` | A "Create with AI" surface: a real model (Claude, through M.E.AI's `IChatClient`) builds an entity in a change set from a description | Contract, AI adapter, samples, `Anthropic` |
 
 ## Words we use

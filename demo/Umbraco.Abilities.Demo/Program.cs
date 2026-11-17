@@ -1,4 +1,5 @@
 using Umbraco.Abilities.Cms;
+using Umbraco.Abilities.Commerce;
 using Umbraco.Abilities.Demo;
 using Umbraco.Cms.Core.Notifications;
 using Umbraco.Commerce.Extensions;
@@ -11,9 +12,9 @@ builder.CreateUmbracoBuilder()
     .AddUmbracoCommerce(commerce => commerce.AddSQLite())
     .AddComposers()
     .AddAbilities()
+    .AddCommerceAbilities()
     .AddNotificationAsyncHandler<UmbracoApplicationStartedNotification, DemoSetup>()
     .AddNotificationAsyncHandler<UmbracoApplicationStartedNotification, DemoShop>()
-    .AddNotificationHandler<UmbracoApplicationStartingNotification, DemoCommerce>()
     .Build();
 
 WebApplication app = builder.Build();

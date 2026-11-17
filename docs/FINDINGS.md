@@ -333,6 +333,38 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
     throws. The work may run more than once, so a step starts its list of saved entities again each time. The CMS
     scope and the in-memory samples fit the new shape in a few lines each.
 
+25. **Real Commerce fits the same base class, and the gaps were lookups, not code.** `Umbraco.Abilities.Commerce`
+    maps Commerce's discounts to a `DiscountModel`, through Commerce's own C# API (`IUmbracoCommerceApi`). Rules and
+    rewards are read from Commerce's provider collections, so every provider, including one a package adds, is offered
+    with no code here. What running Claude against it over MCP taught us (17-11-2026):
+    - **Validate by saving, then not committing.** Commerce checks as it writes (a code in use, a duplicate alias),
+      with no check-only call. The adapter runs the real save in a Commerce unit of work it never completes, and turns
+      Commerce's `ValidationException` into problems. Those messages come back without a field, so they are put on the
+      name.
+    - **A value keyed by another entity needs that entity to be findable.** An amount is one value per currency key.
+      The first run stopped there: the model could not find the store's currencies, and asked. A read-only currency
+      adapter (`umbraco-commerce-currency`) and one line on the price setting's description fixed it. Stores are
+      read-only adapters for the same reason.
+    - **A setting that is an object is stored as text.** Commerce keeps every setting as a string, so the amounts came
+      back as a JSON string after being written as an object. `PluginSettings` now reads a setting whose type is an
+      object or a list back as JSON. It is framework code, so every product's plugins get it.
+    - **A rule with no children still needs an empty list.** Commerce's rule config throws on null children. The
+      model's check (`changeSet.validate`) caught it as a crash on the first run.
+    - **The second run worked.** Claude built "Summer hats" (code SUMMER10, 01-06-2027 to 31-08-2027, 10% off orders
+      of at least 50 GBP) in a set, in 15 calls, and its check passed. Applying asked for consent, which headless
+      Claude Code declines. The person then gave it over the Management API, and the discount was saved in Commerce
+      and read back as built.
+    - **Rules and rewards have no ids.** An item's key is derived from its discount, position and provider, as in the
+      sample. Ids on rule nodes in Commerce would let a moved item keep its key.
+    - **Discounts have no update date.** So there is no version to notice a change made in the backoffice while a set
+      is open. Commerce would need one (or a row version) for conflicts to work as they do for CMS content.
+    - **Store access is Commerce's.** The adapter asks Commerce: the Commerce section, and the store's allowed users and
+      groups. A new store allows nobody, so the demo allows Editors and Administrators.
+    - **Installing Commerce on Umbraco 18.3 needed `Azure.Identity`.** Commerce brings `dbup-sqlserver` 6.0.16, built
+      against SqlClient 5. Umbraco 18.3 resolves SqlClient 7, which no longer brings the Azure packages, and Umbraco
+      loads every referenced assembly at start, so the site crashed until the demo referenced `Azure.Identity` itself.
+      Likely a Commerce bug; not yet checked on a clean site.
+
 ## Developer experience of adapters
 
 Making things easy for a model is one side. The other is what a package developer writes. Reading the samples as
@@ -569,6 +601,9 @@ The tests that show it are listed in [TESTS.md](TESTS.md#against-a-real-umbraco)
    as a segment, only where an object has values of its own. A value that varies by segment only has no culture,
    but Umbraco wants a culture on every variant of a culture-variant page, so the adapter names that segment in
    each of the page's cultures.
+
+Real Commerce discounts have no automated test yet: they were tried by hand, through MCP, on the demo site (finding
+25). A test would need Commerce in the integration test host.
 
 Not covered yet: templates (an update would clear one), publishing, rich text with blocks, culture-variant block
 properties against real Umbraco, a parent created in the same set (an existing parent is covered), a third party's editor inside a block, and saving

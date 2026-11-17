@@ -41,12 +41,13 @@ dotnet test
 | `src/Umbraco.Abilities.AI` | Wraps every ability's `AbilityTool` as an M.E.AI `AIFunction` |
 | `src/Umbraco.Abilities.Samples` | In-memory stand-ins for product packages: CMS, Commerce, Automate, email, a third-party rule |
 | `src/Umbraco.Abilities.Cms` | The real entity adapter for CMS documents, on `IContentEditingService`, plus the draft set adapter |
+| `src/Umbraco.Abilities.Commerce` | The real entity adapters for Umbraco Commerce: discounts, and read-only stores and currencies |
 | `src/Umbraco.Abilities.ManagementApi` | Two Management API endpoints: list the abilities, and call one. For HTTP callers such as MCP Dev |
 | `src/Umbraco.Cms.DraftSets` | A stand-in for a Draft Sets feature in CMS core |
 | `tests/Umbraco.Abilities.Tests` | A scripted model (`ScriptedAgent`) calling the AI tools with JSON |
 | `tests/Umbraco.Abilities.Cms.Tests` | The same, against a real Umbraco, and the Management API endpoints over HTTP on Umbraco's test server |
 | `tools/Umbraco.Abilities.McpProxy` | Plays the Umbraco CMS MCP Dev server: an MCP server whose tools are the abilities a site lists over the Management API |
-| `demo/Umbraco.Abilities.Demo` | A small Umbraco 18 site with the Clean starter kit and sample Commerce discounts, to try the MCP proxy against by hand. Secrets come from environment variables, never files |
+| `demo/Umbraco.Abilities.Demo` | A small Umbraco 18 site with the Clean starter kit and real Umbraco Commerce (a seeded store, Shop page and products), to try the MCP proxy against by hand. Secrets come from environment variables, never files |
 | `tools/Umbraco.Abilities.ModelRun` | Runs a real model (Claude) against the samples. Not a test: it costs money and needs `ANTHROPIC_API_KEY` |
 
 ## Dependency rules

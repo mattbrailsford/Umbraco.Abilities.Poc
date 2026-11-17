@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <!--
     A small Umbraco 18 site to try the abilities against by hand: SQLite, installed on first run, with the abilities,
-    their Management API endpoints, the Clean starter kit, sample Commerce discounts (in memory) and an API user for
+    their Management API endpoints, the Clean starter kit, real Umbraco Commerce with a seeded store and an API user for
     the MCP proxy. See README.md.
   -->
   <PropertyGroup>
@@ -14,8 +14,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Umbraco.Abilities.Cms/Umbraco.Abilities.Cms.csproj" />
+    <ProjectReference Include="../../src/Umbraco.Abilities.Commerce/Umbraco.Abilities.Commerce.csproj" />
     <ProjectReference Include="../../src/Umbraco.Abilities.ManagementApi/Umbraco.Abilities.ManagementApi.csproj" />
-    <ProjectReference Include="../../src/Umbraco.Abilities.Samples/Umbraco.Abilities.Samples.csproj" />
     <!--
       The rest of the repo builds against 18.0.0. The demo runs 18.3.0: Clean needs 18.0.1 or later, and 18.3.0 fixes
       the multi-node tree picker's value schema (umbraco/Umbraco-CMS#23760).

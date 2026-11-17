@@ -109,10 +109,30 @@ public static class PluginSettings
         {
             var type = plugin?.SettingType(settingKey) ?? typeof(string);
             var target = Nullable.GetUnderlyingType(type) ?? type;
-            item.Fields[settingKey] = target.IsPrimitive || target == typeof(decimal) ? JsonNode.Parse(text) : JsonValue.Create(text);
+            item.Fields[settingKey] = target.IsPrimitive || target == typeof(decimal) || IsStructured(target, text) ? JsonNode.Parse(text) : JsonValue.Create(text);
         }
 
         return item;
+    }
+
+    // A setting whose type is an object or a list (Commerce's amounts by currency, for one) is stored as JSON text. Read
+    // it back as JSON, so it reads the way it was written.
+    private static bool IsStructured(Type type, string text)
+    {
+        if (type.IsValueType || type == typeof(string) || text.Length == 0 || text[0] is not ('{' or '['))
+        {
+            return false;
+        }
+
+        try
+        {
+            JsonNode.Parse(text);
+            return true;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return false;
+        }
     }
 
     /// <summary>An item's values as stored settings, leaving out the fields named (a group's children, a step's exits).</summary>

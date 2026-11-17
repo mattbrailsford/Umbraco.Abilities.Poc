@@ -6,8 +6,10 @@ It has:
 - the **Clean starter kit** (`Clean` 8.0.1): a blog site whose articles are built from blocks (rich text, code,
   images, videos), and live under the Blog page
 - the abilities and their Management API endpoints (`builder.AddAbilities()`)
-- the **sample Commerce package**: discounts and two product collections ("Summer collection", "Winter coats"). They
-  live in memory, so they are gone when the site stops
+- **Umbraco Commerce** 18.1.11 on SQLite, with no license (fine for local use). On start it makes a store ("Demo
+  store", GBP), a Shop page under Home with three products (Sun hat, Beach towel, Sunglasses), and lets Editors and
+  Administrators use the store. Discounts are made through the real Commerce adapter (`AddCommerceAbilities()`)
+- the demo references `Azure.Identity` only so Commerce starts on Umbraco 18.3 (see finding 25 in `docs/FINDINGS.md`)
 - an **API user** for the MCP proxy, in the Editors group, with client id `umbraco-back-office-mcp`
 
 No password or secret is stored in the repo. You choose them when you run it.
