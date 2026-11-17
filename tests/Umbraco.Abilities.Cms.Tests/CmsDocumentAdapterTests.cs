@@ -254,6 +254,18 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
     }
 
     [Test]
+    public async Task Every_document_and_media_schema_and_block_schema_is_valid_JSON_Schema()
+    {
+        // Real data types bring Umbraco's own value schemas: the riskiest part to get wrong.
+        var (checkedSchemas, problems) = await Umbraco.Abilities.Tests.SchemaMetaschema.CheckEntitySchemasAsync(
+            [_documents.EntityType, _media.EntityType],
+            arguments => _agent.OkAsync("entity_getSchema", arguments));
+
+        Assert.That(checkedSchemas, Is.GreaterThan(2));
+        Assert.That(problems, Is.Empty);
+    }
+
+    [Test]
     public async Task A_block_list_offers_the_blocks_its_data_type_allows_now()
     {
         await _agent.StartChangeSetAsync("Blocks");

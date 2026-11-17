@@ -9,6 +9,7 @@
     <ProjectReference Include="../../src/Umbraco.Abilities.Cms/Umbraco.Abilities.Cms.csproj" />
     <ProjectReference Include="../../src/Umbraco.Abilities.ManagementApi/Umbraco.Abilities.ManagementApi.csproj" />
     <ProjectReference Include="../../tools/Umbraco.Abilities.McpProxy/Umbraco.Abilities.McpProxy.csproj" />
+    <PackageReference Include="Corvus.Json.Validator" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="NUnit" />
     <PackageReference Include="NUnit3TestAdapter" />
@@ -18,6 +19,11 @@
   <ItemGroup>
     <!-- Umbraco's test settings: the test server reads its database type from them -->
     <Content Include="appsettings.Tests.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The schema checks the in-memory tests use, so real Umbraco's schemas meet the same rules -->
+    <Compile Include="../Umbraco.Abilities.Tests/SchemaMetaschema.cs" Link="SchemaMetaschema.cs" />
+    <None Include="../Umbraco.Abilities.Tests/entity-schema.metaschema.json" Link="entity-schema.metaschema.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <!--
     Umbraco's test server names Umbraco.Tests.Integration as the application, so ASP.NET Core's test host looks for

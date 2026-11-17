@@ -97,6 +97,11 @@ object field of the block (`blocks/{key}/settings/theme`), and so is a grid bloc
 | `x-variations` | The dimensions the value varies by (the CMS's culture and segment, or a product's own, such as currency), at any depth | Which variant an edit or a problem is about. A heading can vary inside an invariant block list |
 | `x-references` | The value is the key of another entity (by UDI type), or of an item in the same entity | Reference checks, and creating referenced entities in the same change set |
 
+Three smaller notes help a model, and change nothing the framework does: `x-edit` (how a handled value is edited),
+`x-bindings` (a value can be a binding) and `x-references-item-in` (the items field a reference points into). The
+meta-schema (a schema for schemas) in `tests/Umbraco.Abilities.Tests/entity-schema.metaschema.json` defines every
+note. Each schema the framework writes is checked against it and JSON Schema 2020-12, so a new note goes there first.
+
 **Edits.** `setValue` sets the value at any path. `addItem`, `removeItem` and `moveItem` work on any items array at any
 path, so items inside items, inside an object or inside a handled value are all the same. A value that varies is
 written for the edit's culture.
