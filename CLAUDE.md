@@ -32,6 +32,9 @@ dotnet test
 - `Umbraco.Abilities.Tests` (xunit) runs in seconds, all in memory.
 - `Umbraco.Abilities.Cms.Tests` (NUnit) starts a real Umbraco 18 on SQLite through `Umbraco.Cms.Tests.Integration`.
   It is slower. Run one project with `dotnet test tests/<Project>`.
+- `Umbraco.Abilities.Commerce.Tests` (NUnit) adds real Umbraco Commerce, in its own project: Commerce installs itself
+  on any Umbraco host that can see it, the CMS tests' test server included. Add `--blame-hang-timeout 2m` when
+  changing its set-up: a SQLite deadlock hangs rather than fails.
 
 ## Layout
 
@@ -46,6 +49,7 @@ dotnet test
 | `src/Umbraco.Cms.DraftSets` | A stand-in for a Draft Sets feature in CMS core |
 | `tests/Umbraco.Abilities.Tests` | A scripted model (`ScriptedAgent`) calling the AI tools with JSON |
 | `tests/Umbraco.Abilities.Cms.Tests` | The same, against a real Umbraco, and the Management API endpoints over HTTP on Umbraco's test server |
+| `tests/Umbraco.Abilities.Commerce.Tests` | The Commerce adapter against a real Umbraco and Umbraco Commerce |
 | `tools/Umbraco.Abilities.McpProxy` | Plays the Umbraco CMS MCP Dev server: an MCP server whose tools are the abilities a site lists over the Management API |
 | `demo/Umbraco.Abilities.Demo` | A small Umbraco 18 site with the Clean starter kit and real Umbraco Commerce (a seeded store, Shop page and products), to try the MCP proxy against by hand. Secrets come from environment variables, never files |
 | `tools/Umbraco.Abilities.ModelRun` | Runs a real model (Claude) against the samples. Not a test: it costs money and needs `ANTHROPIC_API_KEY` |

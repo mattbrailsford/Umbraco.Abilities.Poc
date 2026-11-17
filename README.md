@@ -78,10 +78,9 @@ The details and the lessons are in [docs/FINDINGS.md](docs/FINDINGS.md). The tes
 
 ## What it does not prove
 
-- **Real Automate, and Commerce under test.** CMS documents, media and Commerce discounts have real adapters. Members
-  would use the same base class, but no member adapter is built. The Automate adapter is still a stand-in. The real
-  Commerce adapter is tried by hand on the demo site, not in a test, and Commerce discounts have no version, so a
-  backoffice change made while a set is open isn't noticed.
+- **Real Automate, and Commerce conflicts.** CMS documents, media and Commerce discounts have real adapters. Members
+  would use the same base class, but no member adapter is built. The Automate adapter is still a stand-in. Commerce
+  discounts have no version, so a backoffice change made while a set is open isn't noticed.
 - **Every Automate connection.** Each exit leads to one step. Automate can also send one exit to several steps, filter
   a connection, give a step with outcomes an "any result" exit, and build Switch's outcomes from its cases. None has a
   field yet; Switch would need exits that change with its settings.
@@ -149,6 +148,7 @@ It is not a test: each run calls the Claude API, costs money, and can give a dif
 | `Umbraco.Abilities.ManagementApi` | Two Management API endpoints: list the abilities, and call one. For HTTP callers such as the Umbraco CMS MCP Dev server | Contract, `Umbraco.Cms.Api.Management` |
 | `Umbraco.Cms.DraftSets` | A stand-in for a Draft Sets feature in CMS core: per-property content changes held apart from live, read-through, rebase and conflicts, apply in one scope | Umbraco 18 only: no Abilities |
 | `Umbraco.Abilities.Tests` | A scripted model calling the AI tools with JSON arguments | Contract, AI adapter, samples |
+| `Umbraco.Abilities.Commerce.Tests` | The Commerce discount adapter against a real Umbraco and Umbraco Commerce on SQLite | Contract, AI adapter, CMS and Commerce adapters, Umbraco test host, `Umbraco.Commerce` |
 | `Umbraco.Abilities.Cms.Tests` | The same, against a real Umbraco on SQLite, and the Management API endpoints over HTTP | Contract, AI adapter, CMS adapter, Management API endpoints, MCP proxy, Umbraco test host |
 | `tools/Umbraco.Abilities.McpProxy` | The Umbraco CMS MCP Dev server: an MCP server (stdio) whose tools are the abilities a site lists, each call forwarded to the Management API | `ModelContextProtocol` only: no Abilities project |
 | `demo/Umbraco.Abilities.Demo` | A small Umbraco 18 site to try the abilities through MCP by hand: SQLite, the Clean starter kit (articles built from blocks), real Umbraco Commerce with a store and products, and an API user for the proxy. See its README | CMS and Commerce adapters, Management API endpoints, `Umbraco.Cms`, `Umbraco.Commerce` |

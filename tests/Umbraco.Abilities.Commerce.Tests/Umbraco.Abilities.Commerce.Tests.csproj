@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The Commerce adapter against a real Umbraco and Umbraco Commerce on SQLite. Apart from the CMS tests, as Commerce
+    installs itself on any Umbraco host that can see it, the CMS tests' test server included.
+  -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);NU1608;NU1902;NU1903</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Umbraco.Abilities/Umbraco.Abilities.csproj" />
+    <ProjectReference Include="../../src/Umbraco.Abilities.AI/Umbraco.Abilities.AI.csproj" />
+    <ProjectReference Include="../../src/Umbraco.Abilities.Cms/Umbraco.Abilities.Cms.csproj" />
+    <ProjectReference Include="../../src/Umbraco.Abilities.Commerce/Umbraco.Abilities.Commerce.csproj" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="NUnit" />
+    <PackageReference Include="NUnit3TestAdapter" />
+    <PackageReference Include="Umbraco.Cms.Tests.Integration" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Common" />
+    <!-- Real Umbraco Commerce. No license is needed to run it locally. -->
+    <PackageReference Include="Umbraco.Commerce" />
+    <PackageReference Include="Umbraco.Commerce.Persistence.Sqlite" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Umbraco's test settings: the test host reads its database type from them -->
+    <Content Include="appsettings.Tests.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

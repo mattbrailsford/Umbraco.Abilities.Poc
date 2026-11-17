@@ -247,3 +247,18 @@ endpoints.
   - `CmsDocumentAdapterTests.A_required_segment_only_value_missing_in_a_segment_is_a_problem_with_no_culture`
 - A page allowed only under a parent is created under it, reads back in the set with its parent, and keeps that parent when edited again
   - `CmsDocumentAdapterTests.A_page_allowed_only_under_a_parent_is_created_under_it_and_reads_back_in_the_set`
+
+## Against real Umbraco Commerce
+
+- A discount built in a change set through the AI tools is saved in Commerce only when the set is applied, with its codes, dates, rules and rewards
+  - `CommerceDiscountAdapterTests.A_discount_built_in_a_change_set_is_saved_in_Commerce_only_when_the_set_is_applied`
+- The rules and rewards offered are Commerce's own providers, a group rule included
+  - `CommerceDiscountAdapterTests.The_rules_and_rewards_offered_are_Commerces_own_providers`
+- An amount is keyed by a currency the model finds with `entity_find`, and reads back as an object
+  - `CommerceDiscountAdapterTests.An_amount_is_keyed_by_a_currency_the_model_finds_and_reads_back_as_an_object`
+- Settings are stored as Commerce's own editors store them (`TotalPrice`, amounts as numbers), so the backoffice shows them
+  - `CommerceDiscountAdapterTests.Settings_are_stored_as_Commerces_own_editors_store_them_so_the_backoffice_shows_them`
+- A code another discount already uses is a problem from Commerce's own validation before the set is applied, and the check's save is rolled back
+  - `CommerceDiscountAdapterTests.A_code_another_discount_already_uses_is_a_problem_from_Commerce_before_the_set_is_applied`
+- A user without the Commerce section can't make a discount
+  - `CommerceDiscountAdapterTests.A_user_without_the_Commerce_section_cannot_make_a_discount`

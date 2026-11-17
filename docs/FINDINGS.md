@@ -371,6 +371,21 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
       loads every referenced assembly at start, so the site crashed until the demo referenced `Azure.Identity` itself.
       Likely a Commerce bug; not yet checked on a clean site.
 
+26. **Real Commerce runs in Umbraco's test host, with four workarounds.** Each says something about how Commerce boots:
+    - **Its own project.** Commerce installs itself on any Umbraco host that can see its assembly, so the CMS tests'
+      test server (which runs composers) got Commerce too, and broke. The Commerce tests are a project of their own.
+    - **Its own database file.** Umbraco's test databases are SQLite in memory. Commerce's migrations (DbUp) don't run
+      there: they make their journal table twice. Commerce only refers to Umbraco's data by key, so each test gives it
+      a SQLite file of its own.
+    - **Wait for start-up, then migrate.** Commerce's package migration makes every test database need an upgrade,
+      which Umbraco 18.3 runs in the background, after the test has started. Writing meanwhile deadlocked SQLite (the
+      test hung). Umbraco reports "Run" before it raises the starting notification, so the test waits for that
+      notification, then runs Commerce's migrations itself, with Commerce's own starting handler removed.
+    - **A static service locator.** Commerce points a static locator at the site's services from an Umbraco
+      component. Umbraco skips components while it upgrades, so later tests used the first test's disposed services.
+      A hosted service points it at each test's services first.
+    A Commerce test kit that did these would make testing a Commerce package much easier.
+
 ## Developer experience of adapters
 
 Making things easy for a model is one side. The other is what a package developer writes. Reading the samples as
@@ -608,8 +623,8 @@ The tests that show it are listed in [TESTS.md](TESTS.md#against-a-real-umbraco)
    but Umbraco wants a culture on every variant of a culture-variant page, so the adapter names that segment in
    each of the page's cultures.
 
-Real Commerce discounts have no automated test yet: they were tried by hand, through MCP, on the demo site (finding
-25). A test would need Commerce in the integration test host.
+Real Commerce discounts are tested in `Umbraco.Abilities.Commerce.Tests` (finding 26), and were tried by hand,
+through MCP, on the demo site (finding 25).
 
 Not covered yet: templates (an update would clear one), publishing, rich text with blocks, culture-variant block
 properties against real Umbraco, a parent created in the same set (an existing parent is covered), a third party's editor inside a block, and saving
