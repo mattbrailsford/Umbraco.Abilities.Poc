@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://umbraco.com/abilities/entity-schema.metaschema.json",
+  "$dynamicAnchor": "meta",
+  "title": "Entity schema",
+  "description": "JSON Schema 2020-12 plus the x- keywords the framework adds. $dynamicAnchor makes every nested schema follow these rules too. Any other x- keyword is a mistake.",
+  "allOf": [{ "$ref": "https://json-schema.org/draft/2020-12/schema" }],
+  "properties": {
+    "x-edit": { "type": "string" },
+    "x-bindings": { "const": true },
+    "x-variations": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "x-references": { "type": "string" },
+    "x-references-item-in": { "type": "string" },
+    "x-item-types": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "alias": { "type": "string" },
+          "group": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" }
+        },
+        "required": ["alias", "group", "name"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "patternProperties": {
+    "^x-(?!(edit|bindings|variations|references|references-item-in|item-types)$)": false
+  }
+}

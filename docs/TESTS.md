@@ -217,6 +217,16 @@ endpoints.
 - A refused call is an MCP tool error, with the problems to fix
   - `AbilitiesMcpProxyTests.A_refused_call_is_an_MCP_tool_error_with_the_problems_to_fix`
 
+## Schemas are real JSON Schema
+
+- Every tool's input schema, and every entity, subtype and item type schema at any depth, is valid JSON Schema 2020-12 with only the framework's own x- notes, used correctly
+  - `SchemaMetaschemaTests.Every_tools_input_schema_is_valid_JSON_Schema`
+  - `SchemaMetaschemaTests.Every_entity_schema_and_item_type_schema_is_valid_JSON_Schema`
+  - `CmsDocumentAdapterTests.Every_document_and_media_schema_and_block_schema_is_valid_JSON_Schema`
+- The check catches a mistake two levels down (a bad type, a null description, an unknown or misused x- note), and accepts a correct schema
+  - `SchemaMetaschemaTests.The_meta_schema_catches_a_mistake_in_a_field_deep_inside_a_schema`
+  - `SchemaMetaschemaTests.The_meta_schema_accepts_a_correct_schema_with_the_frameworks_keywords`
+
 ## Against a real Umbraco
 
 - The schema comes from the document type: cultures, varying fields, block types per items field, settings, grid areas and placement

@@ -6,9 +6,13 @@
     <ProjectReference Include="../../src/Umbraco.Abilities/Umbraco.Abilities.csproj" />
     <ProjectReference Include="../../src/Umbraco.Abilities.AI/Umbraco.Abilities.AI.csproj" />
     <ProjectReference Include="../../src/Umbraco.Abilities.Samples/Umbraco.Abilities.Samples.csproj" />
+    <PackageReference Include="Corvus.Json.Validator" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="entity-schema.metaschema.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

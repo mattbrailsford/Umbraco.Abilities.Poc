@@ -385,6 +385,13 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
       component. Umbraco skips components while it upgrades, so later tests used the first test's disposed services.
       A hosted service points it at each test's services first.
     A Commerce test kit that did these would make testing a Commerce package much easier.
+27. **The schemas a model reads can be checked like code.** JSON Schema publishes a meta-schema: a schema for
+    schemas. Extending it with the framework's x- notes (`$dynamicAnchor` makes the rules reach every nested field)
+    gives one file that says what a correct schema is. Tests check every schema the samples and real Umbraco give
+    against it, so a typo in a keyword, a null where text belongs or an x- note nobody defined fails the build. The
+    schemas already passed: the check found no bugs, it guards against new ones. The notes were only listed in prose
+    before; now the meta-schema is their definition. On the library: json-everything's JsonSchema.Net asks companies
+    for a maintenance fee to use its published packages, so the tests use Corvus.Json.Validator (Apache 2.0).
 
 ## Developer experience of adapters
 
