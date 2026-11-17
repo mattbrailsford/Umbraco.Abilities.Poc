@@ -250,6 +250,10 @@ endpoints.
 
 ## Against real Umbraco Commerce
 
+- A page and a discount built in one change set are applied together: content first, then Commerce, each in its product's transaction, and neither is saved before apply
+  - `CommerceDiscountAdapterTests.A_page_and_a_discount_built_in_one_change_set_are_applied_together_each_in_its_products_transaction`
+- A discount Commerce refuses stops the whole set, so the page beside it isn't saved either
+  - `CommerceDiscountAdapterTests.A_discount_Commerce_refuses_stops_the_whole_set_so_the_page_beside_it_is_not_saved_either`
 - A discount built in a change set through the AI tools is saved in Commerce only when the set is applied, with its codes, dates, rules and rewards
   - `CommerceDiscountAdapterTests.A_discount_built_in_a_change_set_is_saved_in_Commerce_only_when_the_set_is_applied`
 - The rules and rewards offered are Commerce's own providers, a group rule included

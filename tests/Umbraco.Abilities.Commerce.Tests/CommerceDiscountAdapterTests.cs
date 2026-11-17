@@ -22,6 +22,8 @@ using Umbraco.Cms.Core.Notifications;
 using Umbraco.Cms.Core.Models.Membership;
 using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.Core.Strings;
+using Umbraco.Cms.Tests.Common.Builders;
+using Umbraco.Cms.Tests.Common.Builders.Extensions;
 using Umbraco.Cms.Tests.Common.Testing;
 using Umbraco.Cms.Tests.Integration.Testing;
 using Umbraco.Commerce.Core.Api;
@@ -52,6 +54,8 @@ public sealed class CommerceDiscountAdapterTests : UmbracoIntegrationTest
 
     private IUmbracoCommerceApi Commerce => GetRequiredService<IUmbracoCommerceApi>();
 
+    private IContentService ContentService => GetRequiredService<IContentService>();
+
     protected override void CustomTestSetup(IUmbracoBuilder builder)
     {
         // Commerce points a static service locator at the site's services from an Umbraco component. Umbraco skips
@@ -65,6 +69,18 @@ public sealed class CommerceDiscountAdapterTests : UmbracoIntegrationTest
         builder.Services.RemoveAll(d => d.ImplementationType == typeof(RunUmbracoCommerceMigrations));
         builder.AddAbilities();
         builder.AddCommerceAbilities();
+
+        // CMS documents save as the signed-in backoffice user. A test has no request, so they save as the admin.
+        builder.Services.AddSingleton(sp => new CmsDocumentAdapter(
+            sp.GetRequiredService<CmsContentSchemas>(),
+            sp.GetRequiredService<IContentTypeService>(),
+            sp.GetRequiredService<IContentEditingService>(),
+            sp.GetRequiredService<IEntityService>(),
+            sp.GetRequiredService<Umbraco.Cms.DraftSets.DraftSetService>(),
+            sp.GetRequiredService<IUserService>(),
+            sp.GetRequiredService<IContentPermissionService>(),
+            sp.GetRequiredService<CmsScopeUnitOfWorkProvider>(),
+            () => Constants.Security.SuperUserKey));
         builder.Services.AddSingleton<StartedSignal>();
         builder.AddNotificationHandler<UmbracoApplicationStartingNotification, StartedSignal.Handler>();
 
@@ -110,6 +126,18 @@ public sealed class CommerceDiscountAdapterTests : UmbracoIntegrationTest
             uow.Complete();
             return store.AsReadOnly();
         });
+
+        // A page type for the tests that build content beside a discount: a name and a mandatory title.
+        var landingPage = new ContentTypeBuilder()
+            .WithAlias("landingPage").WithName("Landing page").WithContentVariation(ContentVariation.Nothing)
+            .AddPropertyType()
+                .WithAlias("title").WithName("Title")
+                .WithDataTypeId(Constants.DataTypes.Textbox).WithPropertyEditorAlias(Constants.PropertyEditors.Aliases.TextBox)
+                .WithValueStorageType(ValueStorageType.Nvarchar).WithVariations(ContentVariation.Nothing).WithMandatory(true)
+                .Done()
+            .Build();
+        landingPage.AllowedAsRoot = true;
+        await GetRequiredService<IContentTypeService>().CreateAsync(landingPage, Constants.Security.SuperUserKey);
 
         _agent = new Agent(GetRequiredService<AbilityRegistry>(), GetRequiredService<AbilityInvoker>());
     }
@@ -171,6 +199,73 @@ public sealed class CommerceDiscountAdapterTests : UmbracoIntegrationTest
             Assert.That(rule["amounts"], Is.EqualTo($$"""{"{{currency}}":50}"""));
             Assert.That(reward["priceType"], Is.EqualTo("SubtotalPrice"));
             Assert.That(reward["adjustmentType"], Is.EqualTo("Percentage"));
+        });
+    }
+
+    [Test]
+    public async Task A_page_and_a_discount_built_in_one_change_set_are_applied_together_each_in_its_products_transaction()
+    {
+        var page = Guid.NewGuid();
+        var discount = Guid.NewGuid();
+        await _agent.StartChangeSetAsync("Summer launch");
+        await _agent.OkAsync("entity_create", $$"""
+            { "entityType": "document", "key": "{{page}}", "subtype": "landingPage", "fields": { "name": "Summer hats", "title": "10% off with SUMMER10" } }
+            """);
+        await CreateSummerHatsAsync(discount);
+
+        // Both wait in the set, and the plan says how they'll apply: content, then Commerce, each in its own
+        // transaction.
+        var summary = await _agent.OkAsync("changeSet_summarize", SetJson());
+        var discountBeforeApply = await Commerce.GetDiscountAsync(discount);
+        Assert.Multiple(() =>
+        {
+            Assert.That(summary.GetProperty("entities").GetArrayLength(), Is.EqualTo(2));
+            Assert.That(summary.GetProperty("applyPlan").EnumerateArray().Select(s => s.GetProperty("name").GetString()), Is.EqualTo(new[] { "Content", "Commerce" }));
+            Assert.That(ContentService.GetById(page), Is.Null, "the page isn't saved before apply");
+            Assert.That(discountBeforeApply, Is.Null, "the discount isn't saved before apply");
+        });
+
+        await _agent.OkAsync("changeSet_apply", SetJson());
+
+        var savedPage = ContentService.GetById(page);
+        var savedDiscount = await Commerce.GetDiscountAsync(discount);
+        Assert.Multiple(() =>
+        {
+            Assert.That(savedPage?.GetValue<string>("title"), Is.EqualTo("10% off with SUMMER10"));
+            Assert.That(savedDiscount?.Name, Is.EqualTo("Summer hats"));
+            Assert.That(savedDiscount?.Codes.Single().Code, Is.EqualTo("SUMMER10"));
+        });
+    }
+
+    [Test]
+    public async Task A_discount_Commerce_refuses_stops_the_whole_set_so_the_page_beside_it_is_not_saved_either()
+    {
+        await Commerce.Uow.ExecuteAsync(async (uow, ct) =>
+        {
+            var taken = await CommerceDiscount.CreateAsync(uow, _store.Id, "spring", "Spring");
+            await taken.SetTypeAsync(DiscountType.Code);
+            await taken.AddCodeAsync("SUMMER10", null, true);
+            await taken.SetActiveAsync(true);
+            await Commerce.SaveDiscountAsync(taken, ct);
+            uow.Complete();
+        });
+
+        var page = Guid.NewGuid();
+        var discount = Guid.NewGuid();
+        await _agent.StartChangeSetAsync("Summer launch");
+        await _agent.OkAsync("entity_create", $$"""
+            { "entityType": "document", "key": "{{page}}", "subtype": "landingPage", "fields": { "name": "Summer hats", "title": "10% off with SUMMER10" } }
+            """);
+        await CreateSummerHatsAsync(discount);
+
+        var refused = await _agent.FailAsync("changeSet_apply", SetJson());
+
+        var savedDiscount = await Commerce.GetDiscountAsync(discount);
+        Assert.Multiple(() =>
+        {
+            Assert.That(refused.GetProperty("status").GetString(), Is.EqualTo("InvalidInput"), refused.ToString());
+            Assert.That(ContentService.GetById(page), Is.Null, "nothing in the set is applied");
+            Assert.That(savedDiscount, Is.Null);
         });
     }
 
