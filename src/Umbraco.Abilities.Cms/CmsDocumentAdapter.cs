@@ -128,7 +128,7 @@ public sealed class CmsDocumentAdapter(
     }
 
     /// <summary>Not used: content in a change set is applied through its draft set (<see cref="ApplyDraftAsync"/>).</summary>
-    public override Task<EntitySummary> SaveAsync(Entity document, CancellationToken cancellationToken = default)
+    public override Task<EntitySummary> SaveAsync(Entity? before, Entity document, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Content is applied through its CMS draft set.");
 
     public override Task<IReadOnlyList<EntitySummary>> FindAsync(string query, CancellationToken cancellationToken = default)

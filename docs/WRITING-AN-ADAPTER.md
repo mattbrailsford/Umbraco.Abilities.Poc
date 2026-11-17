@@ -121,6 +121,9 @@ public sealed class DiscountAdapter(DiscountService discounts, ...) : EntityAdap
 
 The access check is required. Registering an adapter without one fails at start-up, as an ability without an access
 rule does. Finding by name works from `ListModels`; override `FindModelsAsync` when the product can search itself.
+When the save must see what changed, such as a new parent to move under, override `SaveModelAsync(before, model)`
+instead. It is also given the model as it is live (null for a new one). Override one of the two; overriding neither
+fails when the first save runs, as an edit ability with neither `Edit` nor `EditAsync` does.
 
 What the package no longer writes:
 
@@ -188,7 +191,7 @@ public sealed class CmsMediaAdapter(CmsContentSchemas schemas, IMediaTypeService
     protected override async Task<StoredContent?> LoadStoredAsync(Guid key, CancellationToken ct)
         => await editing.GetAsync(key) is { } media ? ReadStored(media) : null;
 
-    public override async Task<EntitySummary> SaveAsync(Entity media, CancellationToken ct = default)
+    public override async Task<EntitySummary> SaveAsync(Entity? before, Entity media, CancellationToken ct = default)
     {
         var content = await ToContentAsync(media, ct);   // names, variants and values, ready for the editing service
         // ... CreateAsync or UpdateAsync with content.Variants and content.Properties

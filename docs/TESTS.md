@@ -84,6 +84,8 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
   - `EntityTests.Sources_allow_lists_and_availability_can_wait_and_are_read_once_per_call`
 - An edit ability finds the entity's key from its input's `[EntityKey]` property, and says what to add when there is none
   - `TypedModelTests.An_edit_ability_finds_its_key_from_the_inputs_entity_key_property`
+- A typed adapter can override a save that is also given the model as it is live (none for a new one), in a change set and run directly
+  - `TypedModelTests.A_typed_adapter_can_be_given_the_model_as_it_is_live_when_it_saves`
 
 ## CMS draft sets
 
@@ -125,6 +127,8 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
 - A move is checked as a move, not an update, and setting the parent with `entity.setValue` is checked the same way
   - `EntityCapabilityTests.A_move_is_checked_as_a_move_and_setting_the_parent_directly_is_too`
   - `EntityCapabilityTests.An_entity_cannot_be_moved_under_itself`
+- An adapter's save is given the entity as it is live (none for a new one), so it can see what changed, such as a new parent
+  - `EntityCapabilityTests.Save_is_given_the_entity_as_it_is_live_so_the_adapter_sees_what_changed`
 ## Plugin types and editor values
 
 - Rule and reward types come from Commerce's provider collections, with the label fallback and editor references; a provider registered later shows up; a group rule nests children and is stored as Commerce's rule tree

@@ -61,7 +61,7 @@ public sealed class CmsMediaAdapter(
         return problems;
     }
 
-    public override async Task<EntitySummary> SaveAsync(Entity media, CancellationToken cancellationToken = default)
+    public override async Task<EntitySummary> SaveAsync(Entity? before, Entity media, CancellationToken cancellationToken = default)
     {
         var content = await ToContentAsync(media, cancellationToken);
         var status = media.Version is null

@@ -90,6 +90,22 @@ public class EntityCapabilityTests
     }
 
     [Fact]
+    public async Task Save_is_given_the_entity_as_it_is_live_so_the_adapter_sees_what_changed()
+    {
+        var a = _folders.Seed("A");
+        var child = _folders.Seed("Child", a);
+
+        await _agent.StartChangeSetAsync("Move and add");
+        await _agent.OkAsync("entity_move", $$"""{ "entityType": "folder", "key": "{{child}}" }""");
+        var created = (await _agent.OkAsync("entity_create", """{ "entityType": "folder", "fields": { "name": "New" } }""")).GetProperty("key").GetGuid();
+        await _agent.OkAsync("changeSet_apply", $$"""{ "changeSetId": "{{_agent.ChangeSetId}}" }""");
+
+        // The moved folder's save sees its old parent; a new folder has nothing before it.
+        Assert.Equal(a.ToString(), _folders.Before[child]!.Fields["parent"]!.GetValue<string>());
+        Assert.Null(_folders.Before[created]);
+    }
+
+    [Fact]
     public async Task Entity_types_whose_adapters_did_not_opt_in_cannot_be_deleted_or_moved()
     {
         await _agent.StartChangeSetAsync("Nope");
@@ -150,6 +166,8 @@ public class EntityCapabilityTests
 
         public List<string> Log { get; } = [];
 
+        public Dictionary<Guid, Entity?> Before { get; } = [];
+
         public List<EntityAccessRequest> Checked { get; } = [];
 
         public EntityPermission? Refuse { get; set; }
@@ -197,9 +215,10 @@ public class EntityCapabilityTests
 
         public Task<IReadOnlyList<Problem>> ValidateAsync(Entity entity, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<Problem>>([]);
 
-        public Task<EntitySummary> SaveAsync(Entity entity, CancellationToken cancellationToken = default)
+        public Task<EntitySummary> SaveAsync(Entity? before, Entity entity, CancellationToken cancellationToken = default)
         {
             Log.Add($"save {entity.Fields["name"]}");
+            Before[entity.Key] = before;
             Live[entity.Key] = (JsonObject)entity.Fields.DeepClone();
             return Task.FromResult(ToSummary(entity));
         }

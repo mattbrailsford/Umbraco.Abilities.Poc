@@ -430,7 +430,8 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
       | An action that isn't a value | Delete, publish | The adapter implements a method, run on apply | Only for core's delete |
 
       The second kind covers more than it seems: a third party's interface asks which field means "locked", and the
-      product's save does what locking means there. The change set still shows a plain value change, so review,
+      product's save does what locking means there. To see what changed, `SaveAsync` is given the entity as it is live
+      (`before`, null for a new one), as a drafting adapter's `StageAsync` already was. The change set still shows a plain value change, so review,
       rebasing and discarding work. The third kind is the real gap: a recorded call would need to say "on apply, call
       this adapter method", run in order after the saves. Publish needs that anyway, so build it there, then see if
       delete fits on it.

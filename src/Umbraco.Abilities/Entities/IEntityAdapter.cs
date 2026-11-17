@@ -40,7 +40,12 @@ public interface IEntityAdapter
     /// <summary>Domain rules beyond the schema (ranges, dates in order, uniqueness). Problems by path.</summary>
     Task<IReadOnlyList<Problem>> ValidateAsync(Entity entity, CancellationToken cancellationToken = default);
 
-    Task<EntitySummary> SaveAsync(Entity entity, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Saves an entity. <paramref name="before"/> is the entity as it is live now, loaded just before the save (null when
+    /// creating), so the adapter can see what changed and do what the product needs for it, such as running a move
+    /// when the parent changed.
+    /// </summary>
+    Task<EntitySummary> SaveAsync(Entity? before, Entity entity, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<EntitySummary>> FindAsync(string query, CancellationToken cancellationToken = default);
 

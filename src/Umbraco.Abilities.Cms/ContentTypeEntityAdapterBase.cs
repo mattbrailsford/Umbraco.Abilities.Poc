@@ -185,7 +185,7 @@ public abstract class ContentTypeEntityAdapterBase<TType>(CmsContentSchemas sche
 
     public abstract Task<IReadOnlyList<Problem>> ValidateAsync(Entity entity, CancellationToken cancellationToken = default);
 
-    public abstract Task<EntitySummary> SaveAsync(Entity entity, CancellationToken cancellationToken = default);
+    public abstract Task<EntitySummary> SaveAsync(Entity? before, Entity entity, CancellationToken cancellationToken = default);
 
     public abstract Task<IReadOnlyList<EntitySummary>> FindAsync(string query, CancellationToken cancellationToken = default);
 

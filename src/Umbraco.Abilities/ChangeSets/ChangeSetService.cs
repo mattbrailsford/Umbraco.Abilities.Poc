@@ -617,7 +617,7 @@ public sealed class ChangeSetService(
                         savedInStep.Clear();
                         foreach (var entity in entities.Except(drafted).Where(e => !e.Deleted))
                         {
-                            savedInStep.Add(await entity.Adapter.SaveAsync(entity.Working!, ct));
+                            savedInStep.Add(await entity.Adapter.SaveAsync(entity.Live, entity.Working!, ct));
                         }
 
                         // Deletes last, so an entity the set moves out from under a deleted parent is moved first. One
