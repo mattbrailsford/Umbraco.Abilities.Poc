@@ -8,6 +8,12 @@ public interface IEntityAdapter
 {
     string EntityType { get; }
 
+    /// <summary>
+    /// What a person calls this entity type, such as "Discount" or "Document", for questions and summaries they read.
+    /// Optional: without it, the entity type is shown.
+    /// </summary>
+    string DisplayName => EntityType;
+
     /// <summary>False for entities that can be found and referenced but not created here.</summary>
     bool CanCreate { get; }
 

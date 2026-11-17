@@ -158,6 +158,9 @@ public abstract class ContentTypeEntityAdapterBase<TType>(CmsContentSchemas sche
 
     public abstract string EntityType { get; }
 
+    /// <summary>What a person calls this entity type, such as "Document".</summary>
+    public abstract string DisplayName { get; }
+
     public virtual bool CanCreate => true;
 
     public abstract IUnitOfWorkProvider UnitOfWork { get; }

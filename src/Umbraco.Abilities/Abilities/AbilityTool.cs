@@ -241,7 +241,7 @@ public sealed class AbilityTool
         }
 
         var lines = new List<string> { $"{Descriptor.Name} \"{summary.Name}\"? It can't be undone." };
-        lines.AddRange(summary.Entities.Select(e => $"- {e.Change} {e.Entity.EntityType} \"{e.Entity.Name}\""));
+        lines.AddRange(summary.Entities.Select(e => $"- {e.TypeName ?? e.Entity.EntityType} \"{e.Entity.Name}\" ({e.Change})"));
         if (summary.NeedsConsent is { Count: > 0 } needs)
         {
             lines.Add("It also does these, which can't be undone either:");

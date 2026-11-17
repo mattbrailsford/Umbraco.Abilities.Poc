@@ -191,7 +191,8 @@ public interface IChangeSetLifecycleAbility : IAbility
 
 public sealed record EntityProblems(EntitySummary Entity, IReadOnlyList<Problem> Problems);
 
-public sealed record ChangeSetChange(EntitySummary Entity, string Change, int Edits);
+/// <param name="TypeName">What a person calls the entity's type, such as "Discount" (the adapter's display name).</param>
+public sealed record ChangeSetChange(EntitySummary Entity, string Change, int Edits, string? TypeName = null);
 
 /// <summary>One step of applying a set: a product's changes in its own transaction, or one side effect after them.</summary>
 public sealed record ApplyStep(string Name, string Description, bool Applied);

@@ -25,7 +25,7 @@ descriptions, required and rules, items fields), and gets an option when a model
 **Attributes**, for a class the package writes for the purpose (`Samples/Commerce/Commerce.cs`):
 
 ```csharp
-[Entity("umbraco-commerce-discount", "Discount")]
+[Entity("umbraco-commerce-discount", "Discount")]   // the entity type, and what a person calls it
 public sealed class DiscountEditModel : EntityModel   // the key and version; or mark your own [Key] and [EntityVersion]
 {
     [EntityName, Required] public string? Name { get; set; }
@@ -181,6 +181,7 @@ public sealed class CmsMediaAdapter(CmsContentSchemas schemas, IMediaTypeService
     : ContentTypeEntityAdapterBase<IMediaType>(schemas)
 {
     public override string EntityType => "media";
+    public override string DisplayName => "Media";     // what a person calls it, in questions and summaries
     protected override IEnumerable<IMediaType> ListTypes() => mediaTypes.GetAll();
     protected override IMediaType? FindType(string alias) => mediaTypes.Get(alias);
     protected override IMediaType? FindType(Guid key) => mediaTypes.Get(key);

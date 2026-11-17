@@ -46,6 +46,8 @@ public sealed class CmsDocumentAdapter(
 
     public override string EntityType => Type;
 
+    public override string DisplayName => "Document";
+
     public override IUnitOfWorkProvider UnitOfWork { get; } = unitOfWork;
 
     protected override IEnumerable<IContentType> ListTypes() => contentTypes.GetAll().Where(t => !t.IsElement);

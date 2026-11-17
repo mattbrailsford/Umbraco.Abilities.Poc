@@ -43,6 +43,9 @@ public abstract class EntityAdapterBase<TModel> : IAuthorizingEntityAdapter
 
     public string EntityType => _entity.EntityType;
 
+    /// <summary>The name in the model's <c>[Entity]</c> attribute, such as "Discount".</summary>
+    public string DisplayName => _entity.Name;
+
     public virtual bool CanCreate => true;
 
     public IUnitOfWorkProvider UnitOfWork { get; }

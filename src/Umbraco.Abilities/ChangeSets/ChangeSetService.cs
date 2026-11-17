@@ -477,7 +477,7 @@ public sealed class ChangeSetService(
             // Entities whose product is already applied aren't pending, so aren't in the set's state.
             var entity = state.Entities.FirstOrDefault(e => e.EntityType == entityType && e.Key == key) ?? await ComputeAsync(set, entityType, key, cancellationToken);
             var calls = set.Changes.Where(c => c.EntityType == entityType && c.EntityKey == key).ToList();
-            changes.Add(new ChangeSetChange(entity.Summary, calls[0].Creates ? "created" : "updated", calls.Count));
+            changes.Add(new ChangeSetChange(entity.Summary, calls[0].Creates ? "created" : "updated", calls.Count, adapters.Get(entityType).DisplayName));
         }
 
         var afterApply = set.AfterApply.Select(c => c.AbilityId).ToList();

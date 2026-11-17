@@ -102,7 +102,7 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
         {
             Assert.That(status, Is.EqualTo((HttpStatusCode)428), body.ToString());
             Assert.That(body.GetProperty("status").GetString(), Is.EqualTo("ApprovalRequired"));
-            Assert.That(approval.GetProperty("question").GetString(), Does.Contain("created document \"Hello\""), "the person sees what it saves");
+            Assert.That(approval.GetProperty("question").GetString(), Does.Contain("Document \"Hello\" (created)"), "the person sees what it saves");
             Assert.That(body.GetProperty("changeSet").GetProperty("open").GetBoolean(), Is.True, "the set is still open");
             Assert.That(ContentService.GetById(page), Is.Null, "nothing is saved");
         });

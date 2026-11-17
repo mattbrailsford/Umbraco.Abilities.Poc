@@ -46,7 +46,7 @@ public class AbilityToolConsentTests
         var asked = await Tool("changeSet.apply").InvokeAsync([]);
 
         var question = asked.Approval!.Question;
-        Assert.Contains("created umbraco-commerce-discount \"Summer sale\"", question);
+        Assert.Contains("Discount \"Summer sale\" (created)", question);
         Assert.Contains("which can't be undone either", question);
         Assert.Contains("Activate discount: Summer sale", question);
         Assert.Contains("Summer sale is on", question);

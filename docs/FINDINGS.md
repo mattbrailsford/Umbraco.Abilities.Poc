@@ -307,6 +307,12 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
       Headless Claude Code (`claude -p`) says it can ask, but answers "cancel" with nobody there, so the set stayed
       unapplied (17-11-2026). The interactive dialog is not tried.
 
+    Two smaller things followed. A question first said "umbraco-commerce-discount", so an adapter can now give a name
+    for people (`IEntityAdapter.DisplayName`, optional, taken from `[Entity]` on a model). And waiting approvals, like
+    change sets, are kept in memory on one server. A load balanced site needs both in shared storage: a store
+    interface, as change sets have (`IChangeSetStore`), and a database table or distributed cache behind it. The one
+    thing to get right is that using an approval stays atomic, so two servers can't both use the same id.
+
     Compared with MCP Dev today: its tools carry `readOnlyHint` and `destructiveHint`, and it has a read only mode
     (`UMBRACO_READONLY`), but it calls the Management API directly, so any consent is the MCP client's own "allow this
     tool?" prompt, which a person can switch to always allow. No elicitation was found in its code. Here the site

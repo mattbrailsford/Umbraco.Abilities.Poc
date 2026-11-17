@@ -30,6 +30,8 @@ public sealed class CmsMediaAdapter(
 
     public override string EntityType => Type;
 
+    public override string DisplayName => "Media";
+
     public override IUnitOfWorkProvider UnitOfWork { get; } = unitOfWork;
 
     protected override IEnumerable<IMediaType> ListTypes() => mediaTypes.GetAll();
