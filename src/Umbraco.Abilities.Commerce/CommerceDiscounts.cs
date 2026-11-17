@@ -221,10 +221,6 @@ public sealed class CommerceDiscountAdapter(
     private const string Children = "children";
     private const string PriceEditor = "Uc.PropertyEditorUi.Price";
 
-    // How Commerce stores a setting: .NET's own form. Its enum dropdowns list member names (EnumHelper), its price
-    // editor reads amounts as numbers. Commerce's own converter for this is internal to its Management API.
-    private static readonly IPluginSettingFormat SettingFormat = DotNetPluginSettingFormat.Instance;
-
     public override async Task<string?> AuthorizeAsync(EntityAccessRequest request, CancellationToken cancellationToken = default)
     {
         var storeId = request.Entity?.Fields.TryGetPropertyValue("store", out var store) == true && Guid.TryParse(store?.ToString(), out var id)
@@ -232,6 +228,9 @@ public sealed class CommerceDiscountAdapter(
             : (await commerce.GetDiscountAsync(request.Key))?.StoreId;
         return await access.CheckAsync(request.UserKey, storeId is { } s ? await commerce.GetStoreAsync(s) : null);
     }
+
+    // Settings are stored with the default JSON options, which match Commerce's: enum member names (its EnumHelper),
+    // and amounts as numbers. Commerce's own converter is internal to its Management API.
 
     /// <summary>One source per seam: Commerce's rule and reward providers, read each time, so later ones show up.</summary>
     protected override IEnumerable<IItemTypeSource> ItemTypeSources() =>
@@ -369,10 +368,10 @@ public sealed class CommerceDiscountAdapter(
             item.Fields.ContainsKey(Children) ? item.Items(Children).Select(ToRuleConfig).ToList() : []);
 
     private static PluginDescriptor DescribeRule(IDiscountRuleProvider provider)
-        => new(provider.Alias, provider.Label, provider.Description, provider.SettingDefinitions.Select(Describe).ToList()) { SettingFormat = SettingFormat };
+        => new(provider.Alias, provider.Label, provider.Description, provider.SettingDefinitions.Select(Describe).ToList());
 
     private static PluginDescriptor DescribeReward(IDiscountRewardProvider provider)
-        => new(provider.Alias, provider.Label, provider.Description, provider.SettingDefinitions.Select(Describe).ToList()) { SettingFormat = SettingFormat };
+        => new(provider.Alias, provider.Label, provider.Description, provider.SettingDefinitions.Select(Describe).ToList());
 
     // Commerce's price editor stores one amount per currency. Say so, as the setting's type alone doesn't.
     private static SettingDescriptor Describe(UmbracoCommerceSettingDefinition s)
@@ -394,7 +393,6 @@ public sealed class CommerceDiscountAdapter(
         [new SettingDescriptor(MatchType, "Match", "'All', 'Any' or 'Funnel'.", typeof(GroupDiscountRuleMatchType), [], null, 0)])
     {
         ExtraFields = [FieldDefinition.ItemsOf(Children, "The rules in this group.", RuleGroup) with { Min = 1 }],
-        SettingFormat = SettingFormat,
     };
 
     private static string AliasFor(string name)

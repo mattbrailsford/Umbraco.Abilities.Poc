@@ -1,4 +1,6 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 
 using Umbraco.Abilities.Entities;
 using Umbraco.Abilities.Entities.Models;
@@ -7,7 +9,7 @@ namespace Umbraco.Abilities.Tests;
 
 /// <summary>
 /// A model always sees a plugin's settings in the framework's JSON. How they are stored is the product's choice: .NET's
-/// own form by default, or the product's own format.
+/// own form by default, or with the JSON options the product already serializes with.
 /// </summary>
 public class PluginSettingFormatTests
 {
@@ -37,12 +39,14 @@ public class PluginSettingFormatTests
     }
 
     [Fact]
-    public void A_product_with_its_own_format_has_its_settings_stored_that_way_and_the_model_still_sees_the_same_json()
+    public void A_product_that_supplies_its_json_options_has_its_settings_stored_with_them_and_the_model_still_sees_the_same_json()
     {
-        var plugin = Plugin() with { SettingFormat = new UpperCaseEnums() };
+        // The options the product already serializes with: here, enums in upper snake case.
+        var options = new JsonSerializerOptions { Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseUpper) } };
+        var plugin = Plugin() with { SettingJsonOptions = options };
 
         var stored = PluginSettings.ToSettings(Item(), plugin);
-        Assert.Equal("TOTALPRICE", stored["priceType"]);
+        Assert.Equal("TOTAL_PRICE", stored["priceType"]);
 
         var read = PluginSettings.ToItem(Guid.NewGuid(), "orderAmount", stored, plugin);
         Assert.Equal("totalPrice", read.Fields["priceType"]!.GetValue<string>());
@@ -71,12 +75,4 @@ public class PluginSettingFormatTests
             ["note"] = "Hats only",
         },
     };
-
-    private sealed class UpperCaseEnums : IPluginSettingFormat
-    {
-        public string Write(object value, Type type)
-            => value is Enum member ? member.ToString().ToUpperInvariant() : DotNetPluginSettingFormat.Instance.Write(value, type);
-
-        public object? Read(string text, Type type) => DotNetPluginSettingFormat.Instance.Read(text, type);
-    }
 }
