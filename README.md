@@ -135,11 +135,11 @@ It is not a test: each run calls the Claude API, costs money, and can give a dif
 
 | Project | Plays the part of | Depends on |
 | --- | --- | --- |
-| `Umbraco.Abilities` | The contract and runtime: abilities, entity adapters, the path editor, change sets, the invoker | `Umbraco.Cms.Core`, `Polly.Core` |
-| `Umbraco.Abilities.AI` | Umbraco.AI's adapter: every ability becomes an M.E.AI `AIFunction` | Contract, `Microsoft.Extensions.AI.Abstractions` |
+| `Umbraco.Abilities` | The contract and runtime: abilities and their tool shape, entity adapters, the path editor, change sets, the invoker | `Umbraco.Cms.Core`, `Polly.Core` |
+| `Umbraco.Abilities.AI` | Umbraco.AI's adapter: every ability's tool becomes an M.E.AI `AIFunction` | Contract, `Microsoft.Extensions.AI.Abstractions` |
 | `Umbraco.Abilities.Samples` | Product packages: CMS pages with nested blocks, Commerce collections and discounts, a third-party rule type, an email package, Automate workflows | Contract only |
 | `Umbraco.Abilities.Cms` | The real entity adapter for CMS documents, on `IContentEditingService`, the adapter that stages content changes into a CMS draft set, and the `Umb-Change-Set` header middleware | Contract, Umbraco 18, the draft sets stand-in |
-| `Umbraco.Abilities.ManagementApi` | Two Management API endpoints: list the abilities, and call one. For HTTP callers such as the Umbraco CMS MCP Dev server | Contract, AI adapter (for the tool shape), `Umbraco.Cms.Api.Management` |
+| `Umbraco.Abilities.ManagementApi` | Two Management API endpoints: list the abilities, and call one. For HTTP callers such as the Umbraco CMS MCP Dev server | Contract, `Umbraco.Cms.Api.Management` |
 | `Umbraco.Cms.DraftSets` | A stand-in for a Draft Sets feature in CMS core: per-property content changes held apart from live, read-through, rebase and conflicts, apply in one scope | Umbraco 18 only: no Abilities |
 | `Umbraco.Abilities.Tests` | A scripted model calling the AI tools with JSON arguments | Contract, AI adapter, samples |
 | `Umbraco.Abilities.Cms.Tests` | The same, against a real Umbraco on SQLite, and the Management API endpoints over HTTP | Contract, AI adapter, CMS adapter, Management API endpoints, Umbraco test host |

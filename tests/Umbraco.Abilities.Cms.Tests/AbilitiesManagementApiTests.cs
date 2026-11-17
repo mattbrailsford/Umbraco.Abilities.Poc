@@ -8,7 +8,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 using NUnit.Framework;
 
-using Umbraco.Abilities.AI;
 using Umbraco.Abilities.ChangeSets;
 using Umbraco.Abilities.ManagementApi;
 using Umbraco.Cms.Core;
@@ -80,11 +79,11 @@ public sealed class AbilitiesManagementApiTests : ManagementApiTest<AbilitiesCon
             // The input schema is the tool's, change set id included, so a caller passes it straight to its tool.
             var properties = create.GetProperty("inputSchema").GetProperty("properties");
             Assert.That(properties.TryGetProperty("entityType", out _), Is.True);
-            Assert.That(properties.TryGetProperty(AbilityAIFunction.ChangeSetIdArgument, out _), Is.True);
+            Assert.That(properties.TryGetProperty(AbilityTool.ChangeSetIdArgument, out _), Is.True);
 
             // Starting a set works outside one, so it takes no change set id.
             Assert.That(abilities["changeSet.create"].GetProperty("usesChangeSet").GetBoolean(), Is.False);
-            Assert.That(abilities["changeSet.create"].GetProperty("inputSchema").GetProperty("properties").TryGetProperty(AbilityAIFunction.ChangeSetIdArgument, out _), Is.False);
+            Assert.That(abilities["changeSet.create"].GetProperty("inputSchema").GetProperty("properties").TryGetProperty(AbilityTool.ChangeSetIdArgument, out _), Is.False);
         });
     }
 

@@ -5,9 +5,7 @@ using Asp.Versioning;
 
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.AI;
 
-using Umbraco.Abilities.AI;
 using Umbraco.Abilities.ChangeSets;
 using Umbraco.Cms.Api.Management.Controllers;
 using Umbraco.Cms.Api.Management.Routing;
@@ -43,7 +41,7 @@ public sealed class AbilitiesController(AbilityInvoker invoker, IBackOfficeSecur
         var session = new AbilityToolSession(Guid.Empty);
         return Ok(invoker.Abilities.All
             .OrderBy(ability => ability.Descriptor.Id, StringComparer.Ordinal)
-            .Select(ability => AbilityResponseModel.From(new AbilityAIFunction(ability, invoker, session)))
+            .Select(ability => AbilityResponseModel.From(new AbilityTool(ability, invoker, session)))
             .ToList());
     }
 
@@ -67,33 +65,22 @@ public sealed class AbilitiesController(AbilityInvoker invoker, IBackOfficeSecur
         }
 
         // A conversation of one call, for the signed-in user. The change set comes from the call, never from earlier ones.
-        var function = new AbilityAIFunction(ability, invoker, new AbilityToolSession(CurrentUserKey(security)));
-        var arguments = new AIFunctionArguments();
-        foreach (var (name, value) in input ?? [])
-        {
-            arguments[name] = JsonSerializer.SerializeToElement(value);
-        }
-
+        var tool = new AbilityTool(ability, invoker, new AbilityToolSession(CurrentUserKey(security)));
+        var arguments = input ?? [];
         if (ability.Descriptor.UsesChangeSet
-            && !arguments.ContainsKey(AbilityAIFunction.ChangeSetIdArgument)
+            && !arguments.ContainsKey(AbilityTool.ChangeSetIdArgument)
             && Request.Headers.TryGetValue(ChangeSetAccessor.HeaderName, out var header)
             && !string.IsNullOrWhiteSpace(header))
         {
-            arguments[AbilityAIFunction.ChangeSetIdArgument] = JsonSerializer.SerializeToElement(header.ToString());
+            arguments[AbilityTool.ChangeSetIdArgument] = header.ToString();
         }
 
-        var payload = (JsonElement)(await function.InvokeAsync(arguments, cancellationToken))!;
-        return StatusCode(StatusCodeOf(payload), payload);
+        var result = await tool.InvokeAsync(arguments, cancellationToken);
+        return StatusCode(StatusCodeOf(result), result.ToJson());
     }
 
-    private static int StatusCodeOf(JsonElement payload)
-    {
-        if (payload.GetProperty("success").GetBoolean())
-        {
-            return StatusCodes.Status200OK;
-        }
-
-        return Enum.Parse<AbilityOperationStatus>(payload.GetProperty("status").GetString()!) switch
+    private static int StatusCodeOf(AbilityToolResult result)
+        => result.Success ? StatusCodes.Status200OK : result.Status switch
         {
             AbilityOperationStatus.InvalidInput => StatusCodes.Status400BadRequest,
             AbilityOperationStatus.AccessDenied => StatusCodes.Status403Forbidden,
@@ -101,7 +88,6 @@ public sealed class AbilitiesController(AbilityInvoker invoker, IBackOfficeSecur
             // It ran and failed, for example Umbraco refused the save. Sending the same input again won't help.
             _ => StatusCodes.Status422UnprocessableEntity,
         };
-    }
 }
 
 /// <summary>One ability, as a caller needs it to offer it as a tool.</summary>
@@ -123,14 +109,14 @@ public sealed record AbilityResponseModel(
     bool UsesChangeSet,
     JsonElement InputSchema)
 {
-    internal static AbilityResponseModel From(AbilityAIFunction function)
+    internal static AbilityResponseModel From(AbilityTool tool)
         => new(
-            function.Descriptor.Id,
-            function.Name,
-            function.Descriptor.Name,
-            function.Description,
-            function.Descriptor.Kind.ToString(),
-            function.Descriptor.RequiresApproval,
-            function.Descriptor.UsesChangeSet,
-            function.JsonSchema);
+            tool.Descriptor.Id,
+            tool.Name,
+            tool.Descriptor.Name,
+            tool.Description,
+            tool.Descriptor.Kind.ToString(),
+            tool.Descriptor.RequiresApproval,
+            tool.Descriptor.UsesChangeSet,
+            tool.JsonSchema);
 }

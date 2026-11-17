@@ -208,11 +208,13 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
     This is what the Umbraco CMS MCP Dev server would call: it would build one tool per listed ability, so a new
     ability or entity type needs no new endpoint and no MCP Dev release. The tests call the endpoints over HTTP on
     Umbraco's test server, signed in as an editor. Building it taught five things:
-    - **The tool shape isn't AI specific, but it lives in the AI adapter.** The input schema (with `changeSetId`
-      added), the change set rules and the result shape are in `AbilityAIFunction`. The endpoints reuse it, so an HTTP
-      caller sees what a model sees, but the Management API project now references M.E.AI. It belongs in the
-      contract. It stays here because the schema comes from M.E.AI's `AIJsonUtilities`, and the framework may only
-      depend on Umbraco.Cms.Core.
+    - **The tool shape isn't AI specific, so it moved into the framework.** The input schema (with `changeSetId`
+      added), the change set rules, the conversation and the result shape were in `AbilityAIFunction`, so the first
+      version of the endpoints referenced M.E.AI to reuse them. They are now `AbilityTool` in the framework, and the
+      AI adapter and the endpoints both wrap it. The schema had come from M.E.AI's `AIJsonUtilities`; it now comes
+      from .NET's own `JsonSchemaExporter`, so the framework still needs no AI library. A test checks every sample
+      ability's schema against M.E.AI's. They matched except for one thing: the shared JSON options read numbers sent
+      as text, which made every number "a number or a numeric string" in the schema. Schemas now ask for numbers.
     - **The framework had no DI setup.** Every surface and test wired it by hand. `AddAbilities()` now registers it on a
       site, and `AddFrameworkAbilities()` adds the generic abilities in one call. The ability registry and the change
       set service need each other, so they are made together.

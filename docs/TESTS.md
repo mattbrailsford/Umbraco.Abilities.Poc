@@ -169,6 +169,9 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
 
 Called over HTTP on Umbraco's test server, as the Umbraco CMS MCP Dev server would call them.
 
+- The framework's tool schemas, from .NET's own exporter, are the ones M.E.AI would make, for every sample ability
+  - `AbilityToolSchemaTests.Every_abilitys_input_schema_is_the_one_MEAI_would_make`
+
 - The list endpoint gives every ability with what a tool needs: tool name, description, kind, and the input schema with `changeSetId` when it uses a change set
   - `AbilitiesManagementApiTests.The_Management_API_lists_every_ability_with_what_a_tool_needs`
 - A page built over HTTP in a change set named in the `Umb-Change-Set` header is saved only on apply, as the signed-in user

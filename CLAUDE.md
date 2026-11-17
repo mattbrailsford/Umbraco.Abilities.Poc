@@ -38,7 +38,7 @@ dotnet test
 | Project | Role |
 | --- | --- |
 | `src/Umbraco.Abilities` | The framework. `Abilities/` (layer 1), `Entities/` (layer 2, typed layer in `Entities/Models/`), `ChangeSets/` (layer 3) |
-| `src/Umbraco.Abilities.AI` | Turns every ability into an M.E.AI `AIFunction` |
+| `src/Umbraco.Abilities.AI` | Wraps every ability's `AbilityTool` as an M.E.AI `AIFunction` |
 | `src/Umbraco.Abilities.Samples` | In-memory stand-ins for product packages: CMS, Commerce, Automate, email, a third-party rule |
 | `src/Umbraco.Abilities.Cms` | The real entity adapter for CMS documents, on `IContentEditingService`, plus the draft set adapter |
 | `src/Umbraco.Abilities.ManagementApi` | Two Management API endpoints: list the abilities, and call one. For HTTP callers such as MCP Dev |

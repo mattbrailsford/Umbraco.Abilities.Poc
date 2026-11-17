@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
     Abilities over the Management API: list them, and call one. For HTTP callers such as the Umbraco CMS MCP Dev server.
-    It reuses the AI tool shape (schema, change set argument, result) so an HTTP caller sees what a model sees.
+    It uses the framework's AbilityTool, as the AI adapter does, so an HTTP caller sees what a model sees.
   -->
   <PropertyGroup>
     <!--
@@ -12,7 +12,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Umbraco.Abilities/Umbraco.Abilities.csproj" />
-    <ProjectReference Include="../Umbraco.Abilities.AI/Umbraco.Abilities.AI.csproj" />
     <PackageReference Include="Umbraco.Cms.Api.Management" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
   </ItemGroup>

@@ -15,8 +15,8 @@ with no per-product code. Creating an entity from a description is the hardest t
 The same pieces serve the backoffice, the Umbraco.AI copilot, Automate and MCP.
 
 The code is about 7,400 lines of source and 2,500 lines of tests in eight projects. The source splits into the framework
-(about 4,200), the in-memory samples (about 1,600), the real CMS adapter (about 1,100), the draft sets stand-in
-(about 500), the Management API endpoints (about 130) and the AI adapter (about 100). A full review takes two to three hours.
+(about 4,500), the in-memory samples (about 1,600), the real CMS adapter (about 1,100), the draft sets stand-in
+(about 500), the Management API endpoints (about 130) and the AI adapter (about 70). A full review takes two to three hours.
 A first pass over the story and the contracts (passes 1 to 3 below) takes about 45 minutes.
 
 ```bash
@@ -28,12 +28,11 @@ dotnet test   # in-memory tests (seconds), then tests against a real Umbraco 18 
 Six source projects and two test projects. The arrows show what references what.
 
 ```
-Umbraco.Abilities            the framework: abilities, entity adapters, change sets
+Umbraco.Abilities            the framework: abilities and their tool shape, entity adapters, change sets
    ↑            ↑                          (references Umbraco.Cms.Core for UDIs, notifications, the background queue)
+   │            ├── Umbraco.Abilities.ManagementApi   two endpoints: list the abilities, call one (for MCP Dev)
    │            │
-Umbraco.Abilities.AI         turns every ability into an M.E.AI AIFunction: the copilot's tools
-   │     ↑      │
-   │  Umbraco.Abilities.ManagementApi   two endpoints: list the abilities, call one (for MCP Dev)
+Umbraco.Abilities.AI         wraps every ability's tool as an M.E.AI AIFunction: the copilot's tools
    │            │
 Umbraco.Abilities.Samples    in-memory products: CMS pages and media, Commerce, an Acme rule type, email, Automate
    │
@@ -60,7 +59,8 @@ A model calls a tool. Here is everything it passes through, and where each piece
 
 ```
 model calls entity_setValue (JSON arguments, optionally a changeSetId)
-  → AbilityAIFunction                     Umbraco.Abilities.AI: JSON in, result JSON out
+  → AbilityAIFunction                     Umbraco.Abilities.AI: M.E.AI's arguments to JSON
+  → AbilityTool                           Abilities/AbilityTool.cs: the same for every surface, JSON in, result out
       picks the change set                → the changeSetId given, or the only one open in the conversation (AbilityToolSession)
       makes it current for this call      → IChangeSetAccessor.Use: ambient, gone when the call returns
   → AbilityInvoker.InvokeAsync            ChangeSets/ChangeSetService.cs (end of file)
@@ -114,7 +114,8 @@ will.
 | File | What it is |
 | --- | --- |
 | `src/Umbraco.Abilities/Abilities/Ability.cs` | The contract. `[Ability]` declares an operation: id, `Kind` (Explain, Read, Transform, Trigger, Write), `Reversible`, `Retries`, and `UsesChangeSet` (false for a read that can't depend on a set, like a schema). `AbilityBase<TInput, TOutput>` gives typed input from JSON. `AbilityBase<TOutput>` is for an ability that takes no input, like the change set tools. `AbilityContext` holds the acting user's key. Which change set a call works in is ambient, not context: see `ChangeSets/ChangeSetAccessor.cs`. `AbilityResult` mirrors the CMS's `Attempt<TResult, TStatus>`, and `Problem` mirrors `PropertyValidationError` |
-| `src/Umbraco.Abilities.AI/AbilityAIFunction.cs` | The whole AI adapter: an ability becomes an `AIFunction`, with a schema from its input type. Only irreversible Writes need approval. It adds an optional `changeSetId` to every tool that uses a change set, keeps the sets open in the conversation in `AbilityToolSession` (with two or more open, a call must name one), and reports the set each call used |
+| `src/Umbraco.Abilities/Abilities/AbilityTool.cs` | An ability as a tool, for every surface (AI, Management API, MCP). Its input schema comes from .NET's own JSON schema exporter, with descriptions from `[Description]`. It adds an optional `changeSetId` to every tool that uses a change set, keeps the sets open in the conversation in `AbilityToolSession` (with two or more open, a call must name one), and reports the set each call used in `AbilityToolResult` |
+| `src/Umbraco.Abilities.AI/AbilityAIFunction.cs` | The whole AI adapter: each ability's `AbilityTool` wrapped as an `AIFunction`. Only irreversible Writes need approval |
 | `AbilityInvoker` (end of `ChangeSets/ChangeSetService.cs`) | The single entry point. A Write while a change set is current is recorded instead of run |
 
 **Look for:** whether `Kind` plus `Reversible` is enough to decide approval. Finding 1 in [FINDINGS.md](docs/FINDINGS.md#what-building-it-taught-us) says approval
