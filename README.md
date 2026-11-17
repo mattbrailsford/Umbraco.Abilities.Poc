@@ -84,10 +84,11 @@ The details and the lessons are in [docs/FINDINGS.md](docs/FINDINGS.md). The tes
 - **Every Automate connection.** Each exit leads to one step. Automate can also send one exit to several steps, filter
   a connection, give a step with outcomes an "any result" exit, and build Switch's outcomes from its cases. None has a
   field yet; Switch would need exits that change with its settings.
-- **Surfaces other than AI tools and HTTP.** The Umbraco.AI adapter (abilities as M.E.AI `AIFunction`s) and two
-  Management API endpoints are built. The endpoints are what the Umbraco CMS MCP Dev server would call, but MCP Dev
-  itself isn't changed, and the tests sign in as a backoffice user, not an API user. Automate actions and a backoffice
-  editor would use the same abilities, but neither is built here.
+- **Surfaces other than AI tools, HTTP and MCP.** The Umbraco.AI adapter (abilities as M.E.AI `AIFunction`s), two
+  Management API endpoints and an MCP proxy that plays the Umbraco CMS MCP Dev server are built. MCP Dev itself isn't
+  changed, the tests sign in as a backoffice user rather than an API user, and no real MCP client (Claude Code,
+  VS Code) has been tried yet. Automate actions and a backoffice editor would use the same abilities, but neither is
+  built here.
 - **A real model, at scale.** The tests script the tool calls. One model built two discounts from text in a few runs
   (see [Against a real model](docs/FINDINGS.md#against-a-real-model)). That shows the tools are usable, not how often a
   model gets them right, or how it does on documents, workflows or edits.
@@ -142,7 +143,8 @@ It is not a test: each run calls the Claude API, costs money, and can give a dif
 | `Umbraco.Abilities.ManagementApi` | Two Management API endpoints: list the abilities, and call one. For HTTP callers such as the Umbraco CMS MCP Dev server | Contract, `Umbraco.Cms.Api.Management` |
 | `Umbraco.Cms.DraftSets` | A stand-in for a Draft Sets feature in CMS core: per-property content changes held apart from live, read-through, rebase and conflicts, apply in one scope | Umbraco 18 only: no Abilities |
 | `Umbraco.Abilities.Tests` | A scripted model calling the AI tools with JSON arguments | Contract, AI adapter, samples |
-| `Umbraco.Abilities.Cms.Tests` | The same, against a real Umbraco on SQLite, and the Management API endpoints over HTTP | Contract, AI adapter, CMS adapter, Management API endpoints, Umbraco test host |
+| `Umbraco.Abilities.Cms.Tests` | The same, against a real Umbraco on SQLite, and the Management API endpoints over HTTP | Contract, AI adapter, CMS adapter, Management API endpoints, MCP proxy, Umbraco test host |
+| `tools/Umbraco.Abilities.McpProxy` | The Umbraco CMS MCP Dev server: an MCP server (stdio) whose tools are the abilities a site lists, each call forwarded to the Management API | `ModelContextProtocol` only: no Abilities project |
 | `tools/Umbraco.Abilities.ModelRun` | A "Create with AI" surface: a real model (Claude, through M.E.AI's `IChatClient`) builds an entity in a change set from a description | Contract, AI adapter, samples, `Anthropic` |
 
 ## Words we use

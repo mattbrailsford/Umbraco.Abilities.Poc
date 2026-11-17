@@ -8,6 +8,7 @@
     <ProjectReference Include="../../src/Umbraco.Abilities.AI/Umbraco.Abilities.AI.csproj" />
     <ProjectReference Include="../../src/Umbraco.Abilities.Cms/Umbraco.Abilities.Cms.csproj" />
     <ProjectReference Include="../../src/Umbraco.Abilities.ManagementApi/Umbraco.Abilities.ManagementApi.csproj" />
+    <ProjectReference Include="../../tools/Umbraco.Abilities.McpProxy/Umbraco.Abilities.McpProxy.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="NUnit" />
     <PackageReference Include="NUnit3TestAdapter" />

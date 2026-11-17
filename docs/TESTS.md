@@ -185,6 +185,16 @@ Called over HTTP on Umbraco's test server, as the Umbraco CMS MCP Dev server wou
 - A caller that isn't signed in is refused
   - `AbilitiesManagementApiTests.A_caller_that_is_not_signed_in_is_refused`
 
+Through MCP, as MCP Dev would: an MCP client calls the proxy in `tools/Umbraco.Abilities.McpProxy`, which calls the
+endpoints.
+
+- An MCP client gets one tool per ability the site lists, with its description and input schema
+  - `AbilitiesMcpProxyTests.An_MCP_client_gets_one_tool_per_ability_the_site_lists`
+- An MCP client builds a page in a change set without naming it on each call: the session remembers the set it opened, and closes it once applied
+  - `AbilitiesMcpProxyTests.An_MCP_client_builds_a_page_in_a_change_set_without_naming_it_and_it_is_saved_on_apply`
+- A refused call is an MCP tool error, with the problems to fix
+  - `AbilitiesMcpProxyTests.A_refused_call_is_an_MCP_tool_error_with_the_problems_to_fix`
+
 ## Against a real Umbraco
 
 - The schema comes from the document type: cultures, varying fields, block types per items field, settings, grid areas and placement

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    A stand-in for the Umbraco CMS MCP Dev server: an MCP server (stdio) whose tools are the abilities a site lists
+    over the Management API. It references no Abilities project: it only knows the two endpoints, as MCP Dev would.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" />
+  </ItemGroup>
+</Project>

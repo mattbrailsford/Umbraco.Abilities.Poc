@@ -28,35 +28,8 @@ namespace Umbraco.Abilities.Cms.Tests;
 /// </summary>
 [TestFixture]
 [UmbracoTest(Database = UmbracoTestOptions.Database.NewSchemaPerTest, Boot = true)]
-public sealed class AbilitiesManagementApiTests : ManagementApiTest<AbilitiesController>
+public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
 {
-    private const string Password = "1234567890";
-
-    protected override Expression<Func<AbilitiesController, object>> MethodSelector { get; set; } = x => x.List(CancellationToken.None);
-
-    private IContentService ContentService => GetRequiredService<IContentService>();
-
-    protected override void CustomTestSetup(IUmbracoBuilder builder) => builder.AddAbilities();
-
-    // The test server only serves the CMS's own controllers unless told about others.
-    protected override void CustomMvcSetup(IMvcBuilder mvcBuilder)
-        => mvcBuilder.AddApplicationPart(typeof(AbilitiesController).Assembly);
-
-    [SetUp]
-    public async Task CreateArticleTypeAsync()
-    {
-        var article = new ContentTypeBuilder()
-            .WithAlias("article").WithName("Article").WithContentVariation(ContentVariation.Nothing)
-            .AddPropertyType()
-                .WithAlias("title").WithName("Title")
-                .WithDataTypeId(Constants.DataTypes.Textbox).WithPropertyEditorAlias(Constants.PropertyEditors.Aliases.TextBox)
-                .WithValueStorageType(ValueStorageType.Nvarchar).WithVariations(ContentVariation.Nothing).WithMandatory(true)
-                .Done()
-            .Build();
-        article.AllowedAsRoot = true;
-        await GetRequiredService<IContentTypeService>().CreateAsync(article, Constants.Security.SuperUserKey);
-    }
-
     [Test]
     public async Task The_Management_API_lists_every_ability_with_what_a_tool_needs()
     {
@@ -167,14 +140,6 @@ public sealed class AbilitiesManagementApiTests : ManagementApiTest<AbilitiesCon
     {
         var response = await Client.GetAsync(Url);
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
-    }
-
-    // A new user each test: the base class caches sign-ins by user name, and each test here has a new database.
-    private async Task<string> SignInAsEditorAsync()
-    {
-        var email = $"editor-{Guid.NewGuid():N}@umbraco.com";
-        await AuthenticateClientAsync(Client, email, Password, isAdmin: false);
-        return email;
     }
 
     private async Task<JsonElement> OkAsync(string ability, string json, Guid? changeSet = null)

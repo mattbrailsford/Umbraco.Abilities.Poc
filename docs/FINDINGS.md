@@ -230,6 +230,22 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
     Failures map to status codes: a mistake the caller can fix is a 400 with problems by path, a refusal is a 403, and
     a failure while running is a 422. The body is the same as the tool's result either way. The OpenAPI document
     shows the invoke body as a plain object; the list endpoint carries each ability's real schema.
+22. **MCP Dev's side is one small, generic proxy, plus the session's change set.** `tools/Umbraco.Abilities.McpProxy`
+    plays MCP Dev: an MCP server whose tools are whatever the list endpoint returns, each call forwarded to the invoke
+    endpoint. It references no Abilities project and has no code per ability, about 150 lines. A test drives it end to
+    end: an MCP client (the C# SDK) lists the tools and builds a page through the proxy and the Management API, and a
+    real Umbraco saves it as the signed-in editor. Building it taught three things:
+    - **The caller has to keep the conversation.** Each HTTP call stands alone, so the proxy remembers the change set
+      its MCP session opened and names it in the `Umb-Change-Set` header of every call that doesn't. Without that, a
+      model must pass `changeSetId` to every call. That rule now lives twice: in `AbilityToolSession` on the site, and
+      in the proxy. A server-side session (the site keeping a conversation per caller) would keep it in one place, at
+      the cost of state on the server.
+    - **The result shape works as MCP's.** The invoke response goes back as the tool's text, and a failed call is an
+      MCP tool error (`isError`) with the problems inside, so a model can correct it as it does with the AI tools.
+    - **What the test doesn't show.** The C# SDK's client accepts any schema. Whether real clients (Claude Code,
+      VS Code, Cursor) accept ours, with "string or null" types, `format` and `default`, is still to try by hand.
+      The proxy signs in as an API user (client credentials), as MCP Dev does, but the test signs in as a backoffice
+      user, and the token is never refreshed.
 
 ## Developer experience of adapters
 
