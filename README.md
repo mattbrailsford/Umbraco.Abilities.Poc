@@ -21,7 +21,9 @@ clients, Automate workflows, imports and bulk edits. Today each one does it its 
 
 Two ideas were already moving:
 
-- **Abilities**: write an operation once, and it shows up as an AI tool, an Automate action and an MCP tool.
+- **Abilities**: write an operation once, and it shows up as an AI tool, an Automate action and an MCP tool. (Checked
+  since: Automate can't do this yet. It needs a loader for abilities and forms built from a schema. See
+  [FINDINGS](docs/FINDINGS.md#checked-against-automates-action-contract).)
 - **CMS Draft Sets**: hold content changes back from the live site, review them, then apply them as one unit.
 
 Neither covers the gap between them. An ability is one call, and one call can't build a discount with a tree of rules.
@@ -89,7 +91,8 @@ The details and the lessons are in [docs/FINDINGS.md](docs/FINDINGS.md). The tes
   changed. Claude Code has used the proxy against the demo site, signed in as an API user; other MCP clients are
   not tried. The proxy asks the person before a call that can't be undone (MCP elicitation); only headless Claude
   Code, which can't answer, is tried. Automate actions and a backoffice editor would use the same abilities, but neither is
-  built here.
+  built here. Automate's action contract was checked, and a loader for abilities is proposed (see
+  [FINDINGS](docs/FINDINGS.md#checked-against-automates-action-contract)).
 - **A real model, at scale.** The tests script the tool calls. One model built discounts and pages, and edited pages, from
   text, on the samples and on the real demo site over MCP. Five real-site descriptions ran five times each and all 25
   were right (see [Against a real model](docs/FINDINGS.md#against-a-real-model)). That is one model and simple
