@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The ability loader against a real Umbraco and real Umbraco Automate on SQLite. Apart from the CMS tests, as Automate
+    installs itself on any Umbraco host that can see it.
+  -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);NU1608;NU1902;NU1903</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Umbraco.Abilities/Umbraco.Abilities.csproj" />
+    <ProjectReference Include="../../src/Umbraco.Abilities.Cms/Umbraco.Abilities.Cms.csproj" />
+    <ProjectReference Include="../../src/Umbraco.Abilities.Automate/Umbraco.Abilities.Automate.csproj" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="NUnit" />
+    <PackageReference Include="NUnit3TestAdapter" />
+    <PackageReference Include="Umbraco.Cms.Tests.Integration" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Common" />
+    <!-- Real Umbraco Automate, with its own composer, persistence and workflow host. -->
+    <PackageReference Include="Umbraco.Automate" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Umbraco's test settings: the test host reads its database type from them -->
+    <Content Include="appsettings.Tests.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

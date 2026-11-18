@@ -47,6 +47,13 @@ public sealed class AbilityAttribute(string id, string name) : Attribute
     /// and the change set tools that start a set, can say false: any other Write would run on live data.
     /// </summary>
     public bool UsesChangeSet { get; set; } = true;
+
+    /// <summary>
+    /// True for a building block: one small edit of many that together build or change an entity, such as setting one
+    /// value by its path. A model chains these. A surface that offers whole operations to a person, such as a workflow
+    /// step or a quick action, leaves them out and offers the whole operation instead.
+    /// </summary>
+    public bool Granular { get; set; }
 }
 
 /// <summary>
@@ -69,7 +76,9 @@ public sealed record AbilityDescriptor(
     bool Reversible,
     Type InputType,
     int Retries = 0,
-    bool UsesChangeSet = true)
+    bool UsesChangeSet = true,
+    Type? OutputType = null,
+    bool Granular = false)
 {
     public bool RequiresApproval => Kind == AbilityKind.Write && !Reversible;
 }
@@ -193,7 +202,9 @@ public abstract class AbilityBase<TInput, TOutput> : IAbility
             attribute.Reversible,
             typeof(TInput),
             attribute.Retries,
-            attribute.UsesChangeSet);
+            attribute.UsesChangeSet,
+            typeof(TOutput),
+            attribute.Granular);
 
         if (!attribute.UsesChangeSet && attribute.Kind == AbilityKind.Write && this is not ChangeSets.IChangeSetLifecycleAbility)
         {

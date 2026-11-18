@@ -340,6 +340,12 @@ public static class AbilitySchemas
     public static JsonElement InputSchema(Type inputType)
         => JsonSerializer.SerializeToElement(JsonSchemaExporter.GetJsonSchemaAsNode(SchemaOptions, inputType, ExporterOptions));
 
+    /// <summary>
+    /// The JSON schema of an ability's output (<see cref="AbilityDescriptor.OutputType"/>), for a caller that uses one
+    /// call's result in the next, such as an Automate step's bindings. Made the same way as an input schema.
+    /// </summary>
+    public static JsonElement OutputSchema(Type outputType) => InputSchema(outputType);
+
     private static JsonSerializerOptions CreateSchemaOptions()
     {
         var options = new JsonSerializerOptions(AbilityJson.Options) { NumberHandling = JsonNumberHandling.Strict };

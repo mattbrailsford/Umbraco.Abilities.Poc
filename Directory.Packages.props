@@ -28,6 +28,9 @@
       start, so the site fails without them.
     -->
     <PackageVersion Include="Azure.Identity" Version="1.13.1" />
+    <!-- Umbraco Automate for Umbraco 18, for the ability loader that registers abilities as Automate actions. -->
+    <PackageVersion Include="Umbraco.Automate" Version="18.6.0" />
+    <PackageVersion Include="Umbraco.Automate.Core" Version="18.6.0" />
     <PackageVersion Include="Umbraco.Cms.Tests.Integration" Version="[18.0.0,19)" />
     <!--
       Umbraco 18.0.0 pulls 10.0.0 in through MailKit and MimeKit, which has two denial of service advisories

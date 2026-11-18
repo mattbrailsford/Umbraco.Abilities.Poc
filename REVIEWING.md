@@ -31,6 +31,7 @@ Six source projects and two test projects. The arrows show what references what.
 Umbraco.Abilities            the framework: abilities and their tool shape, entity adapters, change sets
    ↑            ↑                          (references Umbraco.Cms.Core for UDIs, notifications, the background queue)
    │            ├── Umbraco.Abilities.ManagementApi   two endpoints: list the abilities, call one (for MCP Dev)
+   │            ├── Umbraco.Abilities.Automate        every ability as an Umbraco Automate action (workarounds marked FUDGE)
    │            │
 Umbraco.Abilities.AI         wraps every ability's tool as an M.E.AI AIFunction: the copilot's tools
    │            │

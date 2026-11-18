@@ -471,6 +471,51 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
     - Products' own editor aliases now reach the schema too. A plugin setting's `EditorUiAlias` (Automate's `[Field]`,
       Commerce's provider settings) becomes the field's `x-editor`. Real Commerce rules and rewards show their `Uc.`
       editors to a UI, and the model doesn't see them.
+33. **Every ability is an Automate action, against real Automate 18.6.0, with no code per ability.** The loader
+    (`src/Umbraco.Abilities.Automate`) depends on Abilities and Automate; abilities name no Automate type. One class,
+    `AbilityAction`, serves every ability: its alias, name and description, a settings form built from the input's JSON
+    Schema, and an output schema from its output type. A two-step automation (create a page, then set its title by
+    binding to the first step's key) runs on Automate's own workflow engine and saves as the workspace's service
+    account. It works today only with six workarounds, each listed with the Automate change that would remove it, in
+    [What the loader fudges](#what-the-loader-fudges). What else came up:
+    - **A Write step is a change set of one call.** Entity edits refuse to run outside a set, so each step makes one,
+      records its call, and applies it at once as the service account. Publishing the automation is the consent; a
+      Request Approval step before a step asks again on every run. A run is not one unit: if step two fails, step one's
+      page stays. Automate raises a notification when a run completes, so a whole run could be one set, applied at the
+      end. That is not built.
+    - **The generic entity abilities return untyped output.** `entity.create` returns `object`, whose schema is `true`
+      (any value). The editor can't list what later steps may bind to, though `${ steps.create.key }` works when the run
+      happens. Typed abilities (`entity.find`) list their fields.
+    - **Fields that depend on the entity type are a JSON box.** `entity.create`'s `fields` change with the type picked.
+      Automate's settings forms are fixed per action, so it's edited as JSON.
+    - **A failed ability stops the run.** Automate retries most failures, up to 10 times. An ability has already run its
+      own retries, and a Write that half ran shouldn't run again, so every failure maps to a category Automate doesn't
+      retry: invalid input to validation, access denied to authentication, the rest to configuration.
+    - **The service account must be an API user**, and its groups decide what every step may do. An ability's own
+      permission checks answer for that account, not the person who published the automation.
+    - **Testing it needed three things a site doesn't.** The test host runs no composers, so it adds Automate itself.
+      Umbraco's test database is SQLite in memory, so Automate gets a database file of its own. And a test host is never
+      elected to run background work, so it says it's the single server, or no step ever runs.
+
+34. **The building blocks a model chains aren't steps a person builds. Each page type's Create and Update are.** The
+    first loader made every ability an action, `entity.setValue` and `entity.addItem` included. Their forms asked for
+    an entity type, a key, a path such as `blocks/{key}/heading` and a value, and `entity.create` took its values as one
+    JSON box. A model reads the schema to fill those in; a person can't. So:
+    - An ability can say it's a building block (`Granular`). The generic edits are. A surface that offers whole
+      operations, such as Automate or a quick action, leaves them out. Delete, move and find stay: each is one whole
+      thing.
+    - Each subtype of each entity type that can be created gets two actions, such as "Create Article" and "Update
+      Article", grouped by entity type. The form is that type's own fields, with the data type's editor and its
+      configuration, as the backoffice shows them. Underneath they call `entity.create` and `entity.setValue` in one
+      change set, so there is still no code per product.
+    - **A form that shows the product's editors gets the product's values.** Umbraco's tree picker gives
+      `[{ "type": "document", "unique": "…" }]`; the field holds keys. So an adapter may read an editor's value
+      (`IEditorValueEntityAdapter`). The CMS adapter hands it to the property's handler, as when it loads a stored value.
+      A value bound from an earlier step is taken as the field's value already.
+    - Update leaves a value it isn't given as it is, so it can't clear one.
+    - The output is a typed summary (key, name, edit URL), so the editor can list what a later step binds to.
+    See [Can a person build steps from abilities?](#can-a-person-build-steps-from-abilities) for what this does and
+    doesn't show.
 
 ## Developer experience of adapters
 
@@ -894,8 +939,9 @@ and [#747](https://github.com/umbraco/Umbraco.AI/issues/747) (block settings use
 ## Checked against Automate's action contract
 
 Abilities were meant to show up as Automate actions with no code per ability. That was checked against the real
-Automate code (`v18/dev`, f0e150a6, 10-11-2026), read only, on 18-11-2026. Nothing was built. Paths are under
-`Umbraco.Automate/src/Umbraco.Automate.Core/` unless named.
+Automate code (`v18/dev`, f0e150a6, 10-11-2026), read only, on 18-11-2026. Paths are under
+`Umbraco.Automate/src/Umbraco.Automate.Core/` unless named. The loader was built later against Automate 18.6.0, with
+workarounds (finding 33, and [What the loader fudges](#what-the-loader-fudges)).
 
 **One Automate action per ability doesn't work today.** What does work today is one generic "Run ability" action with
 an ability picker, as Umbraco.AI's Run AI Agent action wraps agents. That isn't the aim: the aim is for Automate to take
@@ -912,7 +958,7 @@ a dependency on `Umbraco.Abilities` and load every ability as its own action, as
 | The acting user's permissions | Every step runs as the workspace's service account, an API user (`Execution/AutomationExecutionContext.cs:12`, `ServiceAccountKey`); the person who started the run isn't used | Yes, as that account. Ability checks then answer for a bot user, not the person |
 | Approval before a call that can't be undone | Only the Request Approval step can pause a run for a person: resuming is wired to its outcomes (`Execution/ActionStepBody.cs:501, 564`), and the pending list shows only that step | No per-call approval. A workflow needs an explicit approval step before the ability, which a publish check could require |
 | Safe retries | A step retries by default (`Automations/StepConfiguration.cs:53`), up to 10 times every 30 s (`Configuration/AutomateOptions.cs:148, 155`), for failures that aren't validation, configuration, authentication or cancellation. No idempotency key | Risky. A Write that times out after it acted is run again. `RunId:StepId` is stable across retries and could be the key |
-| Change sets | No such idea in Automate | An ability that records into a set returns success; applying the set is its own step, after approval |
+| Change sets | No such idea in Automate | Built: a Write step is a change set of one call, applied at once (finding 33). A whole run as one set, applied when the run completes, is not built |
 
 What it means:
 
@@ -930,14 +976,15 @@ What it means:
 ### Proposal: an ability loader in Automate
 
 Automate takes a dependency on `Umbraco.Abilities`, and a loader registers each ability as an action: its id, name,
-description, input form, output schema and outcomes, all from the ability. Abilities name no Automate type. The loader
-is a proposal, not built. The schema side of it is built here (finding 31): `x-editor`, `x-meta`, stripping both for
-models, the data type on CMS fields, and a value type's `format` (finding 32). A test-side form reader (`FormEditors`
-in `UiHintsTests`) shows the editor order below. Not built yet: the output type on the descriptor.
+description, input form, output schema and outcomes, all from the ability. Abilities name no Automate type. The schema
+side is built (finding 31): `x-editor`, `x-meta`, stripping both for models, the data type on CMS fields, and a value
+type's `format` (finding 32). The loader is built too, outside Automate, in `src/Umbraco.Abilities.Automate`, and runs
+against real Automate 18.6.0 (finding 33). It needs six workarounds, below. Outcomes are not built: no ability names
+any yet.
 
 **Inputs and outputs: abilities already have them.** Each ability has a named C# input type (`AbilityDescriptor.InputType`),
-with a description on every field and DataAnnotations, and a typed output (`AbilityBase<TInput, TOutput>`; the
-descriptor doesn't expose the output type yet, a small change). From these the framework makes JSON Schema, which the AI
+with a description on every field and DataAnnotations, and a typed output (`AbilityBase<TInput, TOutput>`, now on the
+descriptor as `OutputType`). From these the framework makes JSON Schema, which the AI
 tools and MCP already use. Abilities don't need Automate's attribute model.
 
 **Why the form should come from the schema, not the C# type.** Automate's form builder already takes any class's public
@@ -1022,8 +1069,51 @@ This proof of concept can show it works, not decide it.
 | Who | Change |
 | --- | --- |
 | CMS core (by RFC) | One shared editable model description that products build forms from, in place of each product's own copy |
-| Automate | Register step types as instances (from the loader), not only by attribute scan. Build a settings form and output schema from JSON Schema. A registry mapping `format` to an editor UI. Ideally typed bindings |
-| Abilities | Built: an `x-editor` keyword and an optional `[Editor]` attribute that sets it; a value type's `format`, from `[ValueFormat]`; a plugin setting's own editor as `x-editor`; an `x-meta` bag on fields, checked by the meta-schema and in code, and stripped for models; the data type on CMS entity fields. Still to do: expose the output type on the descriptor; an idempotency key, or a "don't retry" mark, for Writes that can't be undone; an event concept, if abilities are to be triggers |
+| Automate | The six changes in [What the loader fudges](#what-the-loader-fudges). A registry mapping `format` to an editor UI (the loader holds one for now). Ideally typed bindings |
+| Abilities | Built: an `x-editor` keyword and an optional `[Editor]` attribute that sets it; a value type's `format`, from `[ValueFormat]`; a plugin setting's own editor as `x-editor`; an `x-meta` bag on fields, checked by the meta-schema and in code, and stripped for models; the data type on CMS entity fields; the output type on the descriptor; the loader. Still to do: an idempotency key, or a "don't retry" mark, for Writes that can't be undone; typed output for the generic entity abilities; an event concept, if abilities are to be triggers |
+
+### Can a person build steps from abilities?
+
+This decides whether "write an operation once, and it shows up as an Automate action" holds for people, not only for
+models. Proven by tests against real Umbraco and Automate (`AbilityActionTests`), and not proven:
+
+| Question | Shown? |
+| --- | --- |
+| Each page type is a Create and an Update action, with that type's fields and editors | Yes |
+| A value from Umbraco's own editor (the tree picker) is read as the field's value | Yes, for the tree picker. Other editors whose value differs (media picker, rich text) aren't tried |
+| A missing mandatory value fails the step with the field's path, and nothing is saved | Yes |
+| Umbraco's property editors work inside Automate's settings form | **Yes, for the simple ones.** On the demo site (Clean starter kit, 18-11-2026), "Create Article" showed the text box, text area, date picker, content picker (limited to the Authors page by its data type), media picker, tags and toggles, each with its data type's settings and defaults. Picking an author worked. Rich text and block editors aren't in a form yet |
+| A useful page can be built from a form | **Not yet.** Fields that hold items (blocks, a discount's rules and rewards) are left out of the form. On the Clean starter kit most of a page is blocks, and a discount without rules is little use |
+| Descriptions read well to a person | No. They're written for models. The parent says "to move an existing one, use entity.move"; a field the adapter has no handler for says "a value in the 'Umbraco.ElementPicker' editor's own format"; Delete entity says "in the active change set", which a person never sees |
+| One broken action leaves the rest usable | **No.** Automate reads every action's output schema as an object. One "any value" schema (Delete and Move entity had one) made its action list fail, so the editor showed no actions at all. Fixed: only object schemas are given, with a test |
+| Our actions don't overlap Automate's own | No. Automate already has Create, Find, Get, Move and Publish Content. "Create Article" sits beside "Create Content". Which one an author should pick, and whether Automate's should be built from the abilities instead, is open |
+| Only types a person creates are listed | No. Every document type is, so the Clean starter kit also gets actions such as "Create Article Controls" |
+| The action list stays usable on a large site | Unknown. Two actions per page type and media type: about 20 on the Clean starter kit, 100 or more on big sites |
+| A page type added later shows up | Unknown. Automate builds its action list once. In the tests it was built after the types were made |
+| Pages are published | No. Create and Update save a draft. Publishing isn't an ability yet |
+| Update can clear a value | No. Empty means "keep it" |
+
+What decides it now is items: the simple editors work. Next: decide how a form edits items, with the product's own
+editor for the whole field (the block list editor, writing the field's items at once) or a step per item. Then: how
+these actions relate to Automate's own content actions, and descriptions written for people as well as models.
+
+### What the loader fudges
+
+The loader runs on Automate 18.6.0 as it ships. Where Automate has no way in, it works around it. Each workaround is
+marked `FUDGE` in the code. None needs a change to Automate's data or its editor, and each is small on Automate's side.
+
+| # | Workaround in the loader | Why it's needed | Change in Automate that removes it |
+| --- | --- | --- | --- |
+| 1 | `AddAbilityActions` replaces Automate's `ActionCollection` in DI after Umbraco's builder has built, with one that adds the abilities' actions to Automate's own | Actions are types found by an attribute scan, one instance per type (`ActionCollectionBuilder` is a lazy collection of types). Abilities are instances made at run time | Let a package add actions as instances, or through a provider Automate asks for its actions, such as `IActionProvider` |
+| 2 | Output is returned through a never-created subclass of `ActionBase`, to reach its protected `Success(output)` | `ActionResult.Success(object)` is internal, so an action that isn't an `ActionBase` can only succeed with no output | Make `ActionResult.Success(object)` and `SuccessWithOutcome(string, object)` public |
+| 3 | An `AbilitySettings` class holds the input as JSON, only so the action has a settings type | Automate resolves a step's settings, and passes them to the action, only when `SettingsType` is set | Pass the settings dictionary (or JSON) when an action has no settings type |
+| 4 | The action resolves `${ … }` bindings itself, with Automate's public `BindingEvaluator`, keeping a whole binding's type | Automate's resolver is internal, and only resolves string properties marked `SupportsBindings` on a C# settings class | Resolve bindings in dictionary or JSON settings, and keep a value's type when the setting is one whole binding |
+| 5 | The form says its type is `AbilitySettings` and each field's property type is `JsonNode` | `EditableModelSchema` and its fields describe C# properties; the form came from JSON Schema, so there are none | Let a form be built from data alone, or from JSON Schema directly |
+| 6 | `entity.create`'s `fields` is a JSON code editor | Automate has dynamic output schemas and outcomes, but not dynamic settings, and those fields change with the entity type picked | Dynamic settings forms (`GetSettingsSchemaAsync(settings)`), as output schemas already are |
+
+With 1 to 5 changed, the loader is one class per ability, one per entity action, and a registration line, with no
+workaround. 6 is what an
+editor gains: a form that changes with the entity type, as Run AI Agent's output changes with its agent.
 
 ## Checked against the existing MCP servers
 

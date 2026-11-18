@@ -1,3 +1,4 @@
+using Umbraco.Abilities.Automate;
 using Umbraco.Abilities.Cms;
 using Umbraco.Abilities.Commerce;
 using Umbraco.Abilities.Demo;
@@ -16,6 +17,10 @@ builder.CreateUmbracoBuilder()
     .AddNotificationAsyncHandler<UmbracoApplicationStartedNotification, DemoSetup>()
     .AddNotificationAsyncHandler<UmbracoApplicationStartedNotification, DemoShop>()
     .Build();
+
+// Every ability as an Automate action, and a Create and Update action per page type. After Umbraco's builder has
+// built: only then has Automate registered its actions (see FINDINGS, "What the loader fudges").
+builder.Services.AddAbilityActions();
 
 WebApplication app = builder.Build();
 

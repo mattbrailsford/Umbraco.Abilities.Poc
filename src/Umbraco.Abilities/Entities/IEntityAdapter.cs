@@ -88,6 +88,21 @@ public interface ITreeEntityAdapter : IEntityAdapter
     string ParentField { get; }
 }
 
+/// <summary>
+/// An adapter whose fields name the product's own editors (<c>x-editor</c>), where an editor's value isn't the field's
+/// value. A tree picker's editor gives <c>[{ "type": "document", "unique": "…" }]</c>; the field holds keys. A form that
+/// shows the product's editor hands its values here to become field values. Without it, an editor's value is taken as
+/// the field's.
+/// </summary>
+public interface IEditorValueEntityAdapter : IEntityAdapter
+{
+    /// <summary>
+    /// A root field's value as its editor gave it, as the field's value. Null leaves the field unset. Problems by
+    /// path (the field's alias) when the value can't be read.
+    /// </summary>
+    Task<System.Text.Json.Nodes.JsonNode?> FromEditorValueAsync(string? subtype, string field, System.Text.Json.Nodes.JsonNode editorValue, CancellationToken cancellationToken = default);
+}
+
 public sealed record EntitySubtype(string Alias, string Name);
 
 public sealed class EntityAdapterRegistry

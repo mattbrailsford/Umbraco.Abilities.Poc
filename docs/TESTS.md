@@ -348,3 +348,22 @@ endpoints.
   - `CommerceDiscountAdapterTests.A_code_another_discount_already_uses_is_a_problem_from_Commerce_before_the_set_is_applied`
 - A user without the Commerce section can't make a discount
   - `CommerceDiscountAdapterTests.A_user_without_the_Commerce_section_cannot_make_a_discount`
+
+## Against real Umbraco Automate
+
+- Every whole ability is an Automate action beside Automate's own. The change set abilities and the building blocks a model chains (`entity.setValue`, `entity.addItem`, ...) are not
+  - `AbilityActionTests.Every_whole_ability_is_an_Automate_action_beside_Automates_own_and_building_blocks_are_not`
+- Every action's output schema is an object, or none, as Automate's action list reads it: one that isn't breaks the list in its editor
+  - `AbilityActionTests.Every_actions_output_schema_is_an_object_or_none_as_Automates_action_list_reads_it`
+- Each page type gets a Create and an Update action, grouped under its entity type
+  - `AbilityActionTests.Each_page_type_gets_a_Create_and_an_Update_action_grouped_under_its_entity_type`
+- A Create form is the page type's own fields, with Umbraco's editors and their data type configuration
+  - `AbilityActionTests.A_Create_form_is_the_page_types_own_fields_with_Umbracos_editors_and_their_configuration`
+- An Update form picks the page and asks for no value: one left empty stays as it is
+  - `AbilityActionTests.An_Update_form_picks_the_page_and_asks_for_no_value`
+- A Create action returns a typed summary a later step can bind to
+  - `AbilityActionTests.A_Create_action_returns_a_typed_summary_a_later_step_can_bind_to`
+- An automation creates a page from Umbraco's editor values (a tree picker's), then updates it by binding to its key, as the service account
+  - `AbilityActionTests.An_automation_creates_a_page_from_Umbracos_editor_values_then_updates_it_as_the_service_account`
+- A value the page type refuses fails the step with the field's path, and nothing is saved
+  - `AbilityActionTests.A_value_the_page_type_refuses_fails_the_step_with_the_fields_path_and_saves_nothing`
