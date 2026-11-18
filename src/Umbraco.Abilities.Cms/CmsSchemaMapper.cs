@@ -52,6 +52,12 @@ internal sealed class CmsSchemaMapper(
         return new SchemaMap(new ObjectSchema(fields), type.Variations, properties);
     }
 
+    // The data type's configuration, by setting alias, as the backoffice hands it to the editor.
+    private static JsonObject? ConfigOf(Umbraco.Cms.Core.Models.IDataType dataType)
+        => dataType.ConfigurationData is { Count: > 0 } settings
+            ? System.Text.Json.JsonSerializer.SerializeToNode(settings) as JsonObject
+            : null;
+
     private async Task<PropertyMap> MapPropertyAsync(IPropertyType propertyType, CancellationToken cancellationToken)
     {
         var context = new PropertyEditorContext(propertyType, await dataTypes.GetAsync(propertyType.DataTypeKey));
@@ -59,12 +65,13 @@ internal sealed class CmsSchemaMapper(
         var field = await handler.DescribeAsync(context, cancellationToken);
 
         // Whatever the handler made, the field is the property: its alias, and the variation the property has. A UI
-        // gets the data type's own editor, and the data type's key to load its configuration, as the backoffice does.
+        // gets the data type's own editor with its configuration, as the backoffice gives the editor, and the data
+        // type's key.
         return new PropertyMap(context, handler, field with
         {
             Alias = propertyType.Alias,
             VariesBy = CmsVariants.DimensionsOf(propertyType.Variations),
-            Editor = field.Editor ?? (context.DataType?.EditorUiAlias is { Length: > 0 } editorUi ? new FieldEditor(editorUi) : null),
+            Editor = field.Editor ?? (context.DataType?.EditorUiAlias is { Length: > 0 } editorUi ? new FieldEditor(editorUi, ConfigOf(context.DataType)) : null),
             Meta = context.DataType is { } dataType
                 ? UiHints.WithMeta(field.Meta, DataTypeMetaKey, new JsonObject { ["key"] = dataType.Key, ["editorAlias"] = dataType.EditorAlias })
                 : field.Meta,

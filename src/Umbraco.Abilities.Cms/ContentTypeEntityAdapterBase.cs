@@ -161,7 +161,7 @@ public sealed class ContentValues
 /// </para>
 /// </summary>
 /// <typeparam name="TType">The product's content type: <c>IContentType</c>, <c>IMediaType</c> or <c>IMemberType</c>.</typeparam>
-public abstract class ContentTypeEntityAdapterBase<TType>(CmsContentSchemas schemas) : IAuthorizingEntityAdapter
+public abstract class ContentTypeEntityAdapterBase<TType>(CmsContentSchemas schemas) : IAuthorizingEntityAdapter, IEditorValueEntityAdapter
     where TType : class, IContentTypeComposition
 {
     protected CmsContentSchemas Schemas { get; } = schemas;
@@ -257,6 +257,22 @@ public abstract class ContentTypeEntityAdapterBase<TType>(CmsContentSchemas sche
         }
 
         return Schemas.Mapper.MapAsync(type, fields, cancellationToken);
+    }
+
+    /// <summary>
+    /// A property's value as its data type's editor gave it, read by the editor's handler, as a stored value is. The
+    /// name and parent aren't properties: their values are the field's.
+    /// </summary>
+    public async Task<JsonNode?> FromEditorValueAsync(string? subtype, string field, JsonNode editorValue, CancellationToken cancellationToken = default)
+    {
+        var map = await MapAsync(RequireType(subtype), cancellationToken);
+        if (!map.Properties.TryGetValue(field, out var property))
+        {
+            return editorValue;
+        }
+
+        var reader = new PropertyValueReader(property.Context, property.Field, ReadElementAsync);
+        return await property.Handler.ReadAsync(editorValue, reader, cancellationToken);
     }
 
     // ── Reading stored values ───────────────────────────────────────────────────────────────

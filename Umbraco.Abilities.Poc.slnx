@@ -5,6 +5,7 @@
     <Project Path="src/Umbraco.Abilities.Samples/Umbraco.Abilities.Samples.csproj" />
     <Project Path="src/Umbraco.Abilities.Cms/Umbraco.Abilities.Cms.csproj" />
     <Project Path="src/Umbraco.Abilities.Commerce/Umbraco.Abilities.Commerce.csproj" />
+    <Project Path="src/Umbraco.Abilities.Automate/Umbraco.Abilities.Automate.csproj" />
     <Project Path="src/Umbraco.Abilities.ManagementApi/Umbraco.Abilities.ManagementApi.csproj" />
     <Project Path="src/Umbraco.Cms.DraftSets/Umbraco.Cms.DraftSets.csproj" />
   </Folder>
@@ -12,6 +13,7 @@
     <Project Path="tests/Umbraco.Abilities.Tests/Umbraco.Abilities.Tests.csproj" />
     <Project Path="tests/Umbraco.Abilities.Cms.Tests/Umbraco.Abilities.Cms.Tests.csproj" />
     <Project Path="tests/Umbraco.Abilities.Commerce.Tests/Umbraco.Abilities.Commerce.Tests.csproj" />
+    <Project Path="tests/Umbraco.Abilities.Automate.Tests/Umbraco.Abilities.Automate.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/Umbraco.Abilities.ModelRun/Umbraco.Abilities.ModelRun.csproj" />

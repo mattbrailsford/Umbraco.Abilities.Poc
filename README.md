@@ -22,8 +22,8 @@ clients, Automate workflows, imports and bulk edits. Today each one does it its 
 Two ideas were already moving:
 
 - **Abilities**: write an operation once, and it shows up as an AI tool, an Automate action and an MCP tool. (Checked
-  since: Automate can't do this yet. It needs a loader for abilities and forms built from a schema. See
-  [FINDINGS](docs/FINDINGS.md#checked-against-automates-action-contract).)
+  since: a loader now does this against real Automate, with six workarounds that small Automate changes would remove.
+  See [FINDINGS](docs/FINDINGS.md#what-the-loader-fudges).)
 - **CMS Draft Sets**: hold content changes back from the live site, review them, then apply them as one unit.
 
 Neither covers the gap between them. An ability is one call, and one call can't build a discount with a tree of rules.
@@ -90,11 +90,13 @@ The details and the lessons are in [docs/FINDINGS.md](docs/FINDINGS.md). The tes
   Management API endpoints and an MCP proxy that plays the Umbraco CMS MCP Dev server are built. MCP Dev itself isn't
   changed. Claude Code has used the proxy against the demo site, signed in as an API user; other MCP clients are
   not tried. The proxy asks the person before a call that can't be undone (MCP elicitation); only headless Claude
-  Code, which can't answer, is tried. Automate actions and a backoffice editor would use the same abilities, but neither is
-  built here. Automate's action contract was checked, and a loader for abilities is proposed (see
-  [FINDINGS](docs/FINDINGS.md#checked-against-automates-action-contract)). Its schema side is built: fields can name
-  their editor (`x-editor`) and carry hints for a UI (`x-meta`), which models never see, and a value type names its
-  kind once (`format`). No real form reads them yet.
+  Code, which can't answer, is tried. Abilities are also Automate actions, against real Automate, and each page type
+  gets a Create and an Update action with its own fields and editors. An automation of two such steps runs and saves a
+  page. Not shown: that Umbraco's editors work inside Automate's form (never opened in a browser), or that a useful
+  page can be built without its blocks, which the forms leave out (see
+  [FINDINGS](docs/FINDINGS.md#can-a-person-build-steps-from-abilities)). It needs six workarounds in Automate, and each
+  Write step applies its own change set, so a run is not one unit. A backoffice editor would use the same abilities, but isn't
+  built here.
 - **A real model, at scale.** The tests script the tool calls. One model built discounts and pages, and edited pages, from
   text, on the samples and on the real demo site over MCP. Five real-site descriptions ran five times each and all 25
   were right (see [Against a real model](docs/FINDINGS.md#against-a-real-model)). That is one model and simple

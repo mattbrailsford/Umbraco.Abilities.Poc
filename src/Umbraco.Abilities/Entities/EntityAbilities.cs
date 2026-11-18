@@ -250,7 +250,7 @@ public sealed record CreateEntityInput(
     [property: Description("The subtype to create, for entity types that have them, e.g. a document's content type alias.")] string? Subtype = null,
     [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }. Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
 
-[Ability("entity.create", "Create entity", Kind = AbilityKind.Write, Reversible = true,
+[Ability("entity.create", "Create entity", Kind = AbilityKind.Write, Reversible = true, Granular = true,
     Description = "Creates an entity in the active change set. Nothing goes live until the set is applied. " +
                   "Returns the new key. Add items to items fields afterwards with entity.addItem.")]
 public sealed class CreateEntityAbility : EntityEditAbilityBase<CreateEntityInput>
@@ -275,7 +275,7 @@ public sealed record SetEntityValueInput(
     [property: Description("The new value, matching the field's schema. null clears it.")] JsonNode? Value,
     [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }. Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
 
-[Ability("entity.setValue", "Set entity value", Kind = AbilityKind.Write, Reversible = true,
+[Ability("entity.setValue", "Set entity value", Kind = AbilityKind.Write, Reversible = true, Granular = true,
     Description = "Sets the value at a path, in the active change set. A path goes down through items by key and objects by " +
                   "field. Give a culture for values that vary by culture. Problem paths from changeSet.validate have the same form.")]
 public sealed class SetEntityValueAbility : EntityEditAbilityBase<SetEntityValueInput>
@@ -296,7 +296,7 @@ public sealed record AddEntityItemInput(
     [property: Description("Optional zero-based position. Omit to append.")] int? Position = null,
     [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }. Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
 
-[Ability("entity.addItem", "Add entity item", Kind = AbilityKind.Write, Reversible = true,
+[Ability("entity.addItem", "Add entity item", Kind = AbilityKind.Write, Reversible = true, Granular = true,
     Description = "Adds a typed item to an items field, in the active change set. Returns the item's path; set its fields " +
                   "at '<item path>/<field>', and use '<item path>/<items field>' as fieldPath to add items inside it.")]
 public sealed class AddEntityItemAbility : EntityEditAbilityBase<AddEntityItemInput>
@@ -317,7 +317,7 @@ public sealed record RemoveEntityItemInput(
     [property: Description("Key of the item to remove.")] Guid ItemKey,
     [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }. Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
 
-[Ability("entity.removeItem", "Remove entity item", Kind = AbilityKind.Write, Reversible = true,
+[Ability("entity.removeItem", "Remove entity item", Kind = AbilityKind.Write, Reversible = true, Granular = true,
     Description = "Removes an item from an items field, in the active change set.")]
 public sealed class RemoveEntityItemAbility : EntityEditAbilityBase<RemoveEntityItemInput>
 {
@@ -336,7 +336,7 @@ public sealed record MoveEntityItemInput(
     [property: Description("New zero-based position.")] int Position,
     [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }. Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
 
-[Ability("entity.moveItem", "Move entity item", Kind = AbilityKind.Write, Reversible = true,
+[Ability("entity.moveItem", "Move entity item", Kind = AbilityKind.Write, Reversible = true, Granular = true,
     Description = "Moves an item within its items field, in the active change set.")]
 public sealed class MoveEntityItemAbility : EntityEditAbilityBase<MoveEntityItemInput>
 {
