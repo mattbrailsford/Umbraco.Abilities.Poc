@@ -80,7 +80,7 @@ public class ValueFormatTests
 
         var cron = Fields(await _agent.UiOkAsync("entity_getSchema", StepSchemas), "schedule").GetProperty("cron");
         Assert.Equal("Test.CronEditor", form.EditorFor(cron));
-        Assert.Equal("Test.EmailEditor", form.EditorFor(_agent.UiTool("email_send").JsonSchema.GetProperty("properties").GetProperty("to")));
+        Assert.Equal("Test.EmailEditor", form.EditorFor(_agent.UiTool("email_send").InputSchema.GetProperty("properties").GetProperty("to")));
 
         // A UI without the cron editor still shows a text box: an unknown format is only a hint.
         Assert.Equal("Umb.PropertyEditorUi.TextBox", new FormEditors([], []).EditorFor(cron));

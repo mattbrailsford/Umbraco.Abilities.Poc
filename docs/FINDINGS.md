@@ -516,6 +516,19 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
     - The output is a typed summary (key, name, edit URL), so the editor can list what a later step binds to.
     See [Can a person build steps from abilities?](#can-a-person-build-steps-from-abilities) for what this does and
     doesn't show.
+35. **Which tools a consumer offers is filters, not consumer code.** Each consumer (an AI chat, an MCP server,
+    Automate) used to filter and shape the abilities list itself, and the same rules were copied. Now a consumer
+    defines itself (its audience and capabilities) and lists the policies and filters it applies; a package adds its
+    own filter, policy or consumer to a registry. See [CONSUMERS.md](CONSUMERS.md). Building the first phase showed:
+    - **A tool's shape and its call are two things.** `AbilityTool` held both, bound to one conversation. Filters need a
+      shape they can copy and change with no session, so the call moved to `AbilityToolRunner`. Every consumer
+      now makes the tool, then runs it with the runner and its conversation.
+    - **`Name` had to stay the tool name.** Every consumer keys tools by it. The display name is `Title`, as in MCP.
+    - **Two filters protect, the rest tidy.** Leaving out what can't be undone where nobody can agree, and the change
+      set tools where no conversation keeps a set open, run for every consumer from capabilities it states. A consumer
+      can't skip them by leaving them out of its list.
+    - **A dropped tool has to stay listed.** "Why isn't this in Automate?" needs the dropped tool and the filter that
+      dropped it. Notes are signed by the provider, not the filter, so the package and policy are always right.
 
 ## Developer experience of adapters
 

@@ -813,7 +813,7 @@ public sealed class AbilityInvoker(AbilityRegistry abilities, ChangeSetService c
 
         if (changeSets.CurrentId is { } setId
             && ability.Descriptor.Kind == AbilityKind.Write
-            && ability is not IChangeSetLifecycleAbility)
+            && !ability.Descriptor.ManagesChangeSets)
         {
             return await changeSets.RecordAsync(setId, ability, input, context, cancellationToken);
         }

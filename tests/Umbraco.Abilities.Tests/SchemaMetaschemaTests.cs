@@ -21,7 +21,7 @@ public class SchemaMetaschemaTests
     {
         // As a UI reads them, with x-editor and x-meta: a model's copy is the same minus those.
         var problems = _agent.Tools.Keys
-            .SelectMany(tool => SchemaMetaschema.Problems(tool, _agent.UiTool(tool).JsonSchema))
+            .SelectMany(tool => SchemaMetaschema.Problems(tool, _agent.UiTool(tool).InputSchema))
             .ToList();
 
         Assert.True(problems.Count == 0, string.Join("\n", problems));

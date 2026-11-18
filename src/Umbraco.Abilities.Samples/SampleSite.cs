@@ -1,4 +1,5 @@
 using Umbraco.Abilities.ChangeSets;
+using Umbraco.Abilities.Consumers;
 using Umbraco.Abilities.Entities;
 using Umbraco.Abilities.Samples.Acme;
 using Umbraco.Abilities.Samples.Automate;
@@ -22,10 +23,13 @@ public sealed class SampleSite
     {
         ChangeSets = new ChangeSetService(new InMemoryChangeSetStore(), Abilities, Adapters, ItemTypes, ChangeSetAccessor, events, background, TimeSpan.Zero);
         Invoker = new AbilityInvoker(Abilities, ChangeSets);
+        Runner = new AbilityToolRunner(Invoker);
+        Tools = new AbilityToolProvider(Abilities, Filters, Policies, Consumers);
 
         // Framework: the generic entity and change set abilities.
         Abilities
             .AddFrameworkAbilities(Adapters, ItemTypes, ChangeSets);
+        Filters.AddFrameworkFilters(Policies);
 
         // CMS content.
         Pages = new CmsPageAdapter(ContentDatabase, ItemTypes);
@@ -66,6 +70,9 @@ public sealed class SampleSite
         Pages.Access = Media.Access = Access;
         Collections.Access = Discounts.Access = Access;
         Workflows.Access = Access;
+
+        // As the site starts: a filter, policy or consumer named wrongly stops it here.
+        Tools.Validate();
     }
 
     public SampleAccess Access { get; } = new();
@@ -102,6 +109,19 @@ public sealed class SampleSite
     public ChangeSetService ChangeSets { get; }
 
     public AbilityInvoker Invoker { get; }
+
+    /// <summary>Runs a tool's calls, for every consumer.</summary>
+    public AbilityToolRunner Runner { get; }
+
+    /// <summary>The filters, policies and consumers that decide which tools each consumer offers.</summary>
+    public AbilityFilterRegistry Filters { get; } = new();
+
+    public AbilityPolicyRegistry Policies { get; } = new();
+
+    public AbilityConsumerRegistry Consumers { get; } = new();
+
+    /// <summary>Each consumer's tools.</summary>
+    public AbilityToolProvider Tools { get; }
 
     public Outbox Outbox { get; } = new();
 

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -6,6 +7,7 @@ using System.Text.Json.Schema;
 using System.Text.Json.Serialization;
 
 using Umbraco.Abilities.ChangeSets;
+using Umbraco.Abilities.Consumers;
 
 namespace Umbraco.Abilities;
 
@@ -46,219 +48,118 @@ public sealed class AbilityToolSession(Guid userKey)
     public void Close(Guid changeSetId) => _open.Remove(changeSetId);
 }
 
+/// <summary>How a tool's call works in a change set.</summary>
+public enum ChangeSetMode
+{
+    /// <summary>The ability never works in a change set: a read that can't depend on one, or a tool that starts one.</summary>
+    None,
+
+    /// <summary>
+    /// The caller chooses the set: the one it names with <c>changeSetId</c>, or the only one open in its conversation.
+    /// The default for every ability that uses a change set.
+    /// </summary>
+    Caller,
+}
+
 /// <summary>
-/// One ability as a tool, for any surface: an AI tool, a Management API endpoint, an MCP tool, an Automate action.
-/// Each surface wraps it; none repeats it. It gives the tool's name, description and input schema, and runs a call.
+/// One ability as one consumer is offered it: its name, description and schemas, shaped by that consumer's filters
+/// (see <see cref="Consumers.AbilityToolProvider"/>). A consumer adapter translates it, into an AI function, an MCP tool
+/// or an Automate action, and runs it with <see cref="AbilityToolRunner"/>. Nothing here runs a call.
 /// <para>
-/// Every tool that uses a change set (<see cref="AbilityAttribute.UsesChangeSet"/>) also takes an optional
-/// <c>changeSetId</c>, added here so no ability declares it. A call works in the set it names, or else the only set open
-/// in the conversation, which is ambient for that call only (<see cref="IChangeSetAccessor"/>). With two or more open, a
-/// call must name one, so an edit never lands in a set the caller didn't mean. Every result says which set the call
-/// used.
-/// </para>
-/// <para>
-/// A call to an ability that can't be undone (<see cref="AbilityDescriptor.RequiresApproval"/>) runs only when the
-/// surface says the person agreed to it. That is decided per call: in a change set the call is only recorded, which can
-/// be undone, so it needs no consent; applying the set does. This is consent, not review: the person the caller acts for says yes, so a
-/// model can't post by accident. How the surface asks is its own: an AI chat pauses for the person, an MCP server asks
-/// through its client, an HTTP caller sends a header once the person agreed. Without it, nothing is done.
+/// A tool starts as its ability, as it is (<see cref="AbilityTool(IAbility)"/>). A filter changes it with <c>with</c>,
+/// drops it (<see cref="Drop"/>), or puts several tools in its place, and leaves a note saying why.
 /// </para>
 /// </summary>
-public sealed class AbilityTool
+public sealed record AbilityTool
 {
-    /// <summary>The argument every tool that uses a change set takes to name it.</summary>
+    /// <summary>The argument a tool in <see cref="ChangeSetMode.Caller"/> mode takes to name its change set.</summary>
     public const string ChangeSetIdArgument = "changeSetId";
 
     private const string ChangeSetIdDescription =
         "The change set to work in. Leave it out when only one change set is open in this conversation, and that one is " +
         "used. Required when two or more are open. Every result says which change set it used.";
 
-    private readonly IAbility _ability;
-    private readonly AbilityInvoker _invoker;
-    private readonly AbilityToolSession _session;
-
-    public AbilityTool(IAbility ability, AbilityInvoker invoker, AbilityToolSession session)
+    /// <summary>The ability as a tool, unshaped: its own id, name, description and schemas.</summary>
+    [SetsRequiredMembers]
+    public AbilityTool(IAbility ability)
     {
-        _ability = ability;
-        _invoker = invoker;
-        _session = session;
-        var schema = AbilitySchemas.InputSchema(ability.Descriptor.InputType);
-        JsonSchema = ability.Descriptor.UsesChangeSet ? WithChangeSetId(schema) : schema;
+        var descriptor = ability.Descriptor;
+        Ability = ability;
+        Id = descriptor.Id;
+        Title = descriptor.Name;
+        Description = descriptor.Description;
+        InputSchema = AbilitySchemas.InputSchema(descriptor.InputType);
+        OutputSchema = descriptor.OutputType is { } output ? AbilitySchemas.OutputSchema(output) : null;
+        ChangeSetMode = descriptor.UsesChangeSet ? ChangeSetMode.Caller : ChangeSetMode.None;
     }
 
-    public AbilityDescriptor Descriptor => _ability.Descriptor;
-
-    /// <summary>Tool names allow letters, digits, _ and -, so <c>entity.addItem</c> becomes <c>entity_addItem</c>.</summary>
-    public string Name => ToToolName(_ability.Descriptor.Id);
-
-    public string Description => _ability.Descriptor.Description;
-
-    /// <summary>The JSON schema of the tool's input: the ability's input, plus <c>changeSetId</c> when it uses a change set.</summary>
-    public JsonElement JsonSchema { get; }
-
-    public static string ToToolName(string abilityId) => abilityId.Replace('.', '_');
+    /// <summary>The ability this tool calls.</summary>
+    public required IAbility Ability { get; init; }
 
     /// <summary>
-    /// Runs one call with the tool's input as a JSON object. Failures come back as data, never as exceptions, so a
-    /// caller can correct an input failure and stop on the others. The result is the same shape for every surface: see
-    /// <see cref="AbilityToolResult"/>.
+    /// The tool's id: its ability's id, with a suffix when a filter split it into several, such as
+    /// <c>entity.create:document</c>. Unique within one consumer's tools.
     /// </summary>
-    /// <param name="arguments">The tool's input.</param>
-    /// <param name="consent">
-    /// The person's consent to this call. Only a call that can't be undone needs it: an ability that requires approval,
-    /// run live rather than recorded in a change set. Without it, such a call does nothing and fails with
-    /// <see cref="AbilityOperationStatus.ApprovalRequired"/> and an <see cref="AbilityToolResult.Approval"/> request:
-    /// the surface asks the person that question and, on yes, calls again with <see cref="AbilityConsent.For"/> its id.
-    /// </param>
-    /// <param name="cancellationToken">Stops the call.</param>
-    public async Task<AbilityToolResult> InvokeAsync(JsonObject arguments, AbilityConsent consent = default, CancellationToken cancellationToken = default)
+    public required string Id { get; init; }
+
+    /// <summary>The name a caller calls it by: the id, with only the characters tool names allow (<c>entity_setValue</c>).</summary>
+    public string Name => ToToolName(Id);
+
+    /// <summary>What a person calls it, such as "Set a value".</summary>
+    public required string Title { get; init; }
+
+    /// <summary>What it does, as the consumer's reader reads it.</summary>
+    public required string Description { get; init; }
+
+    /// <summary>The JSON schema of the tool's input.</summary>
+    public required JsonElement InputSchema { get; init; }
+
+    /// <summary>The JSON schema of the tool's output, for a caller that uses one result in its next call. Null when it has none.</summary>
+    public JsonElement? OutputSchema { get; init; }
+
+    /// <summary>
+    /// Arguments the tool always calls its ability with, hidden from the caller. A filter that splits a tool by an
+    /// argument fixes it here.
+    /// </summary>
+    public IReadOnlyDictionary<string, JsonElement> FixedArguments { get; init; } = new Dictionary<string, JsonElement>();
+
+    /// <summary>How a call works in a change set.</summary>
+    public ChangeSetMode ChangeSetMode { get; init; }
+
+    /// <summary>Why a filter dropped the tool. Null while it is kept. A dropped tool stays listed, so its reason can be shown.</summary>
+    public FilterNote? Dropped { get; init; }
+
+    /// <summary>What each filter did to the tool, and why, in order.</summary>
+    public IReadOnlyList<FilterNote> Notes { get; init; } = [];
+
+    /// <summary>Whether a filter dropped the tool.</summary>
+    public bool IsDropped => Dropped is not null;
+
+    /// <summary>The ability's own facts.</summary>
+    public AbilityDescriptor Descriptor => Ability.Descriptor;
+
+    /// <summary>Tool names allow letters, digits, _ and -, so <c>entity.addItem</c> becomes <c>entity_addItem</c>.</summary>
+    public static string ToToolName(string id) => id.Replace('.', '_').Replace(':', '_');
+
+    /// <summary>The tool dropped, with the reason. A filter returns this to leave the tool out.</summary>
+    public AbilityTool Drop(string reason)
     {
-        var changeSets = _invoker.ChangeSets;
-        var input = new JsonObject();
-        Guid? named = null;
-        foreach (var (name, value) in arguments)
-        {
-            if (Descriptor.UsesChangeSet && name == ChangeSetIdArgument)
-            {
-                if (value is null || value.GetValueKind() == JsonValueKind.Null)
-                {
-                    continue;
-                }
-
-                if (value.GetValueKind() != JsonValueKind.String || !Guid.TryParse(value.GetValue<string>(), out var id))
-                {
-                    return AbilityToolResult.From(AbilityResult.Fail(AbilityOperationStatus.InvalidInput, "changeSetId must be a change set's id.",
-                        [new Problem(ChangeSetIdArgument, "Not an id.")]), null);
-                }
-
-                named = id;
-                continue;
-            }
-
-            input[name] = value?.DeepClone();
-        }
-
-        // Sets applied or discarded since the last call (here or elsewhere) are no longer open.
-        foreach (var closed in _session.OpenChangeSetIds.Where(id => changeSets.Find(id) is null).ToList())
-        {
-            _session.Close(closed);
-        }
-
-        ChangeSet? used;
-        if (named is { } given)
-        {
-            // A set that is named must exist: never fall back to live data because of a wrong or stale id.
-            used = changeSets.Find(given);
-            if (used is null)
-            {
-                return AbilityToolResult.From(AbilityResult.Fail(AbilityOperationStatus.InvalidInput,
-                    $"No change set {given}. It may have been applied or discarded.",
-                    [new Problem(ChangeSetIdArgument, "Not found.")]), null);
-            }
-
-            _session.Open(given);
-        }
-        else if (Descriptor.UsesChangeSet && _session.OpenChangeSetIds.Count > 1)
-        {
-            // Guessing between two open sets could put an edit in the wrong one, so ask.
-            var open = string.Join(", ", _session.OpenChangeSetIds.Select(id => $"'{changeSets.Get(id).Name}' ({id})"));
-            return AbilityToolResult.From(AbilityResult.Fail(AbilityOperationStatus.InvalidInput,
-                $"{_session.OpenChangeSetIds.Count} change sets are open in this conversation: {open}. Name the one to use with changeSetId.",
-                [new Problem(ChangeSetIdArgument, "Required while more than one change set is open.")]), null);
-        }
-        else
-        {
-            used = Descriptor.UsesChangeSet && _session.ChangeSetId is { } only ? changeSets.Find(only) : null;
-        }
-
-        var context = new AbilityContext(_session.UserKey);
-        if (await CheckConsentAsync(input, used, consent, context, cancellationToken) is { } refused)
-        {
-            return refused;
-        }
-
-        AbilityResult result;
-        using (changeSets.Use(used?.Id))
-        {
-            result = await _invoker.InvokeAsync(_ability.Descriptor.Id, input, context, cancellationToken);
-        }
-
-        var usedSet = used is null ? null : new AbilityToolChangeSet(used.Id, used.Name);
-        if (result.Result is ChangeSetCreated created)
-        {
-            _session.Open(created.ChangeSetId);
-            usedSet = new AbilityToolChangeSet(created.ChangeSetId, created.Name);
-        }
-        else if (used is not null && changeSets.Find(used.Id) is null)
-        {
-            // Applied or discarded: it leaves the conversation.
-            _session.Close(used.Id);
-            usedSet = usedSet! with { Open = false };
-        }
-
-        return AbilityToolResult.From(result, usedSet);
+        var note = new FilterNote(reason);
+        return this with { Dropped = note, Notes = [.. Notes, note] };
     }
 
-    // Null when the call may run. In a set, a Write is recorded, not run (see AbilityInvoker), so only a call that runs
-    // live needs consent. Applying with no set open needs none: it fails on its own.
-    private async Task<AbilityToolResult?> CheckConsentAsync(JsonObject input, ChangeSet? used, AbilityConsent consent, AbilityContext context, CancellationToken cancellationToken)
+    /// <summary>The tool with a note of what a filter did to it, and why.</summary>
+    public AbilityTool Note(string text) => this with { Notes = [.. Notes, new FilterNote(text)] };
+
+    /// <summary>The tool with the <c>changeSetId</c> argument in its input schema, when its mode is <see cref="ChangeSetMode.Caller"/>.</summary>
+    public AbilityTool WithChangeSetIdArgument()
     {
-        var lifecycle = _ability is IChangeSetLifecycleAbility;
-        var recorded = used is not null && Descriptor.Kind == AbilityKind.Write && !lifecycle;
-        if (!Descriptor.RequiresApproval || recorded || (lifecycle && used is null) || consent.IsGiven)
+        if (ChangeSetMode != ChangeSetMode.Caller)
         {
-            return null;
+            return this;
         }
 
-        // The approval binds to the call as the ability gets it: the input without the change set id, which is bound apart.
-        var call = input.ToJsonString();
-        var set = lifecycle ? used : null;
-        string? why = null;
-        if (consent.ApprovalId is { } id)
-        {
-            why = _invoker.Approvals.Consume(id, context, Descriptor.Id, call, set);
-            if (why is null)
-            {
-                return null;
-            }
-        }
-
-        var summary = set is null ? null : await _invoker.ChangeSets.SummarizeAsync(set.Id, cancellationToken);
-        var request = _invoker.Approvals.Request(context, Descriptor.Id, call, set, Question(input, summary), summary);
-        var message = $"{(why is null ? string.Empty : why + " ")}{Descriptor.Name} can't be undone, so the person you act for must agree to it first. Nothing was done.";
-        return AbilityToolResult.From(AbilityResult.Fail(AbilityOperationStatus.ApprovalRequired, message, []),
-            used is null ? null : new AbilityToolChangeSet(used.Id, used.Name)) with { Approval = request };
-    }
-
-    // What to ask the person: the call in plain words, and for a change set what applying it does.
-    private string Question(JsonObject input, ChangeSetSummary? summary)
-    {
-        if (summary is null)
-        {
-            return input.Count == 0
-                ? $"Allow \"{Descriptor.Name}\"? It can't be undone."
-                : $"Allow \"{Descriptor.Name}\"? It can't be undone.\nWith: {input.ToJsonString()}";
-        }
-
-        var lines = new List<string> { $"{Descriptor.Name} \"{summary.Name}\"? It can't be undone." };
-        lines.AddRange(summary.Entities.Select(e => $"- {e.TypeName ?? e.Entity.EntityType} \"{e.Entity.Name}\" ({e.Change})"));
-        if (summary.NeedsConsent is { Count: > 0 } needs)
-        {
-            lines.Add("It also does these, which can't be undone either:");
-            lines.AddRange(needs.Select(n => $"- {n}"));
-        }
-
-        if (summary.Rebased.Count > 0)
-        {
-            lines.Add($"{summary.Rebased.Count} of these were changed by someone else since; their changes are kept.");
-        }
-
-        return string.Join("\n", lines);
-    }
-
-    private static JsonElement WithChangeSetId(JsonElement schema)
-    {
-        var node = JsonNode.Parse(schema.GetRawText())!.AsObject();
+        var node = JsonNode.Parse(InputSchema.GetRawText())!.AsObject();
         if (node["properties"] is not JsonObject properties)
         {
             node["properties"] = properties = [];
@@ -270,9 +171,11 @@ public sealed class AbilityTool
             ["format"] = "uuid",
             ["description"] = ChangeSetIdDescription,
         };
-        return JsonSerializer.SerializeToElement(node);
+        return this with { InputSchema = JsonSerializer.SerializeToElement(node) };
     }
+
 }
+
 
 /// <summary>
 /// What a tool call returns, on every surface. The same shape as the CMS's Attempt: whether it worked and a status,

@@ -33,7 +33,7 @@ namespace Umbraco.Abilities.ManagementApi;
 [ApiVersion("1.0")]
 [VersionedApiBackOfficeRoute("abilities")]
 [ApiExplorerSettings(GroupName = "Abilities")]
-public sealed class AbilitiesController(AbilityInvoker invoker, IBackOfficeSecurityAccessor security) : ManagementApiControllerBase
+public sealed class AbilitiesController(AbilityInvoker invoker, AbilityToolRunner runner, IBackOfficeSecurityAccessor security) : ManagementApiControllerBase
 {
     /// <summary>The header a caller sends with an approval's id, once the person agreed to the call it was made for.</summary>
     public const string ApprovalHeader = "Umb-Approval";
@@ -47,11 +47,9 @@ public sealed class AbilitiesController(AbilityInvoker invoker, IBackOfficeSecur
     [ProducesResponseType<IReadOnlyList<AbilityResponseModel>>(StatusCodes.Status200OK)]
     public IActionResult List(CancellationToken cancellationToken)
     {
-        // The tool shape doesn't depend on who calls, so any session will do.
-        var session = new AbilityToolSession(Guid.Empty);
         return Ok(invoker.Abilities.All
             .OrderBy(ability => ability.Descriptor.Id, StringComparer.Ordinal)
-            .Select(ability => AbilityResponseModel.From(new AbilityTool(ability, invoker, session)))
+            .Select(ability => AbilityResponseModel.From(new AbilityTool(ability).WithChangeSetIdArgument()))
             .ToList());
     }
 
@@ -76,7 +74,8 @@ public sealed class AbilitiesController(AbilityInvoker invoker, IBackOfficeSecur
         }
 
         // A conversation of one call, for the signed-in user. The change set comes from the call, never from earlier ones.
-        var tool = new AbilityTool(ability, invoker, new AbilityToolSession(CurrentUserKey(security)));
+        var tool = new AbilityTool(ability).WithChangeSetIdArgument();
+        var session = new AbilityToolSession(CurrentUserKey(security));
         var arguments = input ?? [];
         if (ability.Descriptor.UsesChangeSet
             && !arguments.ContainsKey(AbilityTool.ChangeSetIdArgument)
@@ -89,7 +88,7 @@ public sealed class AbilitiesController(AbilityInvoker invoker, IBackOfficeSecur
         var consent = Request.Headers.TryGetValue(ApprovalHeader, out var approval) && Guid.TryParse(approval.ToString(), out var approvalId)
             ? AbilityConsent.For(approvalId)
             : AbilityConsent.None;
-        var result = await tool.InvokeAsync(arguments, consent, cancellationToken);
+        var result = await runner.InvokeAsync(tool, arguments, session, consent, cancellationToken);
         return StatusCode(StatusCodeOf(result), result.ToJson());
     }
 
@@ -135,5 +134,5 @@ public sealed record AbilityResponseModel(
             tool.Descriptor.Kind.ToString(),
             tool.Descriptor.RequiresApproval,
             tool.Descriptor.UsesChangeSet,
-            tool.JsonSchema);
+            tool.InputSchema);
 }

@@ -68,6 +68,14 @@ public sealed class EntityKeyAttribute(params string[] entityTypes) : Attribute
     public string EntityType => EntityTypes[0];
 }
 
+/// <summary>
+/// The facts an ability states about itself, from its <see cref="AbilityAttribute"/>. Consumers' filters read them to
+/// decide what to offer; an ability never names a consumer.
+/// </summary>
+/// <param name="ManagesChangeSets">
+/// True for an ability that creates, applies or discards change sets itself (<see cref="ChangeSets.IChangeSetLifecycleAbility"/>).
+/// It is never recorded into a set, and only a consumer that keeps a conversation open can offer it.
+/// </param>
 public sealed record AbilityDescriptor(
     string Id,
     string Name,
@@ -78,7 +86,8 @@ public sealed record AbilityDescriptor(
     int Retries = 0,
     bool UsesChangeSet = true,
     Type? OutputType = null,
-    bool Granular = false)
+    bool Granular = false,
+    bool ManagesChangeSets = false)
 {
     public bool RequiresApproval => Kind == AbilityKind.Write && !Reversible;
 }
@@ -204,9 +213,10 @@ public abstract class AbilityBase<TInput, TOutput> : IAbility
             attribute.Retries,
             attribute.UsesChangeSet,
             typeof(TOutput),
-            attribute.Granular);
+            attribute.Granular,
+            ManagesChangeSets: this is ChangeSets.IChangeSetLifecycleAbility);
 
-        if (!attribute.UsesChangeSet && attribute.Kind == AbilityKind.Write && this is not ChangeSets.IChangeSetLifecycleAbility)
+        if (!attribute.UsesChangeSet && attribute.Kind == AbilityKind.Write && !Descriptor.ManagesChangeSets)
         {
             throw new InvalidOperationException(
                 $"{attribute.Id} is a Write, so it must use the change set: outside one it would change live data.");

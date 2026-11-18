@@ -81,7 +81,7 @@ public sealed class AbilityAction : IAction
             context,
             Name,
             writes: _ability.Descriptor is { UsesChangeSet: true, Kind: AbilityKind.Write },
-            async session => StepCall.From(await new AbilityTool(_ability, _step.Invoker, session).InvokeAsync(input, AbilityConsent.Given, cancellationToken)),
+            async session => StepCall.From(await _step.Runner.InvokeAsync(new AbilityTool(_ability), input, session, AbilityConsent.Given, cancellationToken)),
             output: null,
             cancellationToken);
     }
@@ -110,7 +110,7 @@ public sealed class AbilityActionOptions
     /// person builds a step from a form, so entities get whole Create and Update actions instead (<see cref="EntityActions"/>).
     /// </summary>
     public Func<IAbility, bool> Include { get; set; } = ability =>
-        ability is not IChangeSetLifecycleAbility && ability.Descriptor.Kind != AbilityKind.Explain && !ability.Descriptor.Granular;
+        !ability.Descriptor.ManagesChangeSets && ability.Descriptor.Kind != AbilityKind.Explain && !ability.Descriptor.Granular;
 
     /// <summary>
     /// Whether every entity type that can be created gets a Create and an Update action per subtype, such as "Create

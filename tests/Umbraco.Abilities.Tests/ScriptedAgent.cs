@@ -73,14 +73,14 @@ public sealed class ScriptedAgent
     /// </summary>
     public async Task<JsonElement> UiOkAsync(string tool, string argumentsJson)
     {
-        var result = (await UiTool(tool).InvokeAsync(JsonNode.Parse(argumentsJson)!.AsObject(), AbilityConsent.Given)).ToJson();
+        var result = (await _site.Runner.InvokeAsync(UiTool(tool), JsonNode.Parse(argumentsJson)!.AsObject(), Session, AbilityConsent.Given)).ToJson();
         Assert.True(result.GetProperty("success").GetBoolean(), $"{tool} failed: {result}");
         return result.GetProperty("result");
     }
 
     /// <summary>An ability's tool as a UI reads it: its input schema keeps the keywords meant for UIs.</summary>
     public AbilityTool UiTool(string tool)
-        => new(_site.Abilities.All.Single(a => AbilityTool.ToToolName(a.Descriptor.Id) == tool), _site.Invoker, Session);
+        => new AbilityTool(_site.Abilities.All.Single(a => AbilityTool.ToToolName(a.Descriptor.Id) == tool)).WithChangeSetIdArgument();
 
     /// <summary>Calls a tool and asserts it succeeded. Returns its output.</summary>
     public async Task<JsonElement> OkAsync(string tool, string argumentsJson)
