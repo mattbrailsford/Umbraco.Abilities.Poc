@@ -21,6 +21,15 @@ public interface IAbilityFilter
     IEnumerable<AbilityTool> Apply(AbilityTool tool, AbilityFilterContext context);
 }
 
+/// <summary>
+/// A filter that also shapes a tool's results, as it shaped its schemas: a result can hold a schema, such as the one
+/// <c>entity.getSchema</c> returns. The provider runs it on every result of the consumer's tools.
+/// </summary>
+public interface IAbilityResultFilter : IAbilityFilter
+{
+    System.Text.Json.JsonElement ShapeResult(AbilityTool tool, System.Text.Json.JsonElement result, AbilityFilterContext context);
+}
+
 /// <summary>What a filter can read: the consumer whose list it is shaping, and the site's services.</summary>
 public sealed record AbilityFilterContext(IAbilityConsumer Consumer, IServiceProvider? Services = null);
 

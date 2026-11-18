@@ -9,8 +9,9 @@ using ModelContextProtocol.Server;
 namespace Umbraco.Abilities.McpProxy;
 
 /// <summary>
-/// What the Umbraco CMS MCP Dev server would add to use abilities: one MCP tool per ability a site lists, each call
-/// forwarded to the Management API. It knows nothing about any ability or product. A new ability on the site is a new
+/// What the Umbraco CMS MCP Dev server would add to use abilities: one MCP tool per tool the site lists for its
+/// <c>mcp</c> consumer, each call forwarded to the Management API. It knows nothing about any ability or product, and
+/// filters and shapes nothing: the site's consumer does, schemas and results alike. A new ability on the site is a new
 /// tool here, with no change to this code.
 /// <para>
 /// One proxy is one MCP session. It remembers the change set the session has open, as the AI tools' conversation does,
@@ -31,6 +32,11 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
     /// <summary>The Management API path the abilities are listed at, and called under.</summary>
     public const string AbilitiesPath = "/umbraco/management/api/v1/abilities";
 
+    /// <summary>The consumer this server is, on the site, named in every request's <c>Umb-Consumer</c> header.</summary>
+    public const string Consumer = "mcp";
+
+    private const string ConsumerHeader = "Umb-Consumer";
+
     private const string ChangeSetHeader = "Umb-Change-Set";
     private const string ApprovalHeader = "Umb-Approval";
 
@@ -39,6 +45,9 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
     private const string ChangeSetIdArgument = "changeSetId";
 
     private Dictionary<string, ListedAbility> _abilities = [];
+
+    // The site's client, naming this server's consumer once, for every request.
+    private readonly HttpClient _umbraco = NamingConsumer(umbraco);
 
     /// <summary>The change set this session works in when a call doesn't name one. Null when none is open.</summary>
     public Guid? OpenChangeSetId { get; private set; }
@@ -60,7 +69,7 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
 
     private async Task<Dictionary<string, ListedAbility>> ListAsync(CancellationToken cancellationToken)
     {
-        var listed = await umbraco.GetFromJsonAsync<JsonElement>(AbilitiesPath, cancellationToken);
+        var listed = await _umbraco.GetFromJsonAsync<JsonElement>(AbilitiesPath, cancellationToken);
         _abilities = listed.EnumerateArray().Select(ListedAbility.From).ToDictionary(ability => ability.Tool.Name);
         return _abilities;
     }
@@ -111,7 +120,7 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
         Remember(body);
         return new CallToolResult
         {
-            Content = [new TextContentBlock { Text = ForModels(text) }],
+            Content = [new TextContentBlock { Text = text }],
             IsError = !success.GetBoolean(),
         };
     }
@@ -132,7 +141,7 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
             request.Headers.Add(ApprovalHeader, id.ToString());
         }
 
-        return await umbraco.SendAsync(request, cancellationToken);
+        return await _umbraco.SendAsync(request, cancellationToken);
     }
 
     // Asks the person, through their MCP client, the site's question about one call. Null when they said yes.
@@ -187,29 +196,11 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
         }
     }
 
-    // The site's schemas carry x-editor and x-meta for UIs, such as a form built from an input schema. A model doesn't
-    // need them: they cost tokens and could mislead it. MCP Dev would strip them the same way.
-    private static readonly string[] UiKeywords = ["x-editor", "x-meta"];
-
-    private static string ForModels(string json)
-        => UiKeywords.Any(k => json.Contains($"\"{k}\"", StringComparison.Ordinal)) ? Strip(JsonNode.Parse(json))!.ToJsonString() : json;
-
-    private static JsonNode? Strip(JsonNode? node)
+    private static HttpClient NamingConsumer(HttpClient client)
     {
-        if (node is JsonObject json)
-        {
-            foreach (var keyword in UiKeywords)
-            {
-                json.Remove(keyword);
-            }
-        }
-
-        foreach (var child in node switch { JsonObject o => o.Select(p => p.Value), JsonArray a => a, _ => [] })
-        {
-            Strip(child);
-        }
-
-        return node;
+        client.DefaultRequestHeaders.Remove(ConsumerHeader);
+        client.DefaultRequestHeaders.Add(ConsumerHeader, Consumer);
+        return client;
     }
 
     private static CallToolResult Error(string message)
@@ -233,7 +224,7 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
                 {
                     Name = listed.GetProperty("toolName").GetString()!,
                     Description = listed.GetProperty("description").GetString(),
-                    InputSchema = JsonSerializer.SerializeToElement(Strip(JsonNode.Parse(listed.GetProperty("inputSchema").GetRawText()))),
+                    InputSchema = listed.GetProperty("inputSchema").Clone(),
                     Annotations = new ToolAnnotations
                     {
                         Title = listed.GetProperty("name").GetString(),

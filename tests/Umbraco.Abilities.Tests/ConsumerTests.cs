@@ -40,10 +40,10 @@ public class ConsumerTests
     public void A_package_adds_a_consumer_and_gets_a_list_from_one_policy()
     {
         _site.Filters
-            .Add(new DropWhere("hide-explain", t => t.Descriptor.Kind == AbilityKind.Explain, "Nobody reads the explanation."))
-            .Add(new DropWhere("hide-building-blocks", t => t.Descriptor.Granular, "A person builds from a form, not from paths."));
-        _site.Policies.Add("for-forms", "hide-explain", "hide-building-blocks");
-        AddConsumer("workflows", ConsumerCapabilities.StandingConsent, "for-forms");
+            .Add(new DropWhere("acme-hide-explain", t => t.Descriptor.Kind == AbilityKind.Explain, "Nobody reads the explanation."))
+            .Add(new DropWhere("acme-hide-blocks", t => t.Descriptor.Granular, "A person builds from a form, not from paths."));
+        _site.Policies.Add("acme-tidy", "acme-hide-explain", "acme-hide-blocks");
+        AddConsumer("workflows", ConsumerCapabilities.StandingConsent, "acme-tidy");
 
         var tools = _site.Tools.GetTools("workflows");
         Assert.DoesNotContain(tools, t => t.Descriptor.Granular || t.Descriptor.Kind == AbilityKind.Explain);
@@ -63,17 +63,16 @@ public class ConsumerTests
     [Fact]
     public void A_filter_added_to_a_policy_reaches_every_consumer_that_applies_it()
     {
-        _site.Policies.Add("for-models");
-        AddConsumer("chat", Chat, "for-models");
-        AddConsumer("mcp", Chat, "for-models");
+        AddConsumer("chat", Chat, FrameworkFilters.ForModels);
+        AddConsumer("mcp", Chat, FrameworkFilters.ForModels);
 
-        // Another package adds to the shared policy, once.
+        // Another package adds to the framework's policy, once.
         _site.Filters.Add(new DropWhere("hide-email", t => t.Id == "email.send", "Not offered to models."));
-        _site.Policies.AddToPolicy("for-models", "hide-email");
+        _site.Policies.AddToPolicy(FrameworkFilters.ForModels, "hide-email");
 
         Assert.All(["chat", "mcp"], consumer => Assert.DoesNotContain(_site.Tools.GetTools(consumer), t => t.Id == "email.send"));
         var note = Tool("mcp", "email.send", kept: false).Dropped!;
-        Assert.Equal(("hide-email", "for-models"), (note.Filter, note.Policy));
+        Assert.Equal(("hide-email", FrameworkFilters.ForModels), (note.Filter, note.Policy));
     }
 
     [Fact]
@@ -165,6 +164,102 @@ public class ConsumerTests
         Assert.True(result.Success, result.Message);
         Assert.Equal("document", result.ToJson().GetProperty("result").GetProperty("entityType").GetString());
     }
+
+    [Fact]
+    public void An_AI_chat_offers_every_ability_as_before_with_changeSetId_where_the_caller_chooses_the_set()
+    {
+        _site.Consumers.Add(AI.AbilityAITools.Consumer);
+
+        var tools = _site.Tools.GetTools(AI.AbilityAITools.ConsumerAlias);
+        Assert.Equal(_site.Abilities.All.Count, tools.Count);
+        Assert.All(tools, tool => Assert.Equal(
+            tool.Descriptor.UsesChangeSet,
+            tool.InputSchema.GetProperty("properties").TryGetProperty(AbilityTool.ChangeSetIdArgument, out _)));
+    }
+
+    [Fact]
+    public void A_form_consumer_gets_whole_operations_and_no_building_blocks_change_set_or_explain_abilities()
+    {
+        AddConsumer("workflows", ConsumerCapabilities.StandingConsent, FrameworkFilters.ForForms);
+
+        var explained = _site.Tools.Explain("workflows");
+        var kept = explained.Where(t => !t.IsDropped).ToList();
+        Assert.DoesNotContain(kept, t => t.Descriptor.Granular || t.Descriptor.ManagesChangeSets || t.Descriptor.Kind == AbilityKind.Explain);
+        Assert.Contains(kept, t => t.Id == "email.send");
+        Assert.Equal("hide-building-blocks", Tool("workflows", "entity.setValue", kept: false).Dropped!.Filter);
+        Assert.Equal(("change-set-lifecycle", AbilityPolicyRegistry.Base), (Tool("workflows", "changeSet.apply", kept: false).Dropped!.Filter, Tool("workflows", "changeSet.apply", kept: false).Dropped!.Policy));
+    }
+
+    [Fact]
+    public void A_form_consumer_gets_no_changeSetId_and_its_writes_are_each_a_change_set_of_their_own()
+    {
+        AddConsumer("workflows", ConsumerCapabilities.StandingConsent, FrameworkFilters.ForForms);
+
+        var send = Tool("workflows", "email.send");
+        Assert.Equal(ChangeSetMode.PerCall, send.ChangeSetMode);
+        Assert.False(send.InputSchema.GetProperty("properties").TryGetProperty(AbilityTool.ChangeSetIdArgument, out _));
+        Assert.All(_site.Tools.GetTools("workflows").Where(t => t.Descriptor.Kind != AbilityKind.Write), t => Assert.NotEqual(ChangeSetMode.Caller, t.ChangeSetMode));
+    }
+
+    [Fact]
+    public async Task A_call_in_its_own_change_set_is_applied_at_once_and_one_that_fails_leaves_nothing_behind()
+    {
+        AddConsumer("workflows", ConsumerCapabilities.StandingConsent, "change-set-per-call");
+        var create = Tool("workflows", "entity.create");
+        var session = new AbilityToolSession(SampleAccess.Editor);
+
+        var made = await _site.Runner.InvokeAsync(create, Json("""{ "entityType": "document", "variant": { "culture": "en-US" }, "fields": { "title": "Launch" } }"""), session, AbilityConsent.Given, changeSetName: "Step 1");
+        Assert.True(made.Success, made.Message);
+        Assert.Equal(("Step 1", false), (made.ChangeSet!.Name, made.ChangeSet.Open));
+        var key = made.ToJson().GetProperty("result").GetProperty("key").GetGuid();
+        Assert.NotNull(await _site.Pages.LoadAsync(key));
+
+        var refused = await _site.Runner.InvokeAsync(create, Json("""{ "entityType": "document", "fields": { "nope": 1 } }"""), session, AbilityConsent.Given);
+        Assert.False(refused.Success);
+        Assert.Null(_site.ChangeSets.Find(refused.ChangeSet!.Id));
+        Assert.Empty(session.OpenChangeSetIds);
+    }
+
+    [Fact]
+    public void A_model_consumers_tools_have_no_keywords_meant_for_forms()
+    {
+        AddConsumer("chat", Chat, FrameworkFilters.ForModels);
+        AddConsumer("workflows", ConsumerCapabilities.StandingConsent, FrameworkFilters.ForForms);
+
+        Assert.Contains("x-editor", Tool("workflows", "email.send").InputSchema.GetRawText());
+        Assert.All(_site.Tools.GetTools("chat"), t => Assert.DoesNotContain("\"x-editor\"", t.InputSchema.GetRawText()));
+    }
+
+    [Fact]
+    public void An_admin_can_leave_an_ability_out_of_one_consumer_only()
+    {
+        AddConsumer("chat", Chat, FrameworkFilters.ForModels);
+        AddConsumer("mcp", Chat, FrameworkFilters.ForModels);
+        var tools = WithOverrides(new() { ["mcp"] = new ConsumerOverride { Exclude = ["commerce.*"] } });
+
+        Assert.DoesNotContain(tools.GetTools("mcp"), t => t.Id.StartsWith("commerce.", StringComparison.Ordinal));
+        Assert.Contains(tools.GetTools("chat"), t => t.Id.StartsWith("commerce.", StringComparison.Ordinal));
+        Assert.Equal("override", tools.Explain("mcp").First(t => t.Id == "commerce.activateDiscount").Dropped!.Filter);
+    }
+
+    [Fact]
+    public void An_admin_can_bring_back_what_a_filter_dropped_but_not_what_the_base_policy_dropped()
+    {
+        AddConsumer("workflows", ConsumerCapabilities.StandingConsent, FrameworkFilters.ForForms);
+        var tools = WithOverrides(new() { ["workflows"] = new ConsumerOverride { Include = ["entity.setValue", "changeSet.apply"] } });
+
+        // Kept, and still shaped by the filters after the one that would have dropped it.
+        var setValue = Assert.Single(tools.GetTools("workflows"), t => t.Id == "entity.setValue");
+        Assert.Equal(ChangeSetMode.PerCall, setValue.ChangeSetMode);
+        Assert.Contains(setValue.Notes, n => n.Filter == "override");
+
+        Assert.DoesNotContain(tools.GetTools("workflows"), t => t.Id == "changeSet.apply");
+    }
+
+    private AbilityToolProvider WithOverrides(AbilityOverrides overrides)
+        => new(_site.Abilities, _site.Filters, _site.Policies, _site.Consumers, overrides);
+
+    private static JsonObject Json(string json) => JsonNode.Parse(json)!.AsObject();
 
     private void AddConsumer(string alias, ConsumerCapabilities capabilities, params string[] filters)
         => _site.Consumers.Add(new AbilityConsumer(alias, alias, $"The {alias} consumer.", AbilityAudiences.Model, capabilities, filters));

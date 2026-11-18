@@ -530,6 +530,22 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
     - **A dropped tool has to stay listed.** "Why isn't this in Automate?" needs the dropped tool and the filter that
       dropped it. Notes are signed by the provider, not the filter, so the package and policy are always right.
 
+    Moving the AI chat, MCP and Automate onto their consumers (phase 2) showed:
+    - **Each package registers its own consumer.** The AI package has `ai-chat`, the Management API has `mcp`, and the
+      Automate loader has `automate`. Each lists one framework policy (`for-models` or `for-forms`), and none filters
+      or strips anything itself. Automate's list came out the same as its old hard-coded `Include`.
+    - **The Management API is a road, not a consumer.** A caller names the consumer it is, in the `Umb-Consumer` header, and gets
+      that consumer's tools. A tool the consumer doesn't offer can't be called through it: a 404, not just a hidden tool.
+      It is a header, not a query string: it says who calls, as the change set and approval headers do, and a client
+      sets it once for every endpoint. The list answers with `Vary: Umb-Consumer` for caches.
+    - **Results need the same shaping as schemas.** A result can hold a schema (`entity.getSchema`). So a filter can
+      shape results too (`IAbilityResultFilter`), and each consumer adapter passes results through the provider.
+    - **A change set per call belongs in the runner.** Automate's step made, applied and discarded its own set.
+      Now that is a tool's mode (`PerCall`), so any consumer whose calls stand alone gets it.
+    - **An admin's "keep" must not skip later filters.** Bringing back a tool after the filters ran would leave it
+      unshaped, such as a building block in Automate still asking for `changeSetId`. So "keep" cancels a drop as it
+      happens, and the filters after it still run.
+
 ## Developer experience of adapters
 
 Making things easy for a model is one side. The other is what a package developer writes. Reading the samples as

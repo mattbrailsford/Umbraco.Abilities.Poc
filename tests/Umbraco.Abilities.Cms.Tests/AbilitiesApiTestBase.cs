@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 using NUnit.Framework;
 
+using Umbraco.Abilities.Consumers;
 using Umbraco.Abilities.ManagementApi;
 using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.DependencyInjection;
@@ -27,7 +28,16 @@ public abstract class AbilitiesApiTestBase : ManagementApiTest<AbilitiesControll
 
     protected IContentService ContentService => GetRequiredService<IContentService>();
 
-    protected override void CustomTestSetup(IUmbracoBuilder builder) => builder.AddAbilities();
+    /// <summary>A consumer that builds forms for a person in the backoffice, such as a change set screen.</summary>
+    protected static readonly IAbilityConsumer FormConsumer = new AbilityConsumer(
+        "test-forms", "Test forms", "Forms a person fills in, in the backoffice.", AbilityAudiences.Person,
+        ConsumerCapabilities.Conversation | ConsumerCapabilities.AsksConsent, [FrameworkFilters.ForForms]);
+
+    protected override void CustomTestSetup(IUmbracoBuilder builder)
+    {
+        builder.AddAbilities().AddAbilitiesManagementApi();
+        builder.Services.AddSingleton(FormConsumer);
+    }
 
     // The test server only serves the CMS's own controllers unless told about others.
     protected override void CustomMvcSetup(IMvcBuilder mvcBuilder)

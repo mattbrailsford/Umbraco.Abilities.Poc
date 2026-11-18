@@ -143,40 +143,46 @@ public static partial class UiHints
         }
     }
 
+    /// <summary>The keywords meant for forms and UIs only. A model doesn't read them: the <c>strip-form-keywords</c> filter removes them.</summary>
+    public static IReadOnlyList<string> FormKeywords { get; } = [EditorKeyword, MetaKeyword];
+
     /// <summary>
-    /// A copy of a schema or result without the UI keywords, at any depth, for a model. They cost tokens and could mislead
-    /// it; what a model needs goes in a description or a keyword it acts on. A JSON value that holds neither is returned as is.
+    /// A copy of a schema or result without the given keywords, at any depth. A JSON value that holds none of them is
+    /// returned as is.
     /// </summary>
-    public static JsonElement ForModels(JsonElement json)
+    public static JsonElement Without(JsonElement json, IReadOnlyCollection<string> keywords)
     {
         var text = json.GetRawText();
-        if (!text.Contains($"\"{EditorKeyword}\"", StringComparison.Ordinal) && !text.Contains($"\"{MetaKeyword}\"", StringComparison.Ordinal))
+        if (!keywords.Any(keyword => text.Contains($"\"{keyword}\"", StringComparison.Ordinal)))
         {
             return json;
         }
 
         var node = JsonNode.Parse(text);
-        Strip(node);
+        Strip(node, keywords);
         return JsonSerializer.SerializeToElement(node);
     }
 
-    private static void Strip(JsonNode? node)
+    private static void Strip(JsonNode? node, IReadOnlyCollection<string> keywords)
     {
         switch (node)
         {
             case JsonObject json:
-                json.Remove(EditorKeyword);
-                json.Remove(MetaKeyword);
+                foreach (var keyword in keywords)
+                {
+                    json.Remove(keyword);
+                }
+
                 foreach (var (_, child) in json)
                 {
-                    Strip(child);
+                    Strip(child, keywords);
                 }
 
                 break;
             case JsonArray array:
                 foreach (var child in array)
                 {
-                    Strip(child);
+                    Strip(child, keywords);
                 }
 
                 break;

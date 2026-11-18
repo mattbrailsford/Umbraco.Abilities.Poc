@@ -19,8 +19,14 @@ public sealed class ScriptedAgent
     public ScriptedAgent(SampleSite site)
     {
         _site = site;
+        // The AI package's consumer, on the site, as its composer would add it.
+        if (site.Consumers.Find(AbilityAITools.ConsumerAlias) is null)
+        {
+            site.Consumers.Add(AbilityAITools.Consumer);
+        }
+
         Tools = AbilityAITools
-            .Create(site.Abilities, site.Invoker, Session)
+            .Create(site.Tools, site.Runner, Session)
             .ToDictionary(t => t.Name);
     }
 
