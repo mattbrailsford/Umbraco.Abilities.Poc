@@ -328,6 +328,15 @@ See [CONSUMERS.md](CONSUMERS.md).
   - `ConsumerTests.Two_consumers_with_the_same_audience_get_the_same_hints`
 - A schema a model reads back from `entity.getSchema` has model hints only, and no `x-hints`
   - `ConsumerTests.A_model_reading_a_schema_back_gets_model_hints_only`
+- A form consumer gets a Create and an Update per entity type, with the type fixed; a model gets one of each
+  - `ConsumerTests.A_form_consumer_gets_a_Create_and_an_Update_per_entity_type_and_a_model_one_of_each`
+- An update changes only the values given, in one change set
+  - `ConsumerTests.An_update_changes_only_the_values_given_in_one_change_set`
+- A form resolves the fields input to the entity type's fields, with person hints: required on Create, none on Update
+  - `ConsumerTests.A_form_resolves_the_fields_input_to_the_entity_types_fields_with_person_hints`
+  - `AbilitiesManagementApiTests.A_form_gets_a_tools_input_with_the_fields_of_the_page_type_chosen`
+- A page type used only inside others can't be created, and `entity.getSchema` says so
+  - `CmsDocumentAdapterTests.A_page_type_only_used_inside_others_cannot_be_created`
 - The consumer named in the `Umb-Consumer` header decides the list (`mcp` without it), and the list answers with `Vary`
   - `AbilitiesManagementApiTests.The_consumer_named_in_a_header_decides_the_list_and_a_cache_keeps_one_per_consumer`
 - A tool a consumer doesn't offer can't be called through it over the Management API
@@ -405,15 +414,19 @@ See [CONSUMERS.md](CONSUMERS.md).
   - `AbilityActionTests.Every_whole_ability_is_an_Automate_action_beside_Automates_own_and_building_blocks_are_not`
 - Every action's output schema is an object, or none, as Automate's action list reads it: one that isn't breaks the list in its editor
   - `AbilityActionTests.Every_actions_output_schema_is_an_object_or_none_as_Automates_action_list_reads_it`
-- Each page type gets a Create and an Update action, grouped under its entity type
-  - `AbilityActionTests.Each_page_type_gets_a_Create_and_an_Update_action_grouped_under_its_entity_type`
-- A Create form is the page type's own fields, with Umbraco's editors and their data type configuration
-  - `AbilityActionTests.A_Create_form_is_the_page_types_own_fields_with_Umbracos_editors_and_their_configuration`
+- Automate lists one Create and one Update per entity type, and the page type is picked in the form
+  - `AbilityActionTests.Automate_lists_one_Create_and_one_Update_per_entity_type_and_the_page_type_is_picked_in_the_form`
+- Choosing a page type gives a form of its fields, with Umbraco's editors and their data type configuration
+  - `AbilityActionTests.Choosing_a_page_type_gives_a_form_of_its_fields_with_their_editors`
+- A page type added later can be chosen without a restart
+  - `AbilityActionTests.A_page_type_added_later_can_be_chosen_without_a_restart`
+- A composition page type can't be chosen to create
+  - `AbilityActionTests.A_composition_page_type_cannot_be_chosen_to_create`
 - An Update form picks the page and asks for no value: one left empty stays as it is
   - `AbilityActionTests.An_Update_form_picks_the_page_and_asks_for_no_value`
 - A Create action returns a typed summary a later step can bind to
   - `AbilityActionTests.A_Create_action_returns_a_typed_summary_a_later_step_can_bind_to`
-- An automation creates a page from Umbraco's editor values (a tree picker's), then updates it by binding to its key, as the service account
+- An automation creates a page from Umbraco's editor values (a dropdown's and a tree picker's), then updates it by binding to its key, as the service account
   - `AbilityActionTests.An_automation_creates_a_page_from_Umbracos_editor_values_then_updates_it_as_the_service_account`
 - A value the page type refuses fails the step with the field's path, and nothing is saved
   - `AbilityActionTests.A_value_the_page_type_refuses_fails_the_step_with_the_fields_path_and_saves_nothing`

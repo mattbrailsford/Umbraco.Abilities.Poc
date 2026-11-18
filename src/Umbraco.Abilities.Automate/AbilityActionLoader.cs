@@ -1,23 +1,23 @@
 using Microsoft.Extensions.DependencyInjection;
 
 using Umbraco.Abilities.Consumers;
-using Umbraco.Abilities.Entities;
 using Umbraco.Automate.Core.Actions;
 
 namespace Umbraco.Abilities.Automate;
 
 /// <summary>
-/// Makes the site's Automate actions, at the time it's asked: an action per tool the Automate consumer offers, and a
-/// Create and Update action per subtype of each entity type that can be created.
+/// Makes the site's Automate actions, at the time it's asked: an action per tool the Automate consumer offers. The
+/// consumer's filters decide them: whole operations only, each Write a change set of its own, and a Create and an Update
+/// per entity type, in which a person picks the page type.
 /// </summary>
-public sealed class AbilityActionLoader(AbilityStep step, AbilityToolProvider tools, EntityAdapterRegistry adapters, AbilityActionOptions options)
+public sealed class AbilityActionLoader(AbilityStep step, AbilityToolProvider tools, AbilityActionOptions options)
 {
     /// <summary>The Automate consumer's alias.</summary>
     public const string ConsumerAlias = "automate";
 
     /// <summary>
     /// Umbraco Automate: a person builds a step from a form, and publishing the automation is their consent to it. Each
-    /// step stands alone, with no conversation to keep a change set open in.
+    /// step stands alone, with no conversation to keep a change set open in. Its own filter names each field's editor.
     /// </summary>
     public static IAbilityConsumer Consumer { get; } = new AbilityConsumer(
         ConsumerAlias,
@@ -25,29 +25,10 @@ public sealed class AbilityActionLoader(AbilityStep step, AbilityToolProvider to
         "Automation steps a person builds from forms. Publishing an automation is the person's consent to its steps.",
         AbilityAudiences.Person,
         ConsumerCapabilities.StandingConsent,
-        [FrameworkFilters.ForForms]);
+        [FrameworkFilters.ForForms, AutomateEditorsFilter.FilterAlias]);
 
     public IEnumerable<IAction> CreateActions()
-    {
-        var abilities = tools.GetTools(ConsumerAlias)
-            .Select(tool => (IAction)new AbilityAction(tool, step, options));
-
-        return options.EntityActions ? abilities.Concat(EntityActions()) : abilities;
-    }
-
-    private IEnumerable<IAction> EntityActions()
-    {
-        foreach (var adapter in adapters.All.Where(a => a.CanCreate))
-        {
-            // Automate asks for its actions synchronously, once.
-            var subtypes = adapter.GetSubtypesAsync().GetAwaiter().GetResult();
-            foreach (var subtype in subtypes.Count == 0 ? [null] : subtypes.Cast<EntitySubtype?>())
-            {
-                yield return new EntityAction(adapter, subtype, EntityActionKind.Create, step, options);
-                yield return new EntityAction(adapter, subtype, EntityActionKind.Update, step, options);
-            }
-        }
-    }
+        => tools.GetTools(ConsumerAlias).Select(tool => (IAction)new AbilityAction(tool, step, tools, options));
 }
 
 public static class AbilityActionServiceCollectionExtensions
@@ -72,6 +53,7 @@ public static class AbilityActionServiceCollectionExtensions
         configure?.Invoke(options);
         services.AddSingleton(options);
         services.AddSingleton(AbilityActionLoader.Consumer);
+        services.AddSingleton<IAbilityFilter>(new AutomateEditorsFilter(options));
         services.AddSingleton<AbilityStep>();
         services.AddSingleton<AbilityActionLoader>();
         services.AddSingleton(sp =>

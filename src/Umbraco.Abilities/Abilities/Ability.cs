@@ -57,6 +57,25 @@ public sealed class AbilityAttribute(string id, string name) : Attribute
     /// step or a quick action, leaves them out and offers the whole operation instead.
     /// </summary>
     public bool Granular { get; set; }
+
+    /// <summary>
+    /// An argument a consumer may split the ability by: one tool per value, with the value fixed, such as one "Create"
+    /// per entity type. The ability lists the values (<see cref="IDynamicInputAbility"/>). A consumer that splits
+    /// applies the <c>split-by-choice</c> filter; one that doesn't sees one tool, as before.
+    /// </summary>
+    public string? SplitBy { get; set; }
+
+    /// <summary>The title of each tool a split makes, with <c>{0}</c> for the value's name, such as <c>"Create {0}"</c>.</summary>
+    public string? SplitTitle { get; set; }
+
+    /// <summary>
+    /// An input property whose schema depends on other arguments (<see cref="DependsOn"/>), such as the fields of the
+    /// chosen subtype. The ability gives its schema once they are chosen (<see cref="IDynamicInputAbility"/>).
+    /// </summary>
+    public string? DependentInput { get; set; }
+
+    /// <summary>The arguments <see cref="DependentInput"/>'s schema depends on, in the order a person chooses them.</summary>
+    public string[] DependsOn { get; set; } = [];
 }
 
 /// <summary>
@@ -83,6 +102,7 @@ public sealed class EntityKeyAttribute(params string[] entityTypes) : Attribute
 /// How to use the ability, by audience (<c>model</c>, <c>person</c>), from <see cref="HintAttribute"/>s on its class.
 /// The description says what it does, for every reader; the <c>apply-hints</c> filter adds the reader's hint to it.
 /// </param>
+/// <param name="Input">How the input can change with what is chosen: see <see cref="AbilityInputFacts"/>.</param>
 public sealed record AbilityDescriptor(
     string Id,
     string Name,
@@ -95,9 +115,53 @@ public sealed record AbilityDescriptor(
     Type? OutputType = null,
     bool Granular = false,
     bool ManagesChangeSets = false,
-    IReadOnlyDictionary<string, string>? Hints = null)
+    IReadOnlyDictionary<string, string>? Hints = null,
+    AbilityInputFacts? Input = null)
 {
+    /// <summary>How the input can change with what is chosen. Never null: an ability that states nothing has no facts.</summary>
+    public AbilityInputFacts Input { get; init; } = Input ?? AbilityInputFacts.None;
+
     public bool RequiresApproval => Kind == AbilityKind.Write && !Reversible;
+}
+
+/// <summary>
+/// How an ability's input can change with what is chosen, from its <see cref="AbilityAttribute"/>.
+/// </summary>
+/// <param name="SplitBy">The argument a consumer may split the ability by, one tool per value. See <see cref="AbilityAttribute.SplitBy"/>.</param>
+/// <param name="SplitTitle">Each split tool's title, with <c>{0}</c> for the value's name.</param>
+/// <param name="DependentInput">The input property whose schema depends on <paramref name="DependsOn"/>.</param>
+/// <param name="DependsOn">The arguments the dependent input depends on.</param>
+public sealed record AbilityInputFacts(string? SplitBy, string? SplitTitle, string? DependentInput, IReadOnlyList<string> DependsOn)
+{
+    /// <summary>No split and no dependent input.</summary>
+    public static AbilityInputFacts None { get; } = new(null, null, null, []);
+}
+
+/// <summary>A value a person or model can choose for an argument, such as an entity type or a page type.</summary>
+public sealed record AbilityChoice(string Value, string Name);
+
+/// <summary>
+/// An ability whose input changes with what is chosen: it lists the values an argument can take (to split by it, or to
+/// pick from), and gives its input schema once some arguments are chosen. Both are asked for each time, so a value
+/// added later, such as a new page type, is offered without a restart.
+/// </summary>
+public interface IDynamicInputAbility
+{
+    /// <summary>The values an argument can take, given what is already chosen. Empty when nothing can be chosen yet.</summary>
+    Task<IReadOnlyList<AbilityChoice>> GetChoicesAsync(string argument, JsonObject chosen, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The input schema, given what is chosen: the choices as <c>oneOf</c> lists, and the dependent input's schema
+    /// once what it depends on is chosen. Hints are left in (<c>x-hints</c>) for each consumer's filters.
+    /// </summary>
+    Task<JsonElement> ResolveInputSchemaAsync(JsonObject chosen, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The dependent input's values as set with each field's editor (<c>x-editor</c>), read as the values the ability
+    /// takes. A form sends editor values; a model sends the values themselves. Values in <paramref name="bound"/> came
+    /// from an earlier step, so they are values already, and kept as they are.
+    /// </summary>
+    Task<JsonObject> FromEditorValuesAsync(JsonObject chosen, JsonObject values, ISet<string> bound, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -223,7 +287,14 @@ public abstract class AbilityBase<TInput, TOutput> : IAbility
             typeof(TOutput),
             attribute.Granular,
             ManagesChangeSets: this is ChangeSets.IChangeSetLifecycleAbility,
-            Hints: UiHints.HintsOf(GetType()));
+            Hints: UiHints.HintsOf(GetType()),
+            Input: new AbilityInputFacts(attribute.SplitBy, attribute.SplitTitle, attribute.DependentInput, attribute.DependsOn));
+
+        if ((attribute.SplitBy is not null || attribute.DependentInput is not null) && this is not IDynamicInputAbility)
+        {
+            throw new InvalidOperationException(
+                $"{attribute.Id} splits by an argument or has a dependent input, so it must list choices and resolve its input: implement IDynamicInputAbility.");
+        }
 
         if (!attribute.UsesChangeSet && attribute.Kind == AbilityKind.Write && !Descriptor.ManagesChangeSets)
         {

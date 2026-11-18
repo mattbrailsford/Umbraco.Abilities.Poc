@@ -157,6 +157,30 @@ public sealed record AbilityTool
     /// <summary>The tool with a note of what a filter did to it, and why.</summary>
     public AbilityTool Note(string text) => this with { Notes = [.. Notes, new FilterNote(text)] };
 
+    /// <summary>
+    /// The tool with an argument fixed: always called with <paramref name="value"/>, and taken out of the input schema,
+    /// so the caller neither sees nor sends it.
+    /// </summary>
+    public AbilityTool WithFixedArgument(string name, JsonElement value)
+        => this with
+        {
+            InputSchema = WithoutProperty(InputSchema, name),
+            FixedArguments = new Dictionary<string, JsonElement>(FixedArguments) { [name] = value.Clone() },
+        };
+
+    /// <summary>A copy of an object schema without one property, in its properties and its required list.</summary>
+    public static JsonElement WithoutProperty(JsonElement schema, string name)
+    {
+        var node = JsonNode.Parse(schema.GetRawText())!.AsObject();
+        (node["properties"] as JsonObject)?.Remove(name);
+        if (node["required"] is JsonArray required && required.FirstOrDefault(r => r?.GetValue<string>() == name) is { } entry)
+        {
+            required.Remove(entry);
+        }
+
+        return JsonSerializer.SerializeToElement(node);
+    }
+
     /// <summary>The tool with the <c>changeSetId</c> argument in its input schema, when its mode is <see cref="ChangeSetMode.Caller"/>.</summary>
     public AbilityTool WithChangeSetIdArgument()
     {

@@ -35,7 +35,8 @@ public static class AbilitySettingsForm
 
     private static EditableModelFieldDescriptor Field(string key, JsonElement schema, bool required, int order, IReadOnlyDictionary<string, string> formatEditors)
     {
-        var (editor, config) = EditorFor(schema, formatEditors);
+        var (editor, settings) = EditorFor(schema, formatEditors);
+        var config = settings is null ? null : Config(settings.Select(p => (p.Key, p.Value?.DeepClone())));
         return new EditableModelFieldDescriptor
         {
             Key = key,
@@ -62,13 +63,13 @@ public static class AbilitySettingsForm
         };
     }
 
-    /// <summary>The editor for a field, and its configuration in Automate's form (a list of alias and value).</summary>
-    public static (string Editor, string? Config) EditorFor(JsonElement schema, IReadOnlyDictionary<string, string> formatEditors)
+    /// <summary>The editor for a field, and its configuration by alias, as <c>x-editor</c> holds them.</summary>
+    public static (string Editor, JsonObject? Config) EditorFor(JsonElement schema, IReadOnlyDictionary<string, string> formatEditors)
     {
         // A schema of true is "any value": nothing to read, so it's edited as JSON.
         if (schema.ValueKind != JsonValueKind.Object)
         {
-            return ("Umb.PropertyEditorUi.CodeEditor", Config([("language", "json"), ("height", 160), ("wordWrap", true)]));
+            return ("Umb.PropertyEditorUi.CodeEditor", JsonEditorConfig());
         }
 
         // 1. The field names its editor. Whether that editor is installed is the browser's to know; Automate's form
@@ -76,7 +77,7 @@ public static class AbilitySettingsForm
         if (schema.TryGetProperty("x-editor", out var named) && named.TryGetProperty("alias", out var alias))
         {
             var config = named.TryGetProperty("config", out var settings) && settings.ValueKind == JsonValueKind.Object
-                ? Config(settings.EnumerateObject().Select(p => (p.Name, (JsonNode?)JsonNode.Parse(p.Value.GetRawText()))))
+                ? JsonNode.Parse(settings.GetRawText())!.AsObject()
                 : null;
             return (alias.GetString()!, config);
         }
@@ -87,14 +88,27 @@ public static class AbilitySettingsForm
             return (byFormat, null);
         }
 
-        // 3. The plain shape, with Automate's own editors for each.
+        // 3. The plain shape, with Automate's own editors for each. A labelled list (oneOf of const and title) shows
+        // each value's name, such as a page type's.
+        if (schema.TryGetProperty("oneOf", out var labelled) && labelled.EnumerateArray().All(o => o.ValueKind == JsonValueKind.Object && o.TryGetProperty("const", out _)))
+        {
+            var items = new JsonArray(labelled.EnumerateArray()
+                .Select(o => (JsonNode?)new JsonObject
+                {
+                    ["name"] = o.TryGetProperty("title", out var title) ? title.GetString() : o.GetProperty("const").ToString(),
+                    ["value"] = o.GetProperty("const").ToString(),
+                })
+                .ToArray());
+            return ("Umb.PropertyEditorUi.Dropdown", new JsonObject { ["items"] = items });
+        }
+
         if (schema.TryGetProperty("enum", out var values))
         {
             var items = new JsonArray(values.EnumerateArray()
                 .Where(v => v.ValueKind != JsonValueKind.Null)
                 .Select(v => (JsonNode?)new JsonObject { ["name"] = v.ToString(), ["value"] = v.ToString() })
                 .ToArray());
-            return ("Umb.PropertyEditorUi.Dropdown", Config([("items", items)]));
+            return ("Umb.PropertyEditorUi.Dropdown", new JsonObject { ["items"] = items });
         }
 
         if (schema.TryGetProperty("x-references", out var references))
@@ -111,9 +125,11 @@ public static class AbilitySettingsForm
             "string" => ("Umb.PropertyEditorUi.TextBox", null),
 
             // An object or a list whose shape the form can't draw: edited as JSON, as Automate's own JSON settings are.
-            _ => ("Umb.PropertyEditorUi.CodeEditor", Config([("language", "json"), ("height", 160), ("wordWrap", true)])),
+            _ => ("Umb.PropertyEditorUi.CodeEditor", JsonEditorConfig()),
         };
     }
+
+    private static JsonObject JsonEditorConfig() => new() { ["language"] = "json", ["height"] = 160, ["wordWrap"] = true };
 
     private static string Config(IEnumerable<(string Alias, JsonNode? Value)> settings)
         => new JsonArray(settings.Select(s => (JsonNode?)new JsonObject { ["alias"] = s.Alias, ["value"] = s.Value }).ToArray()).ToJsonString();

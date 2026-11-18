@@ -160,6 +160,13 @@ public sealed class ChangeSetService(
                         [new Problem("subtype", "Required, and must be one of the listed subtypes.")]);
                 }
 
+                if (subtypes.FirstOrDefault(s => s.Alias == target.Subtype) is { Creatable: false } part)
+                {
+                    throw new AbilityInputException(
+                        $"{part.Name} is only used inside other types, so it can't be created. Subtypes that can: {string.Join(", ", subtypes.Where(s => s.Creatable).Select(s => s.Alias))}.",
+                        [new Problem("subtype", "Not creatable.")]);
+                }
+
                 working = await adapter.NewAsync(target.EntityKey, target.Subtype, cancellationToken);
             }
             else if (working is null)
