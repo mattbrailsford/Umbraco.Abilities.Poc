@@ -1644,10 +1644,13 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
 
         private readonly Dictionary<string, AbilityTool> _uiTools;
 
+        private readonly AbilityToolRunner _runner;
+
         public Agent(AbilityRegistry abilities, AbilityInvoker invoker)
         {
             _tools = AbilityAITools.Create(abilities, invoker, _session).ToDictionary(t => t.Name);
-            _uiTools = abilities.All.Select(a => new AbilityTool(a, invoker, _session)).ToDictionary(t => t.Name);
+            _uiTools = abilities.All.Select(a => new AbilityTool(a).WithChangeSetIdArgument()).ToDictionary(t => t.Name);
+            _runner = new AbilityToolRunner(invoker);
         }
 
         /// <summary>The conversation's current change set: the only one open in it.</summary>
@@ -1669,7 +1672,7 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
         /// </summary>
         public async Task<JsonElement> UiOkAsync(string tool, string json)
         {
-            var result = (await _uiTools[tool].InvokeAsync(JsonNode.Parse(json)!.AsObject(), AbilityConsent.Given)).ToJson();
+            var result = (await _runner.InvokeAsync(_uiTools[tool], JsonNode.Parse(json)!.AsObject(), _session, AbilityConsent.Given)).ToJson();
             Assert.That(result.GetProperty("success").GetBoolean(), Is.True, $"{tool} failed: {result}");
             return result.GetProperty("result");
         }

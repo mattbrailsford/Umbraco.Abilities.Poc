@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 
 using Umbraco.Abilities.ChangeSets;
+using Umbraco.Abilities.Consumers;
 using Umbraco.Abilities.Cms.PropertyEditors;
 using Umbraco.Abilities.Entities;
 using Umbraco.Cms.Core.DependencyInjection;
@@ -17,9 +18,10 @@ public static class AbilitiesBuilderExtensions
 {
     /// <summary>
     /// Registers the framework as singletons: the ability, adapter and item type registries, the change set service
-    /// (change sets kept in memory), the invoker, and the document and media adapters. Saves run as the signed-in
-    /// backoffice user. A product adds its own adapters and abilities to <see cref="EntityAdapterRegistry"/> and
-    /// <see cref="AbilityRegistry"/>.
+    /// (change sets kept in memory), the invoker, the tool runner, the filter, policy and consumer registries with the
+    /// tool provider, and the document and media adapters. Saves run as the signed-in backoffice user. A product adds
+    /// its own adapters and abilities to <see cref="EntityAdapterRegistry"/> and <see cref="AbilityRegistry"/>, and its
+    /// own filters, policies and consumers to theirs.
     /// </summary>
     public static IUmbracoBuilder AddAbilities(this IUmbracoBuilder builder)
     {
@@ -77,6 +79,19 @@ public static class AbilitiesBuilderExtensions
         });
         services.AddSingleton(sp => sp.GetRequiredService<AbilityInvoker>().ChangeSets);
         services.AddSingleton(sp => sp.GetRequiredService<AbilityInvoker>().Abilities);
+
+        // Which tools each consumer offers: the filters, the policies that group them, and the consumers that apply
+        // them. A package adds its own filter, policy or consumer to these registries.
+        services.AddSingleton<AbilityPolicyRegistry>();
+        services.AddSingleton(sp => new AbilityFilterRegistry().AddFrameworkFilters(sp.GetRequiredService<AbilityPolicyRegistry>()));
+        services.AddSingleton<AbilityConsumerRegistry>();
+        services.AddSingleton(sp => new AbilityToolProvider(
+            sp.GetRequiredService<AbilityRegistry>(),
+            sp.GetRequiredService<AbilityFilterRegistry>(),
+            sp.GetRequiredService<AbilityPolicyRegistry>(),
+            sp.GetRequiredService<AbilityConsumerRegistry>(),
+            sp));
+        services.AddSingleton<AbilityToolRunner>();
 
         return builder;
     }

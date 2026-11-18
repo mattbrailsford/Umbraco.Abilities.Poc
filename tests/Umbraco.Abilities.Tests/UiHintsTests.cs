@@ -39,7 +39,7 @@ public class UiHintsTests
     public void An_abilitys_input_can_name_its_editor_for_a_form_built_from_its_schema()
     {
         // [Editor] on an input record's parameter: the body is a long text, which nothing in the plain shape says.
-        var ui = _agent.UiTool("email_send").JsonSchema.GetProperty("properties").GetProperty("body");
+        var ui = _agent.UiTool("email_send").InputSchema.GetProperty("properties").GetProperty("body");
         Assert.Equal("Umb.PropertyEditorUi.TextArea", ui.GetProperty("x-editor").GetProperty("alias").GetString());
         Assert.Equal(8, ui.GetProperty("x-editor").GetProperty("config").GetProperty("rows").GetInt32());
 
@@ -87,7 +87,7 @@ public class UiHintsTests
             formats: new() { ["date"] = "Umb.PropertyEditorUi.DatePicker" });
 
         // 1. The field names its editor, and it is registered.
-        var email = _agent.UiTool("email_send").JsonSchema.GetProperty("properties");
+        var email = _agent.UiTool("email_send").InputSchema.GetProperty("properties");
         Assert.Equal("Umb.PropertyEditorUi.TextArea", form.EditorFor(email.GetProperty("body")));
 
         // 2. The format maps to an editor: every date field, in any ability or entity, gets the date picker.

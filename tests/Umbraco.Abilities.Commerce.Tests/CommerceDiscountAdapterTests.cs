@@ -453,7 +453,7 @@ public sealed class CommerceDiscountAdapterTests : UmbracoIntegrationTest
         public async Task<JsonElement> UiOkAsync(string tool, string json)
         {
             var ability = abilities.All.Single(a => AbilityTool.ToToolName(a.Descriptor.Id) == tool);
-            var result = (await new AbilityTool(ability, invoker, _session).InvokeAsync(System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject(), AbilityConsent.Given)).ToJson();
+            var result = (await new AbilityToolRunner(invoker).InvokeAsync(new AbilityTool(ability).WithChangeSetIdArgument(), System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject(), _session, AbilityConsent.Given)).ToJson();
             Assert.That(result.GetProperty("success").GetBoolean(), Is.True, $"{tool} failed: {result}");
             return result.GetProperty("result");
         }

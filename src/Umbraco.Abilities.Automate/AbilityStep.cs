@@ -21,6 +21,9 @@ public sealed partial class AbilityStep(AbilityInvoker invoker, BindingEvaluator
     /// <summary>The abilities a step calls.</summary>
     public AbilityInvoker Invoker => invoker;
 
+    /// <summary>Runs a step's tool calls.</summary>
+    public AbilityToolRunner Runner { get; } = new(invoker);
+
     /// <summary>
     /// Runs <paramref name="calls"/> as the service account. With <paramref name="writes"/>, the calls are recorded
     /// into a change set made for this step, and the set is applied when they all succeed. <paramref name="output"/>

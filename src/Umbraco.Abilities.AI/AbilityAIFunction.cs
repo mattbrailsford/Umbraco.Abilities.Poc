@@ -14,11 +14,15 @@ namespace Umbraco.Abilities.AI;
 public sealed class AbilityAIFunction : AIFunction
 {
     private readonly AbilityTool _tool;
+    private readonly AbilityToolRunner _runner;
+    private readonly AbilityToolSession _session;
 
     public AbilityAIFunction(IAbility ability, AbilityInvoker invoker, AbilityToolSession session)
     {
-        _tool = new AbilityTool(ability, invoker, session);
-        JsonSchema = UiHints.ForModels(_tool.JsonSchema);
+        _tool = new AbilityTool(ability).WithChangeSetIdArgument();
+        _runner = new AbilityToolRunner(invoker);
+        _session = session;
+        JsonSchema = UiHints.ForModels(_tool.InputSchema);
         AdditionalProperties = new Dictionary<string, object?>
         {
             ["abilityId"] = ability.Descriptor.Id,
@@ -56,7 +60,7 @@ public sealed class AbilityAIFunction : AIFunction
         // and the chat client only calls it once the person approved. Umbraco.AI's approval policy decides the same way:
         // it asks (Interactive), skips the call (DenyAll, DenyApprovalRequired), or was told up front to run it (AllowAll).
         // A result can hold a schema (entity.getSchema); the model gets it without the UI keywords too.
-        return UiHints.ForModels((await _tool.InvokeAsync(input, AbilityConsent.Given, cancellationToken)).ToJson());
+        return UiHints.ForModels((await _runner.InvokeAsync(_tool, input, _session, AbilityConsent.Given, cancellationToken)).ToJson());
     }
 }
 

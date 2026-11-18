@@ -283,6 +283,34 @@ endpoints.
   - `AbilitiesManagementApiTests.The_Management_API_keeps_each_fields_editor_for_a_UI_to_build_a_form_from`
   - `AbilitiesMcpProxyTests.An_MCP_client_gets_schemas_without_the_hints_meant_for_UIs`
 
+## Consumers and filters
+
+See [CONSUMERS.md](CONSUMERS.md).
+
+- A consumer that can ask and keeps a conversation offers every ability
+  - `ConsumerTests.A_consumer_that_can_ask_and_keeps_a_conversation_offers_every_ability`
+- A package adds a filter, and a consumer applies it, with no framework change
+  - `ConsumerTests.A_package_adds_a_filter_and_a_consumer_applies_it_without_any_framework_change`
+- A package adds a consumer and gets its list from one policy
+  - `ConsumerTests.A_package_adds_a_consumer_and_gets_a_list_from_one_policy`
+- Filters run in the order the consumer lists them
+  - `ConsumerTests.Filters_run_in_the_order_the_consumer_lists_them`
+- A filter added to a policy reaches every consumer that applies it, and its note names the policy
+  - `ConsumerTests.A_filter_added_to_a_policy_reaches_every_consumer_that_applies_it`
+- A policy that lists itself, or a name that is neither a filter nor a policy, is refused when the site starts
+  - `ConsumerTests.A_policy_that_lists_itself_is_refused_at_start_up`
+  - `ConsumerTests.A_consumer_listing_a_filter_nobody_added_is_refused_at_start_up`
+- A package adds a filter to another package's consumer: it runs after the consumer's own, and its note names the package
+  - `ConsumerTests.A_package_adds_a_filter_to_another_packages_consumer_and_its_note_names_the_package`
+- The base policy runs for every consumer, whatever it lists: what can't be undone is left out where nobody can agree to
+  it, and the change set tools where no conversation keeps a set open
+  - `ConsumerTests.An_ability_that_needs_approval_is_dropped_where_nobody_can_agree_to_it_whatever_the_consumer_applies`
+  - `ConsumerTests.The_change_set_tools_are_dropped_where_no_conversation_keeps_a_set_open`
+- Every dropped tool stays listed with why; only kept tools are offered
+  - `ConsumerTests.Every_dropped_tool_stays_listed_with_why_and_only_kept_tools_are_offered`
+- A filter can put several tools in place of one, each calling its ability with a fixed argument the caller doesn't send
+  - `ConsumerTests.A_filter_can_put_several_tools_in_place_of_one_each_calling_its_ability_with_a_fixed_argument`
+
 ## Against a real Umbraco
 
 - The schema comes from the document type: cultures, varying fields, block types per items field, settings, grid areas and placement

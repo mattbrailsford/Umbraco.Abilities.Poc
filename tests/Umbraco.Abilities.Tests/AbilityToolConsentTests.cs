@@ -19,16 +19,16 @@ public class AbilityToolConsentTests
     public async Task A_call_that_cannot_be_undone_runs_only_with_the_approval_made_for_it()
     {
         var set = await StartAsync("Launch");
-        await Tool("email.send").InvokeAsync(new JsonObject { ["to"] = "list@example.com", ["subject"] = "We launched" });
+        await CallAsync("email.send", new JsonObject { ["to"] = "list@example.com", ["subject"] = "We launched" });
 
-        var asked = await Tool("changeSet.apply").InvokeAsync([]);
+        var asked = await CallAsync("changeSet.apply", []);
 
         Assert.Equal(AbilityOperationStatus.ApprovalRequired, asked.Status);
         Assert.False(asked.Correctable);
         Assert.NotNull(_site.ChangeSets.Find(set));
         Assert.Empty(_site.Outbox.Sent);
 
-        var applied = await Tool("changeSet.apply").InvokeAsync([], AbilityConsent.For(asked.Approval!.Id));
+        var applied = await CallAsync("changeSet.apply", [], AbilityConsent.For(asked.Approval!.Id));
 
         Assert.True(applied.Success, applied.Message);
         Assert.Null(_site.ChangeSets.Find(set));
@@ -40,10 +40,10 @@ public class AbilityToolConsentTests
     {
         await StartAsync("Summer");
         var discount = await CreateDiscountAsync("Summer sale");
-        await Tool("commerce.activateDiscount").InvokeAsync(new JsonObject { ["discount"] = discount.ToString() });
-        await Tool("email.send").InvokeAsync(new JsonObject { ["to"] = "list@example.com", ["subject"] = "Summer sale is on" });
+        await CallAsync("commerce.activateDiscount", new JsonObject { ["discount"] = discount.ToString() });
+        await CallAsync("email.send", new JsonObject { ["to"] = "list@example.com", ["subject"] = "Summer sale is on" });
 
-        var asked = await Tool("changeSet.apply").InvokeAsync([]);
+        var asked = await CallAsync("changeSet.apply", []);
 
         var question = asked.Approval!.Question;
         Assert.Contains("Discount \"Summer sale\" (created)", question);
@@ -57,12 +57,12 @@ public class AbilityToolConsentTests
     public async Task An_approval_for_a_change_set_is_refused_once_the_set_changed_and_the_person_is_asked_again()
     {
         var set = await StartAsync("Launch");
-        await Tool("email.send").InvokeAsync(new JsonObject { ["to"] = "list@example.com", ["subject"] = "We launched" });
-        var asked = await Tool("changeSet.apply").InvokeAsync([]);
+        await CallAsync("email.send", new JsonObject { ["to"] = "list@example.com", ["subject"] = "We launched" });
+        var asked = await CallAsync("changeSet.apply", []);
 
         // Something is added after the person was asked, so they never saw it.
-        await Tool("email.send").InvokeAsync(new JsonObject { ["to"] = "boss@example.com", ["subject"] = "Added later" });
-        var stale = await Tool("changeSet.apply").InvokeAsync([], AbilityConsent.For(asked.Approval!.Id));
+        await CallAsync("email.send", new JsonObject { ["to"] = "boss@example.com", ["subject"] = "Added later" });
+        var stale = await CallAsync("changeSet.apply", [], AbilityConsent.For(asked.Approval!.Id));
 
         Assert.Equal(AbilityOperationStatus.ApprovalRequired, stale.Status);
         Assert.Contains("changed since the person agreed", stale.Message);
@@ -76,18 +76,18 @@ public class AbilityToolConsentTests
     {
         var first = Guid.NewGuid().ToString();
         var second = Guid.NewGuid().ToString();
-        var askedFirst = await Tool("commerce.activateDiscount").InvokeAsync(new JsonObject { ["discount"] = first });
-        var askedSecond = await Tool("commerce.activateDiscount").InvokeAsync(new JsonObject { ["discount"] = second });
+        var askedFirst = await CallAsync("commerce.activateDiscount", new JsonObject { ["discount"] = first });
+        var askedSecond = await CallAsync("commerce.activateDiscount", new JsonObject { ["discount"] = second });
 
         // The first call's approval doesn't approve the second call.
-        var swapped = await Tool("commerce.activateDiscount").InvokeAsync(new JsonObject { ["discount"] = second }, AbilityConsent.For(askedFirst.Approval!.Id));
+        var swapped = await CallAsync("commerce.activateDiscount", new JsonObject { ["discount"] = second }, AbilityConsent.For(askedFirst.Approval!.Id));
         Assert.Equal(AbilityOperationStatus.ApprovalRequired, swapped.Status);
         Assert.Contains("different call", swapped.Message);
 
         // The second call's own approval does: the call runs (and fails, as the discount doesn't exist), once.
-        var ran = await Tool("commerce.activateDiscount").InvokeAsync(new JsonObject { ["discount"] = second }, AbilityConsent.For(askedSecond.Approval!.Id));
+        var ran = await CallAsync("commerce.activateDiscount", new JsonObject { ["discount"] = second }, AbilityConsent.For(askedSecond.Approval!.Id));
         Assert.NotEqual(AbilityOperationStatus.ApprovalRequired, ran.Status);
-        var again = await Tool("commerce.activateDiscount").InvokeAsync(new JsonObject { ["discount"] = second }, AbilityConsent.For(askedSecond.Approval.Id));
+        var again = await CallAsync("commerce.activateDiscount", new JsonObject { ["discount"] = second }, AbilityConsent.For(askedSecond.Approval.Id));
         Assert.Contains("already used", again.Message);
     }
 
@@ -95,10 +95,10 @@ public class AbilityToolConsentTests
     public async Task An_approval_is_for_the_person_who_was_asked()
     {
         var discount = new JsonObject { ["discount"] = Guid.NewGuid().ToString() };
-        var asked = await Tool("commerce.activateDiscount").InvokeAsync((JsonObject)discount.DeepClone());
+        var asked = await CallAsync("commerce.activateDiscount", (JsonObject)discount.DeepClone());
 
-        var someoneElse = new AbilityTool(_site.Abilities.Find("commerce.activateDiscount")!, _site.Invoker, new AbilityToolSession(SampleAccess.ContentEditor));
-        var used = await someoneElse.InvokeAsync((JsonObject)discount.DeepClone(), AbilityConsent.For(asked.Approval!.Id));
+        var someoneElse = new AbilityToolSession(SampleAccess.ContentEditor);
+        var used = await _site.Runner.InvokeAsync(Tool("commerce.activateDiscount"), (JsonObject)discount.DeepClone(), someoneElse, AbilityConsent.For(asked.Approval!.Id));
 
         Assert.Equal(AbilityOperationStatus.ApprovalRequired, used.Status);
         Assert.Contains("someone else", used.Message);
@@ -109,7 +109,7 @@ public class AbilityToolConsentTests
     {
         await StartAsync("Launch");
 
-        var applied = await Tool("changeSet.apply").InvokeAsync([], AbilityConsent.Given);
+        var applied = await CallAsync("changeSet.apply", [], AbilityConsent.Given);
 
         Assert.True(applied.Success, applied.Message);
     }
@@ -119,7 +119,7 @@ public class AbilityToolConsentTests
     {
         await StartAsync("Summer");
 
-        var discarded = await Tool("changeSet.discard").InvokeAsync([]);
+        var discarded = await CallAsync("changeSet.discard", []);
 
         Assert.True(discarded.Success, discarded.Message);
     }
@@ -127,23 +127,23 @@ public class AbilityToolConsentTests
     [Fact]
     public async Task A_call_that_needs_consent_live_needs_none_when_it_is_only_recorded_in_a_change_set()
     {
-        var live = await Tool("commerce.activateDiscount").InvokeAsync(new JsonObject { ["discount"] = Guid.NewGuid().ToString() });
+        var live = await CallAsync("commerce.activateDiscount", new JsonObject { ["discount"] = Guid.NewGuid().ToString() });
         Assert.Equal(AbilityOperationStatus.ApprovalRequired, live.Status);
 
         await StartAsync("Summer");
         var discount = await CreateDiscountAsync("Sale");
 
-        var recorded = await Tool("commerce.activateDiscount").InvokeAsync(new JsonObject { ["discount"] = discount.ToString() });
+        var recorded = await CallAsync("commerce.activateDiscount", new JsonObject { ["discount"] = discount.ToString() });
 
         Assert.True(recorded.Success, recorded.Message);
     }
 
     private async Task<Guid> StartAsync(string name)
-        => (await Tool("changeSet.create").InvokeAsync(new JsonObject { ["name"] = name })).ChangeSet!.Id;
+        => (await CallAsync("changeSet.create", new JsonObject { ["name"] = name })).ChangeSet!.Id;
 
     private async Task<Guid> CreateDiscountAsync(string name)
     {
-        var created = await Tool("entity.create").InvokeAsync(new JsonObject
+        var created = await CallAsync("entity.create", new JsonObject
         {
             ["entityType"] = "umbraco-commerce-discount",
             ["fields"] = new JsonObject { ["name"] = name },
@@ -152,5 +152,8 @@ public class AbilityToolConsentTests
         return JsonSerializer.SerializeToElement(created.Result, AbilityJson.Options).GetProperty("key").GetGuid();
     }
 
-    private AbilityTool Tool(string id) => new(_site.Abilities.Find(id)!, _site.Invoker, _session);
+    private AbilityTool Tool(string id) => new AbilityTool(_site.Abilities.Find(id)!).WithChangeSetIdArgument();
+
+    private Task<AbilityToolResult> CallAsync(string id, JsonObject arguments, AbilityConsent consent = default)
+        => _site.Runner.InvokeAsync(Tool(id), arguments, _session, consent);
 }

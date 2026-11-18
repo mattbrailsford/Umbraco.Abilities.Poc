@@ -123,7 +123,7 @@ public sealed class EntityAction : IAction
     }
 
     private async Task<StepCall> CreateAsync(AbilityToolSession session, JsonObject fields, JsonObject? variant, CancellationToken cancellationToken)
-        => StepCall.From(await Tool(session, "entity.create").InvokeAsync(
+        => StepCall.From(await Call(session, "entity.create",
             new JsonObject
             {
                 ["entityType"] = _adapter.EntityType,
@@ -131,7 +131,6 @@ public sealed class EntityAction : IAction
                 ["fields"] = fields,
                 ["variant"] = variant,
             },
-            AbilityConsent.Given,
             cancellationToken));
 
     // One setValue per value given, all in the step's change set. The output is the key, for the summary after apply.
@@ -142,10 +141,9 @@ public sealed class EntityAction : IAction
             return StepCall.Fail(AbilityOperationStatus.InvalidInput, $"Pick the {_adapter.DisplayName.ToLowerInvariant()} to update.", [new Problem("key", "Required.")]);
         }
 
-        var setValue = Tool(session, "entity.setValue");
         foreach (var (alias, value) in fields)
         {
-            var result = await setValue.InvokeAsync(
+            var result = await Call(session, "entity.setValue",
                 new JsonObject
                 {
                     ["entityType"] = _adapter.EntityType,
@@ -154,7 +152,6 @@ public sealed class EntityAction : IAction
                     ["value"] = value?.DeepClone(),
                     ["variant"] = variant?.DeepClone(),
                 },
-                AbilityConsent.Given,
                 cancellationToken);
             if (!result.Success)
             {
@@ -282,8 +279,13 @@ public sealed class EntityAction : IAction
         return schema.Dimensions.Where(d => used.Contains(d.Name));
     }
 
-    private AbilityTool Tool(AbilityToolSession session, string abilityId)
-        => new(_step.Invoker.Abilities.Find(abilityId) ?? throw new InvalidOperationException($"No {abilityId} ability."), _step.Invoker, session);
+    private Task<AbilityToolResult> Call(AbilityToolSession session, string abilityId, JsonObject input, CancellationToken cancellationToken)
+        => _step.Runner.InvokeAsync(
+            new AbilityTool(_step.Invoker.Abilities.Find(abilityId) ?? throw new InvalidOperationException($"No {abilityId} ability.")),
+            input,
+            session,
+            AbilityConsent.Given,
+            cancellationToken);
 
     // A picker may give the key as text, or as a list of one.
     private static string? KeyOf(JsonNode value) => value switch
