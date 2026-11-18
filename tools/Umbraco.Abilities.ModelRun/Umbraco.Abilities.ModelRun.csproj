@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
     Runs a real model against the sample site. Not a test: it calls the Claude API, so it costs money and its
-    result varies. Needs ANTHROPIC_API_KEY. See Program.cs for how to run it.
+    result varies. Needs ANTHROPIC_API_KEY. Against a real site it starts the MCP proxy, so build that first. See Program.cs for how to run it.
   -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -13,5 +13,6 @@
     <ProjectReference Include="../../src/Umbraco.Abilities.Samples/Umbraco.Abilities.Samples.csproj" />
     <PackageReference Include="Anthropic" />
     <PackageReference Include="Microsoft.Extensions.AI" />
+    <PackageReference Include="ModelContextProtocol" />
   </ItemGroup>
 </Project>

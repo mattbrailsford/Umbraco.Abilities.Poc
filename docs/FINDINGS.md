@@ -141,6 +141,7 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
    | --- | --- | --- |
    | `ValueEditorHandler` | Text box, text area, integer, decimal, boolean, tags, content picker | One line each |
    | `BlockEditorHandler` | Block List and Block Grid: the group per data type, its item types, reading and writing block values, error paths | ~380 lines, moved out of the adapter and mapper |
+   | `MultiNodeTreePickerHandler` | Multi-node tree picker: keys marked `x-references`, with the allowed types, start node and count in the description | ~150 lines, added after a real model run (see [Against a real model](#against-a-real-model)) |
    | `JsonValueEditorHandler` | Every editor no handler takes: a whole JSON value with Umbraco's value schema | The fallback |
    | `StarRatingHandler` (test project) | A third party's editor, stored as `{ "stars": 4, "of": 5 }` | ~25 lines. Its field is a number from 1 to 5, checked before Umbraco sees it |
 
@@ -750,8 +751,52 @@ What it showed:
   page with that wording left every key out and used the keys it was given back: 23 calls (0 failed), 46 s, 124k / 5.5k
   tokens, valid and applied.
 
-Not covered: nested rule groups (the model would have used one for "VIP or Gold"), rebasing, real Umbraco documents
-(the runs used the sample page), Automate workflows, other models, and more than one run per description.
+Runs on 18-11-2026, against real Umbraco: the demo site (Umbraco 18.3, the Clean starter kit, real Umbraco Commerce),
+fresh, on its own database. The tools came from the MCP proxy, as an MCP client gets them, signed in as the API
+user. After each run a person validated and applied the set through the same proxy, and said yes when the proxy asked
+("Apply change set …? It can't be undone."). One run each:
+
+| Description | Result | Tool calls | Time | Tokens in / out |
+| --- | --- | --- | --- | --- |
+| A blog article called 'Summer opening hours' under the Blog page, with the summer hours and a line inviting people to visit | Correct: an Article under Blog, with a title, subtitle, date, SEO text and one rich text row with the hours as a list. It left out the required author; validation said so, and it found Paul Seal, the only author, set him and said so. Valid, applied | 15 (0 failed) | 27 s | 183k / 2.3k |
+| A content page called 'Delivery and returns' under Home, with the delivery and returns rules | Correct: a Content page under Home, with one rich text row and two headings. Valid, applied | 9 (0 failed) | 17 s | 87k / 1.4k |
+| On the About page, change the subtitle, and add a short paragraph at the end saying we were founded in 1998 | Correct: changed the subtitle, added a rich text row at the end, left the rest. Said the rest of the page still talks about the starter kit | 8 (0 failed) | 13 s | 55k / 1.1k |
+| Change the author of the Codegarden 2026 article to Paul Seal, and set its date to 10-06-2026 | Correct: Paul Seal already was the author, so it changed only the date, read as day-month-year, and kept the time. Said so | 8 (0 failed) | 12 s | 56k / 1.0k |
+| Add a code snippet block at the end of the Meetups page with a line of C# | Correct: a code snippet row at the end, with the code as given. Said the block has no setting for the language | 8 (0 failed) | 14 s | 79k / 1.0k |
+
+What it showed:
+
+- **Real pages worked as well as the samples.** No call failed. The model picked the right page type, found the
+  parent by name, and used Clean's own blocks. Edits took 8 calls each.
+- **Validation caught what the model missed.** The schema marks the article's author as required, but the model left
+  it out when it created the article. The first validation said so, and the model fixed it.
+- **A picker that passed through wasn't marked as a reference.** Clean's author is a multi-node tree picker, which went
+  through the JSON fallback (`JsonValueEditorHandler`) with Umbraco's value schema. It had no `x-references`, and the
+  schema didn't say which page type it takes. The model guessed from the description ("Choose the author") and listed
+  every page with the find tool (query "a"), since find couldn't filter by page type. That also broke the tool
+  descriptions' rule that only `x-references` points at another entity. Fixed in three parts:
+  - `MultiNodeTreePickerHandler` makes the picker a list of keys marked `x-references`, saved in Umbraco's own
+    `{ type, unique }` form. Its description adds what the data type allows: the types (its filter), the start node
+    by name (a fixed node, or a dynamic root with a fixed origin), and how many. Validation now checks each key exists.
+  - Find results carry their subtype (a document's content type alias), and find takes an optional `subtype` and an
+    empty query, to list every page of a type.
+  - A reference that can point at several entity types now has `x-references` too, as a list.
+
+  Rerun on 18-11-2026 with a winter version of the first description: the author field read "Choose the author who
+  wrote this article. Only from under 'Authors'. At most one." The model listed authors with `subtype: "author"`, set
+  the author when it created the article, and validation passed first time: 10 calls (0 failed) and 106k tokens in,
+  against 15 calls and 183k before.
+- **Rich text is Umbraco's own value.** The model wrote rich text as markup plus Umbraco's empty block structure
+  (`contentData`, `settingsData`, `expose`, `layout`), copied from the schema. It worked, but the sample page's
+  simpler shape (markup and a list of blocks) is easier.
+- **A real schema costs more.** Real page types have more fields than the sample, so a new article took 183k tokens
+  in, against 140k for the sample page.
+- **The person's approval works with a scripted client.** The proxy's question reached the client, and a yes let the
+  apply through. During the run, the model had no apply tool to try.
+
+Not covered: nested rule groups (the model would have used one for "VIP or Gold"), rebasing, pages in more than one
+language on real Umbraco (the demo has one), images and media on real pages, Automate workflows, other models, and
+more than one run per description.
 
 ## Checked against the real models
 

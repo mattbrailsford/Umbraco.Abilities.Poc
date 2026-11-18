@@ -9,7 +9,9 @@
     "x-edit": { "type": "string" },
     "x-bindings": { "const": true },
     "x-variations": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
-    "x-references": { "type": "string" },
+    "x-references": {
+      "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" }, "minItems": 1 }]
+    },
     "x-references-item-in": { "type": "string" },
     "x-item-types": {
       "type": "array",

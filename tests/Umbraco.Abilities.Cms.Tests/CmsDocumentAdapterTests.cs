@@ -14,6 +14,7 @@ using Umbraco.Abilities.Entities;
 using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Actions;
 using Umbraco.Cms.Core.DependencyInjection;
+using Umbraco.Cms.Core.DynamicRoot;
 using Umbraco.Cms.Core.Events;
 using Umbraco.Cms.Core.HostedServices;
 using Umbraco.Cms.Core.Models;
@@ -51,6 +52,7 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
     private ChangeSetAccessor _accessor = null!;
     private DraftSetService _draftSets = null!;
     private IDataType _pageBlocks = null!;
+    private Guid _ann;
 
     private IContentTypeService ContentTypeService => GetRequiredService<IContentTypeService>();
 
@@ -136,6 +138,9 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
         var accent = await CreateEditorDataTypeAsync(Constants.PropertyEditors.Aliases.ColorPickerEyeDropper, "Accent colour");
         var rating = await CreateEditorDataTypeAsync(StarRatingPropertyEditor.EditorAlias, "Star rating");
 
+        // A tree picker of one author, from under the Authors page, as Clean's article has.
+        var writer = await CreateTreePickerAsync("Writer");
+
         _page = new ContentTypeBuilder()
             .WithAlias("landingPage")
             .WithName("Landing page")
@@ -167,6 +172,10 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
                 .WithAlias("rating").WithName("Rating").WithDataTypeId(rating.Id)
                 .WithPropertyEditorAlias(StarRatingPropertyEditor.EditorAlias).WithVariations(ContentVariation.Nothing)
                 .Done()
+            .AddPropertyType()
+                .WithAlias("writer").WithName("Writer").WithDataTypeId(writer.Id)
+                .WithPropertyEditorAlias(Constants.PropertyEditors.Aliases.MultiNodeTreePicker).WithVariations(ContentVariation.Nothing)
+                .Done()
             .Build();
         _page.AllowedAsRoot = true;
         await ContentTypeService.CreateAsync(_page, Constants.Security.SuperUserKey);
@@ -197,7 +206,10 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
             GetRequiredService<PropertyEditorCollection>(),
             itemTypes,
             GetRequiredService<IPropertyEditorSchemaService>(),
-            GetRequiredService<PropertyEditorEntityHandlerCollection>());
+            GetRequiredService<PropertyEditorEntityHandlerCollection>(),
+            GetRequiredService<IEntityService>(),
+            GetRequiredService<IMediaTypeService>(),
+            GetRequiredService<IDynamicRootService>());
         var scope = new CmsScopeUnitOfWorkProvider(GetRequiredService<ICoreScopeProvider>());
         _documents = new CmsDocumentAdapter(
             contentSchemas,
@@ -264,6 +276,38 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
 
         Assert.That(checkedSchemas, Is.GreaterThan(2));
         Assert.That(problems, Is.Empty);
+    }
+
+    [Test]
+    public async Task A_tree_picker_is_a_list_of_page_references_saved_in_Umbracos_own_format()
+    {
+        // The schema marks it as references to documents, and says what the data type allows.
+        var schema = await _agent.OkAsync("entity_getSchema", """{ "entityType": "document", "subtype": "landingPage" }""");
+        var writer = schema.GetProperty("fields").GetProperty("properties").GetProperty("writer");
+        Assert.That(writer.GetProperty("items").GetProperty("x-references").GetString(), Is.EqualTo("document"));
+        Assert.That(writer.GetProperty("description").GetString(), Does.Contain("Only of these types: author.").And.Contain("Only from under 'Authors'.").And.Contain("At most one."));
+
+        // Find lists the pages of that type, with their type, and not the Authors page.
+        var authors = await _agent.OkAsync("entity_find", """{ "entityType": "document", "query": "", "subtype": "author" }""");
+        Assert.That(authors.EnumerateArray().Select(a => (a.GetProperty("name").GetString(), a.GetProperty("subtype").GetString())), Is.EqualTo(new[] { ("Ann Holm", "author") }));
+
+        // A key that isn't a page is caught before apply.
+        await _agent.StartChangeSetAsync("Writer");
+        var page = await CreatePageAsync();
+        await SetAsync(page, "", "subtitle", "\"By Ann\"", "en-US");
+        await SetAsync(page, "", "writer", $"[\"{Guid.NewGuid()}\"]");
+        var invalid = await _agent.OkAsync("changeSet_validate", SetJson());
+        Assert.That(invalid.GetProperty("entities")[0].GetProperty("problems")[0].GetProperty("errorMessages")[0].GetString(), Does.StartWith("No document with key"));
+
+        // The author's key is saved in the picker's own format, and reads back as the key.
+        await SetAsync(page, "", "writer", $"[\"{_ann}\"]");
+        var valid = await _agent.OkAsync("changeSet_validate", SetJson());
+        Assert.That(valid.GetProperty("valid").GetBoolean(), Is.True, valid.ToString());
+        await _agent.OkAsync("changeSet_apply", SetJson());
+
+        Assert.That(ContentService.GetById(page)!.GetValue<string>("writer"), Does.Contain(_ann.ToString("N")));
+        var saved = await _agent.OkAsync("entity_get", $$"""{ "entityType": "document", "key": "{{page}}" }""");
+        Assert.That(saved.GetProperty("fields").GetProperty("writer").EnumerateArray().Select(k => k.GetGuid()), Is.EqualTo(new[] { _ann }));
     }
 
     [Test]
@@ -1446,6 +1490,41 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
         {
             Name = name,
             DatabaseType = ValueStorageType.Nvarchar,
+            ParentId = Constants.System.Root,
+            CreateDate = DateTime.UtcNow,
+        };
+
+        await GetRequiredService<IDataTypeService>().CreateAsync(dataType, Constants.Security.SuperUserKey);
+        return dataType;
+    }
+
+    // A tree picker data type that allows one page of type "author", from under an "Authors" page. Makes both types,
+    // the Authors page, and one author in it (_ann).
+    private async Task<IDataType> CreateTreePickerAsync(string name)
+    {
+        var author = new ContentTypeBuilder().WithAlias("author").WithName("Author").WithContentVariation(ContentVariation.Nothing).Build();
+        var authorList = new ContentTypeBuilder().WithAlias("authorList").WithName("Author list").WithContentVariation(ContentVariation.Nothing).Build();
+        authorList.AllowedAsRoot = true;
+        await ContentTypeService.CreateAsync(author, Constants.Security.SuperUserKey);
+        authorList.AllowedContentTypes = [new ContentTypeSort(author.Key, 0, author.Alias)];
+        await ContentTypeService.CreateAsync(authorList, Constants.Security.SuperUserKey);
+
+        var authors = ContentService.Create("Authors", Constants.System.Root, authorList);
+        ContentService.Save(authors);
+        var ann = ContentService.Create("Ann Holm", authors.Id, author);
+        ContentService.Save(ann);
+        _ann = ann.Key;
+
+        var dataType = new DataType(GetRequiredService<PropertyEditorCollection>()[Constants.PropertyEditors.Aliases.MultiNodeTreePicker], GetRequiredService<IConfigurationEditorJsonSerializer>())
+        {
+            ConfigurationData = new Dictionary<string, object>
+            {
+                { "startNode", new Dictionary<string, object> { { "type", "content" }, { "id", authors.Key.ToString() } } },
+                { "filter", author.Key.ToString() },
+                { "maxNumber", 1 },
+            },
+            Name = name,
+            DatabaseType = ValueStorageType.Ntext,
             ParentId = Constants.System.Root,
             CreateDate = DateTime.UtcNow,
         };

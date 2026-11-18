@@ -141,8 +141,11 @@ public sealed record AbilityResult(AbilityOperationStatus Status, object? Result
         => new(status, null, message, problems ?? []);
 }
 
-/// <summary>The standard way an ability points at an entity it created, changed or found.</summary>
-public sealed record EntitySummary(string EntityType, Guid Key, string Name, string? EditUrl = null);
+/// <summary>
+/// The standard way an ability points at an entity it created, changed or found. <c>Subtype</c> is its subtype, such as
+/// a document's content type alias, for entity types that have them.
+/// </summary>
+public sealed record EntitySummary(string EntityType, Guid Key, string Name, string? EditUrl = null, string? Subtype = null);
 
 public interface IAbility
 {

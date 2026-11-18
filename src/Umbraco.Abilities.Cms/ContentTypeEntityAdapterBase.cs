@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using Umbraco.Abilities.ChangeSets;
 using Umbraco.Abilities.Cms.PropertyEditors;
 using Umbraco.Abilities.Entities;
+using Umbraco.Cms.Core.DynamicRoot;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Models.ContentEditing;
 using Umbraco.Cms.Core.Models.ContentEditing.Validation;
@@ -40,7 +41,10 @@ public sealed class CmsContentSchemas
         PropertyEditorCollection editors,
         ItemTypeRegistry itemTypes,
         IPropertyEditorSchemaService? schemas = null,
-        IEnumerable<IPropertyEditorEntityHandler>? editorHandlers = null)
+        IEnumerable<IPropertyEditorEntityHandler>? editorHandlers = null,
+        IEntityService? entities = null,
+        IMediaTypeService? mediaTypes = null,
+        IDynamicRootService? dynamicRoots = null)
     {
         Languages = languages;
         Json = json;
@@ -49,9 +53,15 @@ public sealed class CmsContentSchemas
 
         // Packages' handlers first, so a package can map a core editor its own way; then the core editors'; then
         // every other editor as a whole JSON value.
+        var asJson = new JsonValueEditorHandler(schemas);
         var handlers = new PropertyEditorHandlerCollection(
-            [.. editorHandlers ?? [], .. ValueEditorHandler.Core, new BlockEditorHandler(contentTypes, dataTypes, json)],
-            new JsonValueEditorHandler(schemas));
+            [
+                .. editorHandlers ?? [],
+                .. ValueEditorHandler.Core,
+                new BlockEditorHandler(contentTypes, dataTypes, json),
+                new MultiNodeTreePickerHandler(entities, contentTypes, mediaTypes, dynamicRoots, asJson),
+            ],
+            asJson);
         Mapper = new CmsSchemaMapper(contentTypes, dataTypes, handlers);
         itemTypes.AddSource(new PropertyEditorItemTypeSource(handlers, Mapper));
     }
@@ -219,7 +229,7 @@ public abstract class ContentTypeEntityAdapterBase<TType>(CmsContentSchemas sche
         => await LoadStoredAsync(key, cancellationToken) is { } stored ? await ToEntityAsync(stored, cancellationToken) : null;
 
     public virtual EntitySummary ToSummary(Entity entity)
-        => new(EntityType, entity.Key, EntityValues.ReadAny(entity.Fields, ContentFields.Name)?.GetValue<string>() ?? "(unnamed)", EditUrl(entity.Key));
+        => new(EntityType, entity.Key, EntityValues.ReadAny(entity.Fields, ContentFields.Name)?.GetValue<string>() ?? "(unnamed)", EditUrl(entity.Key), entity.Subtype);
 
     /// <summary>A type by alias, or a problem on the subtype.</summary>
     protected TType RequireType(string? alias)

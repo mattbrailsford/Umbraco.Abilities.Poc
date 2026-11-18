@@ -276,6 +276,8 @@ endpoints.
 - A value that varies by segment only is shared by every culture, saved per segment, and a missing one is a problem with no culture
   - `CmsDocumentAdapterTests.A_value_that_varies_by_segment_only_is_shared_by_every_culture_and_saved_per_segment`
   - `CmsDocumentAdapterTests.A_required_segment_only_value_missing_in_a_segment_is_a_problem_with_no_culture`
+- A tree picker is a list of page keys marked `x-references`, its description says the allowed type, start node and count, find lists pages by type, a key that isn't a page is caught by validation, and the key is saved in the picker's own format and reads back as the key
+  - `CmsDocumentAdapterTests.A_tree_picker_is_a_list_of_page_references_saved_in_Umbracos_own_format`
 - A page allowed only under a parent is created under it, reads back in the set with its parent, and keeps that parent when edited again
   - `CmsDocumentAdapterTests.A_page_allowed_only_under_a_parent_is_created_under_it_and_reads_back_in_the_set`
 - A page moved in a set is under its new parent in the set, under the old one live, and is moved by Umbraco on apply, including under a parent created in the same set

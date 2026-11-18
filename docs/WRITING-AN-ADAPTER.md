@@ -309,6 +309,7 @@ Two optional parts, for editors that need them:
 | --- | --- |
 | `ValueEditorHandler` | An editor whose stored value is the field's value. One line per editor: `new ValueEditorHandler("My.Editor", c => c.Field(FieldType.String))`. Used for the core text, number, boolean, tags and content picker editors |
 | `BlockEditorHandler` | Block List and Block Grid |
+| `MultiNodeTreePickerHandler` | The multi-node tree picker: a list of document or media keys, marked `x-references`. Its description says what the data type allows (types, start node, how many). A member picker stays a whole JSON value |
 | `JsonValueEditorHandler` | The fallback: any other editor is a whole JSON value, described by Umbraco's value schema for it |
 
 Handlers are found on their own: the interface is `IDiscoverable`, and `PropertyEditorEntityHandlersComposer` adds

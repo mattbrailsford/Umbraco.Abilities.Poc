@@ -2,6 +2,7 @@ using Umbraco.Abilities.ChangeSets;
 using Umbraco.Abilities.Entities;
 using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Models;
+using Umbraco.Cms.Core.Models.Entities;
 using Umbraco.Cms.Core.Models.ContentEditing;
 using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.Core.Services.AuthorizationStatus;
@@ -75,7 +76,7 @@ public sealed class CmsMediaAdapter(
     public override Task<IReadOnlyList<EntitySummary>> FindAsync(string query, CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<EntitySummary>>(entities.GetAll(UmbracoObjectTypes.Media)
             .Where(e => e.Name?.Contains(query, StringComparison.OrdinalIgnoreCase) == true)
-            .Select(e => new EntitySummary(Type, e.Key, e.Name!, EditUrl(e.Key)))
+            .Select(e => new EntitySummary(Type, e.Key, e.Name!, EditUrl(e.Key), (e as IContentEntitySlim)?.ContentTypeAlias))
             .ToList());
 
     /// <summary>The backoffice's checks: the Media section, and access to the item (or, for a new one, its parent or the root).</summary>
