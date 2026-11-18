@@ -440,6 +440,12 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
       rebasing and discarding work. The third kind is the real gap: a recorded call would need to say "on apply, call
       this adapter method", run in order after the saves. Publish needs that anyway, so build it there, then see if
       delete fits on it.
+30. **The change set store must be safe for many requests at once.** The tests drove one conversation at a time. Five
+    real model runs in parallel against one site lost a change set the moment it was created: the next call said "No
+    change set". `InMemoryChangeSetStore` kept sets in a plain `Dictionary`, which can lose an entry when two requests
+    write at once. It is a `ConcurrentDictionary` now, as `DraftSetService` and the approvals already were. A test makes
+    200 sets from 200 conversations at once. A real store (a database) needs the same care: two calls in one set at
+    once would still race, since a set's list of changes isn't locked.
 
 ## Developer experience of adapters
 
@@ -794,9 +800,35 @@ What it showed:
 - **The person's approval works with a scripted client.** The proxy's question reached the client, and a yes let the
   apply through. During the run, the model had no apply tool to try.
 
+### Repeated on real Umbraco
+
+Each of the five real-site descriptions, five times, on 18-11-2026, after the tree picker fix. Every round started the
+demo copy from the same clean database, and ran the five descriptions at once. A script graded each run on the live
+result, not on the model's summary: the right page type and parent, the asked values (hours, rules, subtitle, date,
+code), one new row at the end for the edits, and nothing else changed in the rows it counted.
+
+| Description | Correct | Tool calls | Failed calls | Tokens in (median) | Time (median) |
+| --- | --- | --- | --- | --- | --- |
+| Blog article 'Summer opening hours' under Blog | 5 of 5 | 9 to 11 | 0 | 106k | 21 s |
+| Content page 'Delivery and returns' under Home | 5 of 5 | 8 to 9 | 0 | 88k | 17 s |
+| About: new subtitle, and a paragraph at the end | 5 of 5 | 9 to 11 | 1 | 67k | 14 s |
+| Codegarden 2026: author and date | 5 of 5 | 8 to 9 | 0 | 58k | 14 s |
+| Meetups: a code snippet at the end | 5 of 5 | 7 to 8 | 0 | 84k | 14 s |
+
+All 25 were correct, about 2.0M tokens in and 33k out in all. What it showed:
+
+- **The runs were steady.** Each description took nearly the same calls every time, and no run needed a second try at
+  validation.
+- **The one failed call was ours, not the model's.** Five runs at once lost a change set on the site, and the model
+  started a new one and finished. See finding 30 in [What building it taught us](#what-building-it-taught-us): the
+  store is safe for that now.
+- **Small choices vary, and are reported.** The date edit kept the article's time of day in four runs and set midnight
+  in one; every run said which. Paul Seal already was the Codegarden author, so that half of the description only
+  tests that the model notices.
+
 Not covered: nested rule groups (the model would have used one for "VIP or Gold"), rebasing, pages in more than one
 language on real Umbraco (the demo has one), images and media on real pages, Automate workflows, other models, and
-more than one run per description.
+harder descriptions than these five.
 
 ## Checked against the real models
 

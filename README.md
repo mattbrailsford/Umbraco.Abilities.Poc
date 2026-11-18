@@ -91,9 +91,9 @@ The details and the lessons are in [docs/FINDINGS.md](docs/FINDINGS.md). The tes
   Code, which can't answer, is tried. Automate actions and a backoffice editor would use the same abilities, but neither is
   built here.
 - **A real model, at scale.** The tests script the tool calls. One model built discounts and pages, and edited pages, from
-  text in a few runs, on the samples and on the real demo site over MCP (see
-  [Against a real model](docs/FINDINGS.md#against-a-real-model)). That shows the tools are usable, not how often a
-  model gets them right, or how it does on workflows.
+  text, on the samples and on the real demo site over MCP. Five real-site descriptions ran five times each and all 25
+  were right (see [Against a real model](docs/FINDINGS.md#against-a-real-model)). That is one model and simple
+  requests: it doesn't show how other models do, or how it does on harder requests or workflows.
 - **Persistence and scale.** Sets are in memory, and working state is recomputed by replaying every call
   on each read.
 - **Load balanced sites.** Change sets, waiting approvals and the side effect queue are kept in memory on one server.

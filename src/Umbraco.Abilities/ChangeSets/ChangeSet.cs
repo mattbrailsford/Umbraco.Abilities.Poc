@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
 
 using Umbraco.Abilities.Entities;
@@ -102,15 +103,19 @@ public interface IChangeSetStore
     void Remove(Guid id);
 }
 
+/// <summary>
+/// Keeps change sets in memory, on one server. Safe for many requests at once: a site serves several conversations in
+/// parallel.
+/// </summary>
 public sealed class InMemoryChangeSetStore : IChangeSetStore
 {
-    private readonly Dictionary<Guid, ChangeSet> _sets = [];
+    private readonly ConcurrentDictionary<Guid, ChangeSet> _sets = new();
 
     public ChangeSet? Get(Guid id) => _sets.GetValueOrDefault(id);
 
     public void Save(ChangeSet set) => _sets[set.Id] = set;
 
-    public void Remove(Guid id) => _sets.Remove(id);
+    public void Remove(Guid id) => _sets.TryRemove(id, out _);
 }
 
 /// <summary>
