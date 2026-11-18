@@ -51,12 +51,13 @@ public class SchemaMetaschemaTests
     [InlineData("""{ "type": "string", "x-meta": { "color": {} } }""")]
     [InlineData("""{ "type": "string", "x-meta": { "Acme.Color": {} } }""")]
     [InlineData("""{ "type": "string", "x-meta": { "acme.color": "red" } }""")]
+    [InlineData("""{ "type": "string", "format": "cron" }""")]
     public void The_meta_schema_catches_a_mistake_in_a_field_deep_inside_a_schema(string field)
     {
         // A type JSON Schema doesn't have, a null description, an x- keyword the framework doesn't define, an item type
         // without its group and name, variations that aren't a list, an editor without an alias, and a metadata key
-        // without an owner, in capitals, or with a value that isn't an object. Each sits two levels down, as a real
-        // field would.
+        // without an owner, in capitals, or with a value that isn't an object, and a format that is neither standard nor
+        // owned. Each sits two levels down, as a real field would.
         using var schema = JsonDocument.Parse($$"""
             { "type": "object", "properties": { "seo": { "type": "object", "properties": { "field": {{field}} } } } }
             """);
@@ -72,6 +73,8 @@ public class SchemaMetaschemaTests
               "type": "object",
               "properties": {
                 "title": { "type": "string", "description": "Title.", "x-variations": ["culture"], "x-bindings": true },
+                "when": { "type": "string", "format": "umbraco.cron" },
+                "sent": { "type": "string", "format": "date-time" },
                 "theme": { "type": "string", "x-editor": { "alias": "Acme.ThemePicker", "config": { "swatches": true } }, "x-meta": { "acme.theme": { "preview": "hero" } } },
                 "blocks": { "type": "array", "x-edit": "Items.", "x-item-types": [{ "alias": "hero", "group": "blocks", "name": "Hero" }] }
               }

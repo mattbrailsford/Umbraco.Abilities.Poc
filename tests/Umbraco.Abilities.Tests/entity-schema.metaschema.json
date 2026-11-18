@@ -6,6 +6,13 @@
   "description": "JSON Schema 2020-12 plus the x- keywords the framework adds. $dynamicAnchor makes every nested schema follow these rules too. Any other x- keyword is a mistake.",
   "allOf": [{ "$ref": "https://json-schema.org/draft/2020-12/schema" }],
   "properties": {
+    "format": {
+      "description": "One of JSON Schema's own formats, or a package's own as owner.name in lower case.",
+      "anyOf": [
+        { "enum": ["date-time", "date", "time", "duration", "email", "idn-email", "hostname", "idn-hostname", "ipv4", "ipv6", "uri", "uri-reference", "iri", "iri-reference", "uuid", "uri-template", "json-pointer", "relative-json-pointer", "regex"] },
+        { "type": "string", "pattern": "^[a-z0-9]+(\\.[a-z0-9-]+)+$" }
+      ]
+    },
     "x-edit": { "type": "string" },
     "x-bindings": { "const": true },
     "x-variations": { "type": "array", "items": { "type": "string" }, "minItems": 1 },

@@ -286,6 +286,28 @@ public sealed class CommerceDiscountAdapterTests : UmbracoIntegrationTest
     }
 
     [Test]
+    public async Task Each_rule_and_reward_setting_names_Commerces_own_editor_for_a_UI_and_not_for_the_model()
+    {
+        var top = (await _agent.OkAsync("entity_getSchema", $$"""{ "entityType": "{{Discount}}" }""")).GetProperty("fields").GetProperty("properties");
+        var itemTypes = JsonSerializer.Serialize(ItemTypes(top, "rules").Concat(ItemTypes(top, "rewards")));
+        var arguments = $$"""{ "entityType": "{{Discount}}", "itemTypes": {{itemTypes}} }""";
+
+        // Commerce's provider settings name their editor UI. A form built from the schema shows the same editors.
+        var ui = await _agent.UiOkAsync("entity_getSchema", arguments);
+        var editors = ui.GetProperty("itemTypes").EnumerateObject()
+            .SelectMany(t => t.Value.GetProperty("fields").GetProperty("properties").EnumerateObject())
+            .Where(f => f.Value.TryGetProperty("x-editor", out _))
+            .Select(f => f.Value.GetProperty("x-editor").GetProperty("alias").GetString())
+            .Distinct()
+            .ToList();
+        Assert.That(editors, Is.Not.Empty);
+        Assert.That(editors, Has.Some.StartsWith("Uc."), string.Join(", ", editors));
+
+        var model = await _agent.OkAsync("entity_getSchema", arguments);
+        Assert.That(model.ToString(), Does.Not.Contain("x-editor"));
+    }
+
+    [Test]
     public async Task An_amount_is_keyed_by_a_currency_the_model_finds_and_reads_back_as_an_object()
     {
         var key = Guid.NewGuid();
@@ -426,6 +448,15 @@ public sealed class CommerceDiscountAdapterTests : UmbracoIntegrationTest
         }
 
         public async Task StartChangeSetAsync(string name) => await OkAsync("changeSet_create", $$"""{ "name": "{{name}}" }""");
+
+        /// <summary>Calls an ability as a UI would, through the Management API: x-editor and x-meta are kept.</summary>
+        public async Task<JsonElement> UiOkAsync(string tool, string json)
+        {
+            var ability = abilities.All.Single(a => AbilityTool.ToToolName(a.Descriptor.Id) == tool);
+            var result = (await new AbilityTool(ability, invoker, _session).InvokeAsync(System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject(), AbilityConsent.Given)).ToJson();
+            Assert.That(result.GetProperty("success").GetBoolean(), Is.True, $"{tool} failed: {result}");
+            return result.GetProperty("result");
+        }
 
         public async Task<JsonElement> OkAsync(string tool, string json)
         {

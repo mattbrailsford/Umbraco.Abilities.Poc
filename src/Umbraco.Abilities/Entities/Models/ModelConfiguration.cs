@@ -44,6 +44,8 @@ internal sealed class PropertyConfig
 
     public FieldEditor? Editor { get; set; }
 
+    public string? Format { get; set; }
+
     public JsonObject? Meta { get; set; }
 }
 
@@ -196,6 +198,9 @@ public sealed class FieldBuilder<T>
 
     /// <summary>A DataAnnotations rule, e.g. <c>new RangeAttribute(1, 100)</c>, reported on the field's path.</summary>
     public FieldBuilder<T> Rule(ValidationAttribute rule) => Set(() => _config.Rules.Add(rule));
+
+    /// <summary>The kind of value, as JSON Schema's <c>format</c>: a standard one, or <c>owner.name</c>. Models see it.</summary>
+    public FieldBuilder<T> Format(string format) => Set(() => _config.Format = ValueFormats.Check(format));
 
     /// <summary>The editor a UI should use for the field, by its editor UI alias. Models never see it.</summary>
     public FieldBuilder<T> Editor(string alias, JsonObject? config = null) => Set(() => _config.Editor = new FieldEditor(alias, config));

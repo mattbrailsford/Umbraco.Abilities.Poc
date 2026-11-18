@@ -1,5 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Reflection;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Umbraco.Abilities.Samples.Automate.Plugins;
 
@@ -158,7 +160,27 @@ public sealed class ScheduleSettings
 {
     [Field(Label = "Cron", Description = "A cron expression.")]
     [Required]
-    public string? Cron { get; set; }
+    public CronExpression? Cron { get; set; }
+}
+
+/// <summary>
+/// A cron expression, such as <c>0 9 * * 1</c>. Its format names the kind of value once, on the type: every setting or
+/// input of this type is <c>umbraco.cron</c> in the schema, so a UI maps that format to one cron editor. Stored as text.
+/// </summary>
+[ValueFormat("umbraco.cron")]
+[JsonConverter(typeof(CronExpressionConverter))]
+public readonly record struct CronExpression(string Value)
+{
+    public override string ToString() => Value;
+}
+
+public sealed class CronExpressionConverter : JsonConverter<CronExpression>
+{
+    public override CronExpression Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        => new(reader.GetString() ?? string.Empty);
+
+    public override void Write(Utf8JsonWriter writer, CronExpression value, JsonSerializerOptions options)
+        => writer.WriteStringValue(value.Value);
 }
 
 [Trigger("schedule", "Schedule", Description = "Runs on a schedule.")]

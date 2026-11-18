@@ -3,7 +3,7 @@ using System.ComponentModel;
 namespace Umbraco.Abilities.Samples.Email;
 
 public sealed record SendEmailInput(
-    [property: Description("Recipient email address.")] string To,
+    [property: Description("Recipient email address."), ValueFormat("email")] string To,
     [property: Description("Subject line.")] string Subject,
     [property: Description("Optional body text."), Editor("Umb.PropertyEditorUi.TextArea", Config = """{ "rows": 8 }""")] string? Body = null);
 

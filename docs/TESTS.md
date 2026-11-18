@@ -246,7 +246,7 @@ endpoints.
   - `SchemaMetaschemaTests.Every_tools_input_schema_is_valid_JSON_Schema`
   - `SchemaMetaschemaTests.Every_entity_schema_and_item_type_schema_is_valid_JSON_Schema`
   - `CmsDocumentAdapterTests.Every_document_and_media_schema_and_block_schema_is_valid_JSON_Schema`
-- The check catches a mistake two levels down (a bad type, a null description, an unknown or misused x- note, an editor without an alias, a badly named metadata key), and accepts a correct schema
+- The check catches a mistake two levels down (a bad type, a null description, an unknown or misused x- note, an editor without an alias, a badly named metadata key, a format that is neither standard nor owned), and accepts a correct schema
   - `SchemaMetaschemaTests.The_meta_schema_catches_a_mistake_in_a_field_deep_inside_a_schema`
   - `SchemaMetaschemaTests.The_meta_schema_accepts_a_correct_schema_with_the_frameworks_keywords`
 
@@ -267,6 +267,18 @@ endpoints.
   - `UiHintsTests.Deleting_every_hint_changes_nothing_but_how_a_field_looks`
 - Every real document field names its data type's editor and key, and the model sees neither
   - `CmsDocumentAdapterTests.Each_field_names_its_data_types_editor_for_a_UI_and_a_model_sees_neither`
+- A value type names its format once, and every field of that type has it; a model sees it
+  - `ValueFormatTests.A_value_type_names_its_format_once_and_every_setting_of_that_type_has_it`
+  - `ValueFormatTests.An_input_property_can_name_a_standard_format_and_a_model_sees_it`
+  - `ValueFormatTests.The_fluent_set_up_names_a_format_too`
+- A format is one of JSON Schema's own, or `owner.name` in lower case
+  - `ValueFormatTests.A_format_is_one_of_JSON_Schemas_own_or_owner_dot_name_in_lower_case`
+  - `ValueFormatTests.A_standard_format_or_a_packages_own_is_accepted`
+- A form maps a format to one editor for every field of that kind, and shows a text box when it has none
+  - `ValueFormatTests.A_form_maps_a_format_to_one_editor_for_every_field_of_that_kind`
+- A product's own editor for a setting becomes the field's editor, for a UI only, in the samples and on real Commerce
+  - `ValueFormatTests.A_products_own_editor_for_a_setting_becomes_the_fields_editor`
+  - `CommerceDiscountAdapterTests.Each_rule_and_reward_setting_names_Commerces_own_editor_for_a_UI_and_not_for_the_model`
 - The Management API keeps the hints; the MCP proxy strips them from schemas and results
   - `AbilitiesManagementApiTests.The_Management_API_keeps_each_fields_editor_for_a_UI_to_build_a_form_from`
   - `AbilitiesMcpProxyTests.An_MCP_client_gets_schemas_without_the_hints_meant_for_UIs`
