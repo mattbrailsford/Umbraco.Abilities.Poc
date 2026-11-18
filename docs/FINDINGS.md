@@ -714,8 +714,41 @@ What it showed:
 - **Derived keys change on save.** The applied discount's rules have different keys from the ones the model was given,
   as described in [What the mapping costs](WRITING-AN-ADAPTER.md#what-the-mapping-costs).
 
-Not covered: nested rule groups (the model would have used one for "VIP or Gold"), editing an existing entity,
-rebasing, CMS documents, Automate workflows, and other models.
+Runs on 18-11-2026, against the sample CMS pages. The site starts with two pages in English and Danish ("Summer
+sale", with a hero, a card grid of three cards and a promotion; "About us", with one rich text grid block) and two
+images. The first two runs create a page; the other three edit one, with the prompt "Edit existing document entities:"
+in place of "Create a … entity:". One run each:
+
+| Description | Result | Tool calls | Time | Tokens in / out |
+| --- | --- | --- | --- | --- |
+| A Winter sale page in English and Danish, with a dark hero, a card grid of three winter products, and the beach banner as its image | Correct: both cultures for title, URL, hero and grid heading; dark hero; three cards; the beach banner found by name. Said the products were placeholders. Valid, applied | 20 (0 failed) | 37 s | 140k / 3.7k |
+| An FAQ page in English and Danish, laid out in two columns: three questions on the left, their answers on the right | Read that an area holds at most two blocks, so built three two-column rows, one per question, and said why. Both cultures. Valid, applied | 24 (0 failed) | 51 s | 152k / 5.9k |
+| On the Summer sale page, make the hero dark, add a card for sunglasses, and remove the beach towels card | Correct: found the page, changed only the theme, added and removed the cards, left everything else. Valid, applied | 9 (0 failed) | 15 s | 53k / 1.4k |
+| Add a quote from our founder, Anna Holm, to the About us page intro: 'Good clothes make good summers.' Also link About us to the Summer sale page | Correct: a quote block in the rich text, its tag placed in the markup by the value handler; Summer sale found by name and added to Related. Said it used Related, not a link in the text. Valid, applied | 10 (0 failed) | 18 s | 65k / 1.3k |
+| Translate the 'Top picks' heading on the Summer sale page into Danish | Correct: set only the Danish heading; English and every other value unchanged | 7 (0 failed) | 12 s | 51k / 0.9k |
+
+What it showed:
+
+- **No call failed.** Nested items (cards in a grid block, rich text in a layout area), a block inside rich text,
+  values per culture and references to media and pages were all right first time, from the schema alone.
+- **Edits are cheap and narrow.** An edit took 7 to 10 calls. The model found the page by name, read it, and changed
+  only the paths it needed. Nothing else on the page moved.
+- **Limits in the schema were followed.** With "at most two blocks" on an area, it changed the layout to fit and said
+  so, instead of breaking the rule and waiting for validation.
+- **It saw what can't vary.** In three runs it said, unasked, that cards or the intro have one value for every
+  language, so the Danish page would show English there.
+- **Creating costs more than editing.** A new page took 20 to 24 small calls, and every call sends the whole
+  conversation again, so input tokens were about three times an edit's. A tool that adds an item with its children in
+  one call would cut that.
+- **It chose its own item keys** in one run, as patterns (`a1000000-0000-4000-8000-000000000001`), so it could address
+  items before reading them back. That is the caller-chosen key design working. A key already used in the same field is
+  refused, but the same pattern reused on another page or in another set is not checked. The key inputs of create and
+  add item now say to leave the key out, or make it a new random GUID, not a pattern. That asks; it doesn't enforce. A rerun of the FAQ
+  page with that wording left every key out and used the keys it was given back: 23 calls (0 failed), 46 s, 124k / 5.5k
+  tokens, valid and applied.
+
+Not covered: nested rule groups (the model would have used one for "VIP or Gold"), rebasing, real Umbraco documents
+(the runs used the sample page), Automate workflows, other models, and more than one run per description.
 
 ## Checked against the real models
 

@@ -70,8 +70,8 @@ This is the design's intent. Only the Umbraco.AI tools and the CMS draft set are
 - **Changes saved elsewhere are rebased onto.** Only a value both sides changed is a conflict to resolve.
 - **It runs on a real Umbraco 18.** Content changes go into a CMS draft set. Umbraco's own validation, permissions,
   notifications, audit log and background queue are used.
-- **A real model used it.** Claude Opus 5.5 built discounts from a description with only the generic tools, in a few
-  runs.
+- **A real model used it.** Claude Opus 5.5 built discounts and pages from a description, and edited existing pages,
+  with only the generic tools, in a few runs.
 
 The details and the lessons are in [docs/FINDINGS.md](docs/FINDINGS.md). The test behind each claim is in
 [docs/TESTS.md](docs/TESTS.md).
@@ -90,9 +90,9 @@ The details and the lessons are in [docs/FINDINGS.md](docs/FINDINGS.md). The tes
   not tried. The proxy asks the person before a call that can't be undone (MCP elicitation); only headless Claude
   Code, which can't answer, is tried. Automate actions and a backoffice editor would use the same abilities, but neither is
   built here.
-- **A real model, at scale.** The tests script the tool calls. One model built two discounts from text in a few runs
-  (see [Against a real model](docs/FINDINGS.md#against-a-real-model)). That shows the tools are usable, not how often a
-  model gets them right, or how it does on documents, workflows or edits.
+- **A real model, at scale.** The tests script the tool calls. One model built discounts and sample pages, and edited
+  sample pages, from text in a few runs (see [Against a real model](docs/FINDINGS.md#against-a-real-model)). That shows
+  the tools are usable, not how often a model gets them right, or how it does on real Umbraco documents or workflows.
 - **Persistence and scale.** Sets are in memory, and working state is recomputed by replaying every call
   on each read.
 - **Load balanced sites.** Change sets, waiting approvals and the side effect queue are kept in memory on one server.
@@ -120,6 +120,7 @@ To let a real model build an entity from text, set `ANTHROPIC_API_KEY` and run:
 ```bash
 dotnet run --project tools/Umbraco.Abilities.ModelRun
 dotnet run --project tools/Umbraco.Abilities.ModelRun -- "Free shipping over 500 at weekends"
+dotnet run --project tools/Umbraco.Abilities.ModelRun -- "On the Summer sale page, make the hero dark" document edit
 ```
 
 It is not a test: each run calls the Claude API, costs money, and can give a different result.

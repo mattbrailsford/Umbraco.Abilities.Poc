@@ -106,7 +106,7 @@ Start with what the system does, before how it does it.
    page, a discount that refers to that page, and an email to send afterwards.
 
 **Look for:** whether the tool calls are ones a real model could plausibly make. They're scripted here. A real model
-made the same kind of calls in a few runs (see [Against a real model](docs/FINDINGS.md#against-a-real-model)), but that is not proof it always
+made the same kind of calls in a few runs, on discounts and pages, (see [Against a real model](docs/FINDINGS.md#against-a-real-model)), but that is not proof it always
 will.
 
 ### Pass 2: layer 1, abilities (15 minutes)

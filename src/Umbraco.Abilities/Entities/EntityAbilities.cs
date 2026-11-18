@@ -236,7 +236,7 @@ public sealed class GetEntityAbility(EntityAdapterRegistry adapters, ChangeSetSe
 
 public sealed record CreateEntityInput(
     [property: Description("Entity type to create.")] string EntityType,
-    [property: Description("Optional key for the new entity. Choose one when other entities in the set must refer to it.")] Guid? Key = null,
+    [property: Description("Optional key for the new entity. Leave it out and one is made and returned. Choose one only when other entities in the set must refer to it, and make it a new random GUID, not a pattern.")] Guid? Key = null,
     [property: Description("Field values, keyed by field alias.")] JsonObject? Fields = null,
     [property: Description("The subtype to create, for entity types that have them, e.g. a document's content type alias.")] string? Subtype = null,
     [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }. Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
@@ -282,7 +282,7 @@ public sealed record AddEntityItemInput(
     [property: Description("Entity key.")] Guid? Key,
     [property: Description("Path of the items field, e.g. \"rules\", or \"blocks/{itemKey}/cards\" for one inside an item.")] string FieldPath,
     [property: Description("Item type alias, from the field's x-item-types.")] string ItemType,
-    [property: Description("Optional key for the new item. Choose one when another item must refer to it.")] Guid? ItemKey = null,
+    [property: Description("Optional key for the new item. Leave it out and one is made and returned. Choose one only when another item must refer to it, and make it a new random GUID, not a pattern.")] Guid? ItemKey = null,
     [property: Description("Field values for the new item, keyed by field alias.")] JsonObject? Fields = null,
     [property: Description("Optional zero-based position. Omit to append.")] int? Position = null,
     [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }. Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;

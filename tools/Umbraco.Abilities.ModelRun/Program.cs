@@ -8,19 +8,25 @@ using Microsoft.Extensions.AI;
 using Umbraco.Abilities;
 using Umbraco.Abilities.AI;
 using Umbraco.Abilities.Samples;
+using Umbraco.Abilities.Samples.Cms;
 
 // A real model builds an entity from a description, using only the generic tools every adapter gets.
 // The prompt below names no product, entity field or item type: everything the model learns comes from the tools.
 //
-//   dotnet run --project tools/Umbraco.Abilities.ModelRun -- "<description>" [entityType]
+//   dotnet run --project tools/Umbraco.Abilities.ModelRun -- "<description>" [entityType] [create|edit]
+//
+// "edit" asks the model to change entities that already exist, instead of creating one. The site starts with a few
+// pages and media items (see SeedContent below), so there is something to find, link to and edit.
 //
 // Needs ANTHROPIC_API_KEY. Each run calls the Claude API, so it costs money.
 
 var description = args.Length > 0 ? args[0] : "10% off the Summer collection for VIP customers in December";
 var entityType = args.Length > 1 ? args[1] : "umbraco-commerce-discount";
+var edit = args.Length > 2 && args[2] == "edit";
 const string model = "claude-opus-5-5";
 
 var site = SampleSite.Create();
+await SeedContent(site);
 
 // No change set is open at the start: the model creates one, and it becomes the conversation's current set. Applying
 // is left to a person, so the model doesn't get apply or discard.
@@ -33,15 +39,15 @@ var tools = AbilityAITools
     .ToList();
 
 var system = $"""
-    You create entities in a content management system from a person's description.
+    You create and edit entities in a content management system from a person's description.
     Today is {DateTime.UtcNow:dd-MM-yyyy}. Make every change in a change set, so it is held for review and nothing goes
     live until a person applies it. You can't apply it yourself.
 
     Work like this:
     1. Read the entity type's schema first. Fetch the details of the item types you plan to use before adding them.
     2. Turn names the person used into keys with the find tool. Don't invent keys.
-    3. Build the entity step by step, then validate the change set and fix every problem it reports.
-    4. Finish with a short summary of what you built and every assumption you made.
+    3. Build or change the entity step by step, then validate the change set and fix every problem it reports.
+    4. Finish with a short summary of what you built or changed, and every assumption you made.
     """;
 
 IChatClient chat = new AnthropicClient()
@@ -54,11 +60,12 @@ var options = new ChatOptions { Tools = tools, MaxOutputTokens = 16000 };
 var messages = new List<ChatMessage>
 {
     new(ChatRole.System, system),
-    new(ChatRole.User, $"Create a {entityType} entity: {description}"),
+    new(ChatRole.User, edit ? $"Edit existing {entityType} entities: {description}" : $"Create a {entityType} entity: {description}"),
 };
 
 Console.WriteLine($"Model:       {model}");
 Console.WriteLine($"Entity type: {entityType}");
+Console.WriteLine($"Mode:        {(edit ? "edit" : "create")}");
 Console.WriteLine($"Description: {description}");
 Console.WriteLine();
 
@@ -96,6 +103,67 @@ foreach (var saved in applied.Result as IEnumerable<EntitySummary> ?? [])
 {
     var entity = await site.Adapters.Get(saved.EntityType).LoadAsync(saved.Key);
     Console.WriteLine(entity?.ToJson().ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+}
+
+// A small site to work on: two pages in English and Danish, and two images. Saved the way an editor's save would be.
+static async Task SeedContent(SampleSite site)
+{
+    var beach = new MediaRequestModel
+    {
+        Id = Guid.NewGuid(),
+        Name = "Beach banner",
+        AltText = "A sandy beach at sunset",
+        Crops = [new MediaCropRequestModel { Id = Guid.NewGuid(), Alias = "wide", Width = 1920, Height = 600 }],
+    };
+    var team = new MediaRequestModel { Id = Guid.NewGuid(), Name = "Team photo", AltText = "The team in the office" };
+    await site.Media.SaveModelAsync(beach);
+    await site.Media.SaveModelAsync(team);
+
+    await site.Pages.SaveModelAsync(new Page
+    {
+        Key = Guid.NewGuid(),
+        Title = { ["en-US"] = "Summer sale", ["da-DK"] = "Sommerudsalg" },
+        UrlSegment = { ["en-US"] = "summer-sale", ["da-DK"] = "sommerudsalg" },
+        Tags = ["sale", "summer"],
+        Intro = new RichTextValue { Markup = "<p>Our biggest sale of the year.</p>" },
+        Blocks =
+        [
+            new Hero
+            {
+                Heading = { ["en-US"] = "Summer sale", ["da-DK"] = "Sommerudsalg" },
+                Subheading = { ["en-US"] = "Up to 30% off", ["da-DK"] = "Op til 30% rabat" },
+                Settings = new HeroSettings { Theme = "light" },
+            },
+            new CardGrid
+            {
+                Heading = { ["en-US"] = "Top picks" },
+                Cards =
+                [
+                    new Card { Title = "Sandals", Text = "Light and comfy." },
+                    new Card { Title = "Sun hats", Text = "Shade for every day." },
+                    new Card { Title = "Beach towels", Text = "Big and soft." },
+                ],
+            },
+        ],
+        Promos = { ["en-US"] = [new Promo { Text = "Free shipping over 500" }], ["da-DK"] = [new Promo { Text = "Gratis fragt over 500" }] },
+        Image = [new MediaEntry { Media = beach.Id }],
+    });
+
+    await site.Pages.SaveModelAsync(new Page
+    {
+        Key = Guid.NewGuid(),
+        Title = { ["en-US"] = "About us", ["da-DK"] = "Om os" },
+        UrlSegment = { ["en-US"] = "about-us", ["da-DK"] = "om-os" },
+        Grid =
+        [
+            new RichText
+            {
+                Text = { ["en-US"] = "We have sold summer clothes since 1998.", ["da-DK"] = "Vi har solgt sommertøj siden 1998." },
+                Layout = new GridPlacement { ColumnSpan = 12 },
+            },
+        ],
+        Image = [new MediaEntry { Media = team.Id }],
+    });
 }
 
 /// <summary>Prints each tool call and its outcome, so the run reads as a transcript.</summary>
