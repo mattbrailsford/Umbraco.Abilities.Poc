@@ -255,6 +255,7 @@ public static class SchemaWriter
                 fieldJson["x-variations"] = new JsonArray(field.VariesBy.Select(d => (JsonNode?)d).ToArray());
             }
 
+            UiHints.WriteTo(fieldJson, field.Editor, field.Meta);
             properties[field.Alias] = fieldJson;
         }
 
@@ -294,6 +295,7 @@ public static class SchemaWriter
             schema["x-variations"] = new JsonArray(field.VariesBy.Select(d => (JsonNode?)d).ToArray());
         }
 
+        UiHints.WriteTo(schema, field.Editor, field.Meta);
         return schema;
     }
 

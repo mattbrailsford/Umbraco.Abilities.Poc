@@ -71,7 +71,11 @@ public sealed class Hero : PageBlock
 
 public sealed class HeroSettings
 {
+    // A third party's own editor for the value: a UI shows swatches, a model sees only the allowed values. The hint
+    // under acme.theme is Acme's, and only Acme's editor reads it.
     [Required, AllowedValues("light", "dark"), Description("Colour theme.")]
+    [Editor("Acme.ThemePicker", Config = """{ "swatches": true }""")]
+    [Meta("acme.theme", """{ "preview": "hero" }""")]
     public string? Theme { get; set; }
 
     [Description("Span the whole page width.")]

@@ -121,6 +121,7 @@ public static class ModelSchemas
                     : throw new InvalidOperationException($"{type.Name}.{property.Name}: a value handler goes on an object property, whose fields it adds behaviour to.");
             }
 
+            field = field with { Editor = config.Editor, Meta = config.Meta };
             fields.Add(new FieldMember(property, field, varying, valueType, config.Rules) { ItemClasses = itemClasses });
             if (config.IsName)
             {
@@ -163,6 +164,8 @@ public static class ModelSchemas
             IsName = property.IsDefined(typeof(EntityNameAttribute)),
             Allowed = property.GetCustomAttribute<AllowedValuesAttribute>()?.Values.Select(v => v?.ToString() ?? string.Empty).ToList(),
             References = property.GetCustomAttribute<EntityKeyAttribute>()?.EntityTypes,
+            Editor = UiHints.EditorOf(property),
+            Meta = UiHints.MetaOf(property),
         };
 
         if (property.GetCustomAttribute<ItemsAttribute>() is { } items)
@@ -238,10 +241,18 @@ public static class ModelSchemas
             ItemClasses = fluent.ItemClasses ?? attributes.ItemClasses,
             Min = fluent.Min ?? attributes.Min,
             Max = fluent.Max ?? attributes.Max,
+            Editor = fluent.Editor ?? attributes.Editor,
+            Meta = Combine(attributes.Meta, fluent.Meta),
         };
         merged.Rules.AddRange(attributes.Rules.Concat(fluent.Rules));
         return merged;
     }
+
+    // The attributes' metadata, with the fluent set-up's keys on top.
+    private static JsonObject? Combine(JsonObject? attributes, JsonObject? fluent)
+        => fluent is null ? attributes
+            : attributes is null ? fluent
+            : fluent.Aggregate(attributes, (bag, entry) => UiHints.WithMeta(bag, entry.Key, entry.Value));
 
     /// <summary>A field for a value of a CLR type, with the same mapping as a model class's properties.</summary>
     public static FieldDefinition FieldFor(string alias, string description, Type valueType, bool required, IReadOnlyList<string>? references = null, IReadOnlyList<string>? allowed = null)

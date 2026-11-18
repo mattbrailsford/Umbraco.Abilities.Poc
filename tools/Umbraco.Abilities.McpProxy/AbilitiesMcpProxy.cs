@@ -111,7 +111,7 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
         Remember(body);
         return new CallToolResult
         {
-            Content = [new TextContentBlock { Text = text }],
+            Content = [new TextContentBlock { Text = ForModels(text) }],
             IsError = !success.GetBoolean(),
         };
     }
@@ -187,6 +187,31 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
         }
     }
 
+    // The site's schemas carry x-editor and x-meta for UIs, such as a form built from an input schema. A model doesn't
+    // need them: they cost tokens and could mislead it. MCP Dev would strip them the same way.
+    private static readonly string[] UiKeywords = ["x-editor", "x-meta"];
+
+    private static string ForModels(string json)
+        => UiKeywords.Any(k => json.Contains($"\"{k}\"", StringComparison.Ordinal)) ? Strip(JsonNode.Parse(json))!.ToJsonString() : json;
+
+    private static JsonNode? Strip(JsonNode? node)
+    {
+        if (node is JsonObject json)
+        {
+            foreach (var keyword in UiKeywords)
+            {
+                json.Remove(keyword);
+            }
+        }
+
+        foreach (var child in node switch { JsonObject o => o.Select(p => p.Value), JsonArray a => a, _ => [] })
+        {
+            Strip(child);
+        }
+
+        return node;
+    }
+
     private static CallToolResult Error(string message)
         => new() { Content = [new TextContentBlock { Text = message }], IsError = true };
 
@@ -208,7 +233,7 @@ public sealed class AbilitiesMcpProxy(HttpClient umbraco)
                 {
                     Name = listed.GetProperty("toolName").GetString()!,
                     Description = listed.GetProperty("description").GetString(),
-                    InputSchema = listed.GetProperty("inputSchema").Clone(),
+                    InputSchema = JsonSerializer.SerializeToElement(Strip(JsonNode.Parse(listed.GetProperty("inputSchema").GetRawText()))),
                     Annotations = new ToolAnnotations
                     {
                         Title = listed.GetProperty("name").GetString(),

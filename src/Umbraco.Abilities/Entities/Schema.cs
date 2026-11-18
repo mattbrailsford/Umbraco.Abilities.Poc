@@ -161,6 +161,18 @@ public sealed record FieldDefinition(string Alias, string Description, FieldType
     /// </summary>
     public IValueHandler? Handler { get; init; }
 
+    /// <summary>
+    /// The editor a UI should use for the field, written as <c>x-editor</c>. Null: the UI picks one from the value's
+    /// format or shape. Models never see it.
+    /// </summary>
+    public FieldEditor? Editor { get; init; }
+
+    /// <summary>
+    /// Hints one product reads and the framework only carries, by <c>owner.name</c> key, written as <c>x-meta</c>. Set
+    /// keys with <see cref="UiHints.WithMeta"/>, which checks the rules. Models never see it.
+    /// </summary>
+    public JsonObject? Meta { get; init; }
+
     // ── For FieldType.Items ──────────────────────────────────────────────────────────────────────
 
     /// <summary>The group whose registered item types the field holds. Item types come from a registry, so other packages add them.</summary>

@@ -1,3 +1,5 @@
+using System.Text.Json.Nodes;
+
 using Umbraco.Abilities.Cms.PropertyEditors;
 using Umbraco.Abilities.Entities;
 using Umbraco.Cms.Core.Models;
@@ -25,6 +27,9 @@ internal sealed class CmsSchemaMapper(
     IDataTypeService dataTypes,
     PropertyEditorHandlerCollection handlers) : IElementSchemas
 {
+    /// <summary>The metadata key naming a field's data type: its key and its editor's schema alias.</summary>
+    public const string DataTypeMetaKey = "umbraco.cms.data-type";
+
     public IContentType RequireType(Guid key)
         => contentTypes.Get(key) ?? throw new InvalidOperationException($"No content type with key {key}.");
 
@@ -53,11 +58,16 @@ internal sealed class CmsSchemaMapper(
         var handler = handlers.For(propertyType.PropertyEditorAlias);
         var field = await handler.DescribeAsync(context, cancellationToken);
 
-        // Whatever the handler made, the field is the property: its alias, and the variation the property has.
+        // Whatever the handler made, the field is the property: its alias, and the variation the property has. A UI
+        // gets the data type's own editor, and the data type's key to load its configuration, as the backoffice does.
         return new PropertyMap(context, handler, field with
         {
             Alias = propertyType.Alias,
             VariesBy = CmsVariants.DimensionsOf(propertyType.Variations),
+            Editor = field.Editor ?? (context.DataType?.EditorUiAlias is { Length: > 0 } editorUi ? new FieldEditor(editorUi) : null),
+            Meta = context.DataType is { } dataType
+                ? UiHints.WithMeta(field.Meta, DataTypeMetaKey, new JsonObject { ["key"] = dataType.Key, ["editorAlias"] = dataType.EditorAlias })
+                : field.Meta,
         });
     }
 }

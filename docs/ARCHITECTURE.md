@@ -98,8 +98,20 @@ object field of the block (`blocks/{key}/settings/theme`), and so is a grid bloc
 | `x-references` | The value is the key of another entity (by UDI type), or of an item in the same entity. A list of types when it can point at several; the value then names its type | Reference checks, and creating referenced entities in the same change set |
 
 Three smaller notes help a model, and change nothing the framework does: `x-edit` (how a handled value is edited),
-`x-bindings` (a value can be a binding) and `x-references-item-in` (the items field a reference points into). The
-meta-schema (a schema for schemas) in `tests/Umbraco.Abilities.Tests/entity-schema.metaschema.json` defines every
+`x-bindings` (a value can be a binding) and `x-references-item-in` (the items field a reference points into).
+
+Two notes are for UIs, not models. The framework carries them and acts on neither, and the AI tools and MCP strip them:
+
+| Note | Says | Set by |
+| --- | --- | --- |
+| `x-editor` | The editor a UI uses for the field: an editor UI alias, and its config | `[Editor]` on a property or input, the fluent `.Editor()`, or the CMS data type |
+| `x-meta` | Hints one product reads, by `owner.name` key (`acme.theme`). Values are objects, at most 4 KB. Deleting the bag must break nothing | `[Meta]`, the fluent `.Meta()`, or an adapter (the CMS adds `umbraco.cms.data-type`) |
+
+A UI picks a field's editor in this order: the field's `x-editor`, if that editor is installed; then the editor
+registered for the value's `format`; then a default from the plain shape (`enum`, `x-references`, `type`). The rules
+for the bag are in [FINDINGS](FINDINGS.md#proposal-an-ability-loader-in-automate).
+
+The meta-schema (a schema for schemas) in `tests/Umbraco.Abilities.Tests/entity-schema.metaschema.json` defines every
 note. Each schema the framework writes is checked against it and JSON Schema 2020-12, so a new note goes there first.
 
 **Edits.** `setValue` sets the value at any path. `addItem`, `removeItem` and `moveItem` work on any items array at any

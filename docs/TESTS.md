@@ -246,9 +246,30 @@ endpoints.
   - `SchemaMetaschemaTests.Every_tools_input_schema_is_valid_JSON_Schema`
   - `SchemaMetaschemaTests.Every_entity_schema_and_item_type_schema_is_valid_JSON_Schema`
   - `CmsDocumentAdapterTests.Every_document_and_media_schema_and_block_schema_is_valid_JSON_Schema`
-- The check catches a mistake two levels down (a bad type, a null description, an unknown or misused x- note), and accepts a correct schema
+- The check catches a mistake two levels down (a bad type, a null description, an unknown or misused x- note, an editor without an alias, a badly named metadata key), and accepts a correct schema
   - `SchemaMetaschemaTests.The_meta_schema_catches_a_mistake_in_a_field_deep_inside_a_schema`
   - `SchemaMetaschemaTests.The_meta_schema_accepts_a_correct_schema_with_the_frameworks_keywords`
+
+## Hints for UIs
+
+- A field can name its own editor and carry hints that a UI sees and a model does not, two levels down in a block's settings
+  - `UiHintsTests.A_field_can_name_its_own_editor_and_carry_hints_that_a_UI_sees_and_a_model_does_not`
+- An ability's input can name its editor, for a form built from its schema
+  - `UiHintsTests.An_abilitys_input_can_name_its_editor_for_a_form_built_from_its_schema`
+- The fluent set-up names an editor and adds hints, like the attributes
+  - `UiHintsTests.The_fluent_set_up_names_an_editor_and_adds_hints_too`
+- A metadata key is `owner.name` in lower case, its value an object of at most 4 KB
+  - `UiHintsTests.A_metadata_key_is_owner_dot_name_in_lower_case_and_its_value_is_an_object`
+  - `UiHintsTests.A_metadata_value_over_4_KB_is_refused_because_the_schema_is_read_on_every_call`
+- A form picks each editor from the field, then the format, then the shape, and skips an editor that isn't installed
+  - `UiHintsTests.A_form_picks_each_editor_from_the_field_then_the_format_then_the_shape`
+- The hints change nothing but how a field looks: validation ignores them
+  - `UiHintsTests.Deleting_every_hint_changes_nothing_but_how_a_field_looks`
+- Every real document field names its data type's editor and key, and the model sees neither
+  - `CmsDocumentAdapterTests.Each_field_names_its_data_types_editor_for_a_UI_and_a_model_sees_neither`
+- The Management API keeps the hints; the MCP proxy strips them from schemas and results
+  - `AbilitiesManagementApiTests.The_Management_API_keeps_each_fields_editor_for_a_UI_to_build_a_form_from`
+  - `AbilitiesMcpProxyTests.An_MCP_client_gets_schemas_without_the_hints_meant_for_UIs`
 
 ## Against a real Umbraco
 

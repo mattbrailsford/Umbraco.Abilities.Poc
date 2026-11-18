@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 using Microsoft.Extensions.AI;
 
@@ -13,8 +14,11 @@ namespace Umbraco.Abilities.Tests;
 /// </summary>
 public sealed class ScriptedAgent
 {
+    private readonly SampleSite _site;
+
     public ScriptedAgent(SampleSite site)
     {
+        _site = site;
         Tools = AbilityAITools
             .Create(site.Abilities, site.Invoker, Session)
             .ToDictionary(t => t.Name);
@@ -62,6 +66,21 @@ public sealed class ScriptedAgent
         var result = await Tools[tool].InvokeAsync(arguments);
         return (JsonElement)result!;
     }
+
+    /// <summary>
+    /// Calls an ability as a UI would, through the Management API, in the same conversation: the same result a model
+    /// gets, but with the keywords meant for UIs (<c>x-editor</c>, <c>x-meta</c>) left in. Returns its output.
+    /// </summary>
+    public async Task<JsonElement> UiOkAsync(string tool, string argumentsJson)
+    {
+        var result = (await UiTool(tool).InvokeAsync(JsonNode.Parse(argumentsJson)!.AsObject(), AbilityConsent.Given)).ToJson();
+        Assert.True(result.GetProperty("success").GetBoolean(), $"{tool} failed: {result}");
+        return result.GetProperty("result");
+    }
+
+    /// <summary>An ability's tool as a UI reads it: its input schema keeps the keywords meant for UIs.</summary>
+    public AbilityTool UiTool(string tool)
+        => new(_site.Abilities.All.Single(a => AbilityTool.ToToolName(a.Descriptor.Id) == tool), _site.Invoker, Session);
 
     /// <summary>Calls a tool and asserts it succeeded. Returns its output.</summary>
     public async Task<JsonElement> OkAsync(string tool, string argumentsJson)
