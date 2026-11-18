@@ -93,7 +93,8 @@ The details and the lessons are in [docs/FINDINGS.md](docs/FINDINGS.md). The tes
   Code, which can't answer, is tried. Automate actions and a backoffice editor would use the same abilities, but neither is
   built here. Automate's action contract was checked, and a loader for abilities is proposed (see
   [FINDINGS](docs/FINDINGS.md#checked-against-automates-action-contract)). Its schema side is built: fields can name
-  their editor (`x-editor`) and carry hints for a UI (`x-meta`), which models never see. No real form reads them yet.
+  their editor (`x-editor`) and carry hints for a UI (`x-meta`), which models never see, and a value type names its
+  kind once (`format`). No real form reads them yet.
 - **A real model, at scale.** The tests script the tool calls. One model built discounts and pages, and edited pages, from
   text, on the samples and on the real demo site over MCP. Five real-site descriptions ran five times each and all 25
   were right (see [Against a real model](docs/FINDINGS.md#against-a-real-model)). That is one model and simple

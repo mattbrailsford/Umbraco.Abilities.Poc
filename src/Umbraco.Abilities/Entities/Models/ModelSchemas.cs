@@ -165,6 +165,7 @@ public static class ModelSchemas
             Allowed = property.GetCustomAttribute<AllowedValuesAttribute>()?.Values.Select(v => v?.ToString() ?? string.Empty).ToList(),
             References = property.GetCustomAttribute<EntityKeyAttribute>()?.EntityTypes,
             Editor = UiHints.EditorOf(property),
+            Format = ValueFormats.OfMember(property),
             Meta = UiHints.MetaOf(property),
         };
 
@@ -242,6 +243,7 @@ public static class ModelSchemas
             Min = fluent.Min ?? attributes.Min,
             Max = fluent.Max ?? attributes.Max,
             Editor = fluent.Editor ?? attributes.Editor,
+            Format = fluent.Format ?? attributes.Format,
             Meta = Combine(attributes.Meta, fluent.Meta),
         };
         merged.Rules.AddRange(attributes.Rules.Concat(fluent.Rules));
@@ -273,6 +275,9 @@ public static class ModelSchemas
             allowed ??= Enum.GetNames(single).Select(n => JsonNamingPolicy.CamelCase.ConvertName(n)).ToList();
         }
 
+        // A format on the property, or on the value's type: a type with one is a string, whatever it holds inside.
+        var format = config.Format ?? ValueFormats.Of(single);
+
         FieldType? type = single switch
         {
             _ when single == typeof(EntityReference) && references is { Count: > 0 } => FieldType.EntityReference,
@@ -282,6 +287,7 @@ public static class ModelSchemas
             _ when single == typeof(int) || single == typeof(long) || single == typeof(short) => FieldType.Integer,
             _ when single == typeof(decimal) || single == typeof(double) || single == typeof(float) => FieldType.Number,
             _ when single == typeof(DateOnly) => FieldType.Date,
+            _ when format is not null => FieldType.String,
             _ => null,
         };
 
@@ -300,6 +306,7 @@ public static class ModelSchemas
             Allowed = allowed,
             ReferencesEntityType = single == typeof(Guid) ? references?.FirstOrDefault() : null,
             ReferencesAnyOf = single == typeof(EntityReference) ? references : null,
+            Format = format,
         };
     }
 

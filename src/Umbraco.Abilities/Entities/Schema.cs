@@ -162,6 +162,12 @@ public sealed record FieldDefinition(string Alias, string Description, FieldType
     public IValueHandler? Handler { get; init; }
 
     /// <summary>
+    /// The kind of value, as JSON Schema's <c>format</c>: a standard one (<c>email</c>) or a package's own
+    /// (<c>umbraco.cron</c>). From <see cref="ValueFormatAttribute"/> on the value's type or the property. Models see it.
+    /// </summary>
+    public string? Format { get; init; }
+
+    /// <summary>
     /// The editor a UI should use for the field, written as <c>x-editor</c>. Null: the UI picks one from the value's
     /// format or shape. Models never see it.
     /// </summary>

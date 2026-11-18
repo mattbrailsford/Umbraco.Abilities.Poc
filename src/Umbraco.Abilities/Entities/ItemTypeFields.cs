@@ -55,6 +55,9 @@ public static class ItemTypeFields
         {
             Rules = setting.Rules.Where(r => r is not RequiredAttribute and not AllowedValuesAttribute).ToList(),
             AcceptsBindings = setting.AcceptsBindings,
+
+            // The product's own editor for the setting, so a form shows what its backoffice shows.
+            Editor = setting.EditorUiAlias is { } editorUi ? new FieldEditor(editorUi) : null,
         };
     }
 

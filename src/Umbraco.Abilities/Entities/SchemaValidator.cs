@@ -332,6 +332,11 @@ public static class SchemaWriter
             },
         };
 
+        if (field.Format is { } format)
+        {
+            schema["format"] = format;
+        }
+
         switch (field.Type)
         {
             case FieldType.Date:

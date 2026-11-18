@@ -457,6 +457,20 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
       4 KB limit is checked in code (`UiHints.WithMeta`), when a key is set.
     - The bag passed the "delete it" test: Acme's theme picker on a field changes nothing about validation, and a
       value outside the allowed list is still refused.
+32. **A value type names its kind once, with a format.** `[ValueFormat("umbraco.cron")]` on a type gives every field of
+    that type JSON Schema's `format`, in an ability's input, an entity or a plugin's settings. Automate's schedule
+    trigger now has a `CronExpression` setting, and its field says `umbraco.cron` with nothing on the setting itself. A
+    UI maps the format to one editor. Unlike `x-editor`, a format is not stripped: it says what the value is, which helps
+    a model too. What came up:
+    - Names follow the bag's rule: one of JSON Schema's own formats with its standard meaning (`email`, `date-time`), or
+      `owner.name` for a package's own. A bare `cron` could mean two things to two packages. The attribute checks the
+      name, and so does the meta-schema, in every schema, Umbraco's own value schemas included.
+    - A type with a format is written as a string, so it needs a JSON converter that reads and writes one.
+    - The framework doesn't check a value against its format. JSON Schema treats `format` as a note by default, and a
+      package's own format means nothing to the framework. The type's converter is where a bad value would be caught.
+    - Products' own editor aliases now reach the schema too. A plugin setting's `EditorUiAlias` (Automate's `[Field]`,
+      Commerce's provider settings) becomes the field's `x-editor`. Real Commerce rules and rewards show their `Uc.`
+      editors to a UI, and the model doesn't see them.
 
 ## Developer experience of adapters
 
@@ -918,8 +932,8 @@ What it means:
 Automate takes a dependency on `Umbraco.Abilities`, and a loader registers each ability as an action: its id, name,
 description, input form, output schema and outcomes, all from the ability. Abilities name no Automate type. The loader
 is a proposal, not built. The schema side of it is built here (finding 31): `x-editor`, `x-meta`, stripping both for
-models, and the data type on CMS fields. A test-side form reader (`FormEditors` in `UiHintsTests`) shows the editor
-order below. Not built yet: a way to name a value type's `format`, and the output type on the descriptor.
+models, the data type on CMS fields, and a value type's `format` (finding 32). A test-side form reader (`FormEditors`
+in `UiHintsTests`) shows the editor order below. Not built yet: the output type on the descriptor.
 
 **Inputs and outputs: abilities already have them.** Each ability has a named C# input type (`AbilityDescriptor.InputType`),
 with a description on every field and DataAnnotations, and a typed output (`AbilityBase<TInput, TOutput>`; the
@@ -1009,7 +1023,7 @@ This proof of concept can show it works, not decide it.
 | --- | --- |
 | CMS core (by RFC) | One shared editable model description that products build forms from, in place of each product's own copy |
 | Automate | Register step types as instances (from the loader), not only by attribute scan. Build a settings form and output schema from JSON Schema. A registry mapping `format` to an editor UI. Ideally typed bindings |
-| Abilities | Built: an `x-editor` keyword and an optional `[Editor]` attribute that sets it; an `x-meta` bag on fields, checked by the meta-schema and in code, and stripped for models; the data type on CMS entity fields. Still to do: expose the output type on the descriptor; a way to name a value type's `format`; an idempotency key, or a "don't retry" mark, for Writes that can't be undone; an event concept, if abilities are to be triggers |
+| Abilities | Built: an `x-editor` keyword and an optional `[Editor]` attribute that sets it; a value type's `format`, from `[ValueFormat]`; a plugin setting's own editor as `x-editor`; an `x-meta` bag on fields, checked by the meta-schema and in code, and stripped for models; the data type on CMS entity fields. Still to do: expose the output type on the descriptor; an idempotency key, or a "don't retry" mark, for Writes that can't be undone; an event concept, if abilities are to be triggers |
 
 ## Checked against the existing MCP servers
 

@@ -104,8 +104,12 @@ Two notes are for UIs, not models. The framework carries them and acts on neithe
 
 | Note | Says | Set by |
 | --- | --- | --- |
-| `x-editor` | The editor a UI uses for the field: an editor UI alias, and its config | `[Editor]` on a property or input, the fluent `.Editor()`, or the CMS data type |
+| `x-editor` | The editor a UI uses for the field: an editor UI alias, and its config | `[Editor]` on a property or input, the fluent `.Editor()`, the CMS data type, or a plugin setting's own editor alias (Automate, Commerce) |
 | `x-meta` | Hints one product reads, by `owner.name` key (`acme.theme`). Values are objects, at most 4 KB. Deleting the bag must break nothing | `[Meta]`, the fluent `.Meta()`, or an adapter (the CMS adds `umbraco.cms.data-type`) |
+
+A value type can name its kind once with `[ValueFormat]`, which writes JSON Schema's `format` on every field of that
+type: a standard format (`email`) or a package's own as `owner.name` (`umbraco.cron`). Models see it; it says what the
+value is. The framework doesn't check values against it.
 
 A UI picks a field's editor in this order: the field's `x-editor`, if that editor is installed; then the editor
 registered for the value's `format`; then a default from the plain shape (`enum`, `x-references`, `type`). The rules
