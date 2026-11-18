@@ -281,6 +281,7 @@ endpoints.
   - `CommerceDiscountAdapterTests.Each_rule_and_reward_setting_names_Commerces_own_editor_for_a_UI_and_not_for_the_model`
 - A consumer that builds forms gets the hints over the Management API; the MCP server's consumer gets schemas and results without them
   - `AbilitiesManagementApiTests.A_consumer_that_builds_forms_gets_each_fields_editor_and_the_MCP_server_does_not`
+  - `AbilitiesManagementApiTests.Only_a_model_is_told_to_move_a_page_with_entity_move`
   - `AbilitiesMcpProxyTests.An_MCP_client_gets_schemas_without_the_hints_meant_for_UIs`
 
 ## Consumers and filters

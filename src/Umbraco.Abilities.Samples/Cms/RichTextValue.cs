@@ -3,6 +3,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
+using Umbraco.Abilities.Consumers;
 using Umbraco.Abilities.Entities;
 using Umbraco.Abilities.Entities.Models;
 
@@ -16,7 +17,8 @@ namespace Umbraco.Abilities.Samples.Cms;
 /// </summary>
 public sealed class RichTextValue
 {
-    [Description("HTML. Blocks are placed with <umb-block data-key=\"…\"></umb-block>; adding or removing a block places or removes its tag.")]
+    [Description("The text, as HTML.")]
+    [Hint(AbilityAudiences.Model, "Blocks are placed with <umb-block data-key=\"…\"></umb-block>; adding or removing a block places or removes its tag.")]
     public string? Markup { get; set; }
 
     [Items, Description("The blocks placed in the markup.")]

@@ -77,6 +77,19 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
     }
 
     [Test]
+    public async Task Only_a_model_is_told_to_move_a_page_with_entity_move()
+    {
+        await SignInAsEditorAsync();
+
+        // A person moves a page in the tree, not with a tool: the hint is the model's.
+        const string article = """{ "entityType": "document", "subtype": "article" }""";
+        string? ParentOf(JsonElement schema) => schema.GetProperty("fields").GetProperty("properties").GetProperty("parent").GetProperty("description").GetString();
+
+        Assert.That(ParentOf(await OkAsync("entity.getSchema", article)), Does.Contain("entity.move"));
+        Assert.That(ParentOf(await OkAsync("entity.getSchema", article, consumer: FormConsumer.Alias)), Does.Not.Contain("entity.move"));
+    }
+
+    [Test]
     public async Task A_form_gets_a_tools_input_with_the_fields_of_the_page_type_chosen()
     {
         await SignInAsEditorAsync();
