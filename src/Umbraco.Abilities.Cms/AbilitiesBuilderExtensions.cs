@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 using Umbraco.Abilities.ChangeSets;
@@ -80,17 +81,44 @@ public static class AbilitiesBuilderExtensions
         services.AddSingleton(sp => sp.GetRequiredService<AbilityInvoker>().ChangeSets);
         services.AddSingleton(sp => sp.GetRequiredService<AbilityInvoker>().Abilities);
 
-        // Which tools each consumer offers: the filters, the policies that group them, and the consumers that apply
-        // them. A package adds its own filter, policy or consumer to these registries.
+        // Which tools each consumer offers: the framework's filters and policies, the filters and consumers packages
+        // register (as IAbilityFilter and IAbilityConsumer services), and the site's overrides from configuration.
+        var overrides = builder.Config.GetSection("Umbraco:Abilities:Consumers").Get<AbilityOverrides>() ?? new AbilityOverrides();
         services.AddSingleton<AbilityPolicyRegistry>();
-        services.AddSingleton(sp => new AbilityFilterRegistry().AddFrameworkFilters(sp.GetRequiredService<AbilityPolicyRegistry>()));
-        services.AddSingleton<AbilityConsumerRegistry>();
-        services.AddSingleton(sp => new AbilityToolProvider(
-            sp.GetRequiredService<AbilityRegistry>(),
-            sp.GetRequiredService<AbilityFilterRegistry>(),
-            sp.GetRequiredService<AbilityPolicyRegistry>(),
-            sp.GetRequiredService<AbilityConsumerRegistry>(),
-            sp));
+        services.AddSingleton(sp =>
+        {
+            var filters = new AbilityFilterRegistry().AddFrameworkFilters(sp.GetRequiredService<AbilityPolicyRegistry>());
+            foreach (var filter in sp.GetServices<IAbilityFilter>())
+            {
+                filters.Add(filter);
+            }
+
+            return filters;
+        });
+        services.AddSingleton(sp =>
+        {
+            var consumers = new AbilityConsumerRegistry();
+            foreach (var consumer in sp.GetServices<IAbilityConsumer>())
+            {
+                consumers.Add(consumer);
+            }
+
+            return consumers;
+        });
+        services.AddSingleton(sp =>
+        {
+            var provider = new AbilityToolProvider(
+                sp.GetRequiredService<AbilityRegistry>(),
+                sp.GetRequiredService<AbilityFilterRegistry>(),
+                sp.GetRequiredService<AbilityPolicyRegistry>(),
+                sp.GetRequiredService<AbilityConsumerRegistry>(),
+                overrides,
+                sp);
+
+            // A filter, policy or consumer named wrongly stops the site the first time tools are asked for.
+            provider.Validate();
+            return provider;
+        });
         services.AddSingleton<AbilityToolRunner>();
 
         return builder;

@@ -44,13 +44,23 @@ public sealed class AbilityToolRunner(AbilityInvoker invoker)
     /// the consumer asks the person that question and, on yes, calls again with <see cref="AbilityConsent.For"/> its id.
     /// </param>
     /// <param name="cancellationToken">Stops the call.</param>
+    /// <param name="changeSetName">
+    /// For a tool in <see cref="ChangeSetMode.PerCall"/> mode: the name of the set the call makes, so a person can tell
+    /// where it came from. The tool's title when not given.
+    /// </param>
     public async Task<AbilityToolResult> InvokeAsync(
         AbilityTool tool,
         JsonObject arguments,
         AbilityToolSession session,
         AbilityConsent consent = default,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? changeSetName = null)
     {
+        if (tool.ChangeSetMode == ChangeSetMode.PerCall)
+        {
+            return await InvokePerCallAsync(tool, arguments, session, consent, changeSetName ?? tool.Title, cancellationToken);
+        }
+
         var changeSets = invoker.ChangeSets;
         var callerChooses = tool.ChangeSetMode == ChangeSetMode.Caller;
         var input = new JsonObject();
@@ -141,6 +151,55 @@ public sealed class AbilityToolRunner(AbilityInvoker invoker)
         }
 
         return AbilityToolResult.From(result, usedSet);
+    }
+
+    // A set of the call's own: record the call, apply the set, and leave nothing behind if either fails. Applying is what
+    // can't be undone, so that is what needs consent.
+    private async Task<AbilityToolResult> InvokePerCallAsync(
+        AbilityTool tool, JsonObject arguments, AbilityToolSession session, AbilityConsent consent, string name, CancellationToken cancellationToken)
+    {
+        var descriptor = tool.Descriptor;
+        if (descriptor.RequiresApproval && !consent.IsGiven)
+        {
+            return AbilityToolResult.From(AbilityResult.Fail(AbilityOperationStatus.ApprovalRequired,
+                $"{descriptor.Name} can't be undone, so the person you act for must agree to it first. Nothing was done.", []), null);
+        }
+
+        var changeSets = invoker.ChangeSets;
+        var set = changeSets.Create(name);
+        var input = new JsonObject();
+        foreach (var (key, value) in arguments)
+        {
+            input[key] = value?.DeepClone();
+        }
+
+        foreach (var (key, value) in tool.FixedArguments)
+        {
+            input[key] = JsonNode.Parse(value.GetRawText());
+        }
+
+        var context = new AbilityContext(session.UserKey);
+        AbilityResult result;
+        using (changeSets.Use(set.Id))
+        {
+            result = await invoker.InvokeAsync(descriptor.Id, input, context, cancellationToken);
+        }
+
+        if (result.Success)
+        {
+            var applied = await changeSets.ApplyAsync(set.Id, context, cancellationToken);
+            if (!applied.Success)
+            {
+                result = applied;
+            }
+        }
+
+        if (!result.Success && changeSets.Find(set.Id) is not null)
+        {
+            await changeSets.DiscardAsync(set.Id, cancellationToken);
+        }
+
+        return AbilityToolResult.From(result, new AbilityToolChangeSet(set.Id, set.Name, Open: false));
     }
 
     // Null when the call may run. In a set, a Write is recorded, not run (see AbilityInvoker), so only a call that runs

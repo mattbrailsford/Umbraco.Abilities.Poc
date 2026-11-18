@@ -5,18 +5,23 @@ using Asp.Versioning;
 
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 
 using Umbraco.Abilities.ChangeSets;
+using Umbraco.Abilities.Consumers;
 using Umbraco.Cms.Api.Management.Controllers;
 using Umbraco.Cms.Api.Management.Routing;
+using Umbraco.Cms.Core.DependencyInjection;
 using Umbraco.Cms.Core.Security;
 
 namespace Umbraco.Abilities.ManagementApi;
 
 /// <summary>
-/// Every ability over the Management API, through two generic endpoints: list the abilities, and call one. An HTTP
-/// caller, such as the Umbraco CMS MCP Dev server, builds one tool per listed ability, so a new ability needs no new
-/// endpoint and no new release of the caller.
+/// Every ability over the Management API, through two generic endpoints: list a consumer's tools, and call one. An HTTP
+/// caller, such as the Umbraco CMS MCP Dev server, names the consumer it is in the <c>Umb-Consumer</c> header (set once
+/// on its client; <see cref="McpConsumer"/> when it doesn't) and builds one tool per listed tool, so a new ability needs no new endpoint and no new release of the
+/// caller. The API is not a consumer itself: it is the road one travels. It offers only that consumer's tools, shaped by
+/// its filters, and shapes each result the same way.
 /// <para>
 /// Calls run as the signed-in backoffice user (for MCP Dev, its API user), with that user's permissions. A call works
 /// in the change set its <c>Umb-Change-Set</c> header names, or the one its <c>changeSetId</c> names. Each call stands
@@ -33,24 +38,40 @@ namespace Umbraco.Abilities.ManagementApi;
 [ApiVersion("1.0")]
 [VersionedApiBackOfficeRoute("abilities")]
 [ApiExplorerSettings(GroupName = "Abilities")]
-public sealed class AbilitiesController(AbilityInvoker invoker, AbilityToolRunner runner, IBackOfficeSecurityAccessor security) : ManagementApiControllerBase
+public sealed class AbilitiesController(
+    AbilityToolProvider tools,
+    AbilityConsumerRegistry consumers,
+    AbilityToolRunner runner,
+    IBackOfficeSecurityAccessor security) : ManagementApiControllerBase
 {
+    /// <summary>The MCP server's consumer: the one an HTTP caller is when it doesn't say.</summary>
+    public const string McpConsumer = "mcp";
+
     /// <summary>The header a caller sends with an approval's id, once the person agreed to the call it was made for.</summary>
     public const string ApprovalHeader = "Umb-Approval";
 
     /// <summary>
-    /// Lists every ability, with what a tool needs: its id and tool name, a description, whether it changes anything
+    /// The header a caller names the consumer it is in, such as <c>mcp</c>. Who calls, not what is asked for, so a
+    /// header, like the change set's and the approval's: a client sets it once, and every endpoint reads it.
+    /// </summary>
+    public const string ConsumerHeader = "Umb-Consumer";
+
+    /// <summary>
+    /// Lists a consumer's tools, with what a tool needs: its id and tool name, a description, whether it changes anything
     /// or needs a person's approval, and the JSON schema of its input.
     /// </summary>
     [HttpGet]
     [MapToApiVersion("1.0")]
     [ProducesResponseType<IReadOnlyList<AbilityResponseModel>>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public IActionResult List(CancellationToken cancellationToken)
     {
-        return Ok(invoker.Abilities.All
-            .OrderBy(ability => ability.Descriptor.Id, StringComparer.Ordinal)
-            .Select(ability => AbilityResponseModel.From(new AbilityTool(ability).WithChangeSetIdArgument()))
-            .ToList());
+        // The list depends on the header, so a cache must keep one list per consumer.
+        Response.Headers.Append("Vary", ConsumerHeader);
+        var consumer = Consumer;
+        return consumers.Find(consumer) is null
+            ? UnknownConsumer(consumer)
+            : Ok(tools.GetTools(consumer).Select(AbilityResponseModel.From).ToList());
     }
 
     /// <summary>
@@ -68,16 +89,22 @@ public sealed class AbilitiesController(AbilityInvoker invoker, AbilityToolRunne
     [ProducesResponseType<JsonElement>(StatusCodes.Status428PreconditionRequired)]
     public async Task<IActionResult> Invoke(string id, [FromBody] JsonObject? input, CancellationToken cancellationToken)
     {
-        if (invoker.Abilities.Find(id) is not { } ability)
+        var consumer = Consumer;
+        if (consumers.Find(consumer) is null)
         {
-            return NotFound(new ProblemDetails { Title = "Unknown ability", Detail = $"No ability '{id}'.", Status = StatusCodes.Status404NotFound });
+            return UnknownConsumer(consumer);
+        }
+
+        // Only a tool the consumer offers: one its filters dropped can't be called through it either.
+        if (tools.FindTool(consumer, id) is not { } tool)
+        {
+            return NotFound(new ProblemDetails { Title = "Unknown tool", Detail = $"The {consumer} consumer offers no tool '{id}'.", Status = StatusCodes.Status404NotFound });
         }
 
         // A conversation of one call, for the signed-in user. The change set comes from the call, never from earlier ones.
-        var tool = new AbilityTool(ability).WithChangeSetIdArgument();
         var session = new AbilityToolSession(CurrentUserKey(security));
         var arguments = input ?? [];
-        if (ability.Descriptor.UsesChangeSet
+        if (tool.ChangeSetMode == ChangeSetMode.Caller
             && !arguments.ContainsKey(AbilityTool.ChangeSetIdArgument)
             && Request.Headers.TryGetValue(ChangeSetAccessor.HeaderName, out var header)
             && !string.IsNullOrWhiteSpace(header))
@@ -89,8 +116,17 @@ public sealed class AbilitiesController(AbilityInvoker invoker, AbilityToolRunne
             ? AbilityConsent.For(approvalId)
             : AbilityConsent.None;
         var result = await runner.InvokeAsync(tool, arguments, session, consent, cancellationToken);
-        return StatusCode(StatusCodeOf(result), result.ToJson());
+        return StatusCode(StatusCodeOf(result), tools.ShapeResult(consumer, tool, result.ToJson()));
     }
+
+    // The consumer the caller named, or the MCP server's when it named none.
+    private string Consumer
+        => Request.Headers.TryGetValue(ConsumerHeader, out var named) && !string.IsNullOrWhiteSpace(named)
+            ? named.ToString()
+            : McpConsumer;
+
+    private NotFoundObjectResult UnknownConsumer(string consumer)
+        => NotFound(new ProblemDetails { Title = "Unknown consumer", Detail = $"No consumer '{consumer}'.", Status = StatusCodes.Status404NotFound });
 
     private static int StatusCodeOf(AbilityToolResult result)
         => result.Success ? StatusCodes.Status200OK : result.Status switch
@@ -106,15 +142,15 @@ public sealed class AbilitiesController(AbilityInvoker invoker, AbilityToolRunne
         };
 }
 
-/// <summary>One ability, as a caller needs it to offer it as a tool.</summary>
-/// <param name="Id">The ability's id, used in the invoke URL, e.g. <c>entity.create</c>.</param>
+/// <summary>One tool, as a caller needs it to offer it.</summary>
+/// <param name="Id">The tool's id, used in the invoke URL, e.g. <c>entity.create</c>.</param>
 /// <param name="ToolName">The id as a tool name (letters, digits, _ and -), e.g. <c>entity_create</c>.</param>
 /// <param name="Name">A short name for a person.</param>
-/// <param name="Description">What it does and when to use it, written for a model.</param>
+/// <param name="Description">What it does and when to use it, for the consumer's reader.</param>
 /// <param name="Kind"><c>Read</c> or <c>Write</c>.</param>
 /// <param name="RequiresApproval">True when a person should approve each call: it changes something and can't be undone.</param>
-/// <param name="UsesChangeSet">True when it works in a change set: then it takes a <c>changeSetId</c>, or the <c>Umb-Change-Set</c> header.</param>
-/// <param name="InputSchema">The JSON schema of the input, including <c>changeSetId</c> when it uses a change set.</param>
+/// <param name="UsesChangeSet">True when the caller chooses its change set: then it takes a <c>changeSetId</c>, or the <c>Umb-Change-Set</c> header.</param>
+/// <param name="InputSchema">The JSON schema of the input, as the consumer's filters shaped it.</param>
 public sealed record AbilityResponseModel(
     string Id,
     string ToolName,
@@ -127,12 +163,35 @@ public sealed record AbilityResponseModel(
 {
     internal static AbilityResponseModel From(AbilityTool tool)
         => new(
-            tool.Descriptor.Id,
+            tool.Id,
             tool.Name,
-            tool.Descriptor.Name,
+            tool.Title,
             tool.Description,
             tool.Descriptor.Kind.ToString(),
             tool.Descriptor.RequiresApproval,
-            tool.Descriptor.UsesChangeSet,
+            tool.ChangeSetMode == ChangeSetMode.Caller,
             tool.InputSchema);
+}
+
+/// <summary>Adds the consumer HTTP tool callers are.</summary>
+public static class AbilitiesManagementApiBuilderExtensions
+{
+    /// <summary>
+    /// The MCP server's consumer (<see cref="AbilitiesController.McpConsumer"/>): a model, in a session that keeps a
+    /// change set open, whose client can ask the person before what can't be undone.
+    /// </summary>
+    public static IAbilityConsumer McpConsumer { get; } = new AbilityConsumer(
+        AbilitiesController.McpConsumer,
+        "MCP server",
+        "A model through an MCP server, such as Umbraco CMS MCP Dev. Its session keeps a change set open, and its client asks the person before anything that can't be undone.",
+        AbilityAudiences.Model,
+        ConsumerCapabilities.Conversation | ConsumerCapabilities.AsksConsent,
+        [FrameworkFilters.ForModels]);
+
+    /// <summary>Adds the MCP server's consumer, so the abilities endpoints can serve it. Call with <c>AddAbilities()</c>.</summary>
+    public static IUmbracoBuilder AddAbilitiesManagementApi(this IUmbracoBuilder builder)
+    {
+        builder.Services.AddSingleton(McpConsumer);
+        return builder;
+    }
 }

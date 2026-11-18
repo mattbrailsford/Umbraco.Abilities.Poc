@@ -279,8 +279,8 @@ endpoints.
 - A product's own editor for a setting becomes the field's editor, for a UI only, in the samples and on real Commerce
   - `ValueFormatTests.A_products_own_editor_for_a_setting_becomes_the_fields_editor`
   - `CommerceDiscountAdapterTests.Each_rule_and_reward_setting_names_Commerces_own_editor_for_a_UI_and_not_for_the_model`
-- The Management API keeps the hints; the MCP proxy strips them from schemas and results
-  - `AbilitiesManagementApiTests.The_Management_API_keeps_each_fields_editor_for_a_UI_to_build_a_form_from`
+- A consumer that builds forms gets the hints over the Management API; the MCP server's consumer gets schemas and results without them
+  - `AbilitiesManagementApiTests.A_consumer_that_builds_forms_gets_each_fields_editor_and_the_MCP_server_does_not`
   - `AbilitiesMcpProxyTests.An_MCP_client_gets_schemas_without_the_hints_meant_for_UIs`
 
 ## Consumers and filters
@@ -310,6 +310,22 @@ See [CONSUMERS.md](CONSUMERS.md).
   - `ConsumerTests.Every_dropped_tool_stays_listed_with_why_and_only_kept_tools_are_offered`
 - A filter can put several tools in place of one, each calling its ability with a fixed argument the caller doesn't send
   - `ConsumerTests.A_filter_can_put_several_tools_in_place_of_one_each_calling_its_ability_with_a_fixed_argument`
+- The AI chat consumer offers every ability, as before consumers, with `changeSetId` where the caller chooses the set
+  - `ConsumerTests.An_AI_chat_offers_every_ability_as_before_with_changeSetId_where_the_caller_chooses_the_set`
+- A form consumer (the `for-forms` policy) gets whole operations: no building blocks, change set or Explain abilities
+  - `ConsumerTests.A_form_consumer_gets_whole_operations_and_no_building_blocks_change_set_or_explain_abilities`
+- A form consumer's tools take no `changeSetId`, and each Write is a change set of its own
+  - `ConsumerTests.A_form_consumer_gets_no_changeSetId_and_its_writes_are_each_a_change_set_of_their_own`
+  - `ConsumerTests.A_call_in_its_own_change_set_is_applied_at_once_and_one_that_fails_leaves_nothing_behind`
+- A model consumer's tools have no keywords meant for forms; a form consumer's keep them
+  - `ConsumerTests.A_model_consumers_tools_have_no_keywords_meant_for_forms`
+- An admin leaves an ability out of one consumer only, and can bring back what a filter dropped but not what the base policy dropped
+  - `ConsumerTests.An_admin_can_leave_an_ability_out_of_one_consumer_only`
+  - `ConsumerTests.An_admin_can_bring_back_what_a_filter_dropped_but_not_what_the_base_policy_dropped`
+- The consumer named in the `Umb-Consumer` header decides the list (`mcp` without it), and the list answers with `Vary`
+  - `AbilitiesManagementApiTests.The_consumer_named_in_a_header_decides_the_list_and_a_cache_keeps_one_per_consumer`
+- A tool a consumer doesn't offer can't be called through it over the Management API
+  - `AbilitiesManagementApiTests.A_tool_the_consumer_does_not_offer_cannot_be_called_through_it`
 
 ## Against a real Umbraco
 

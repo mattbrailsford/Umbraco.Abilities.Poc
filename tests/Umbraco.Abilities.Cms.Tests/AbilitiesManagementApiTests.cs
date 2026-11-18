@@ -61,15 +61,58 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
     }
 
     [Test]
-    public async Task The_Management_API_keeps_each_fields_editor_for_a_UI_to_build_a_form_from()
+    public async Task A_consumer_that_builds_forms_gets_each_fields_editor_and_the_MCP_server_does_not()
     {
         await SignInAsEditorAsync();
 
-        // A UI, such as an Automate settings form or a change set screen, reads x-editor and x-meta. MCP strips them.
-        var schema = await OkAsync("entity.getSchema", """{ "entityType": "document", "subtype": "article" }""");
-        var title = schema.GetProperty("fields").GetProperty("properties").GetProperty("title");
+        // A UI, such as a change set screen, reads x-editor and x-meta: its consumer keeps them. MCP's strips them, in
+        // results too.
+        const string article = """{ "entityType": "document", "subtype": "article" }""";
+        var title = (await OkAsync("entity.getSchema", article, consumer: FormConsumer.Alias)).GetProperty("fields").GetProperty("properties").GetProperty("title");
         Assert.That(title.GetProperty("x-editor").GetProperty("alias").GetString(), Is.Not.Empty);
         Assert.That(title.GetProperty("x-meta").TryGetProperty("umbraco.cms.data-type", out _), Is.True);
+
+        var forModel = (await OkAsync("entity.getSchema", article)).GetProperty("fields").GetProperty("properties").GetProperty("title");
+        Assert.That(forModel.TryGetProperty("x-editor", out _) || forModel.TryGetProperty("x-meta", out _), Is.False);
+    }
+
+    [Test]
+    public async Task The_consumer_named_in_a_header_decides_the_list_and_a_cache_keeps_one_per_consumer()
+    {
+        await SignInAsEditorAsync();
+
+        async Task<(HashSet<string> Ids, string Vary)> ListAsync(string? consumer)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, Url);
+            if (consumer is not null)
+            {
+                request.Headers.Add(AbilitiesController.ConsumerHeader, consumer);
+            }
+
+            using var response = await Client.SendAsync(request);
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK), await response.Content.ReadAsStringAsync());
+            var ids = (await response.Content.ReadFromJsonAsync<JsonElement>()).EnumerateArray().Select(a => a.GetProperty("id").GetString()!).ToHashSet();
+            return (ids, string.Join(",", response.Headers.Vary));
+        }
+
+        var mcp = await ListAsync(null);
+        var forms = await ListAsync(FormConsumer.Alias);
+        Assert.Multiple(() =>
+        {
+            Assert.That(mcp.Ids, Does.Contain("entity.setValue"), "no header is the MCP server's consumer");
+            Assert.That(forms.Ids, Does.Not.Contain("entity.setValue"));
+            Assert.That(mcp.Vary, Does.Contain(AbilitiesController.ConsumerHeader));
+        });
+    }
+
+    [Test]
+    public async Task A_tool_the_consumer_does_not_offer_cannot_be_called_through_it()
+    {
+        await SignInAsEditorAsync();
+
+        // The form consumer leaves out building blocks such as setValue.
+        var (status, _) = await InvokeAsync("entity.setValue", "{}", consumer: FormConsumer.Alias);
+        Assert.That(status, Is.EqualTo(HttpStatusCode.NotFound));
     }
 
     [Test]
@@ -191,14 +234,14 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
         await OkAsync("changeSet.apply", "{}", set, approval: body.GetProperty("approval").GetProperty("id").GetGuid());
     }
 
-    private async Task<JsonElement> OkAsync(string ability, string json, Guid? changeSet = null, Guid? approval = null)
+    private async Task<JsonElement> OkAsync(string ability, string json, Guid? changeSet = null, Guid? approval = null, string consumer = AbilitiesController.McpConsumer)
     {
-        var (status, body) = await InvokeAsync(ability, json, changeSet, approval);
+        var (status, body) = await InvokeAsync(ability, json, changeSet, approval, consumer);
         Assert.That(status, Is.EqualTo(HttpStatusCode.OK), $"{ability} failed: {body}");
         return body.GetProperty("result");
     }
 
-    private async Task<(HttpStatusCode Status, JsonElement Body)> InvokeAsync(string ability, string json, Guid? changeSet = null, Guid? approval = null)
+    private async Task<(HttpStatusCode Status, JsonElement Body)> InvokeAsync(string ability, string json, Guid? changeSet = null, Guid? approval = null, string consumer = AbilitiesController.McpConsumer)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, GetManagementApiUrl<AbilitiesController>(x => x.Invoke(ability, null, CancellationToken.None)))
         {
@@ -214,6 +257,7 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
             request.Headers.Add(AbilitiesController.ApprovalHeader, approvalId.ToString());
         }
 
+        request.Headers.Add(AbilitiesController.ConsumerHeader, consumer);
         var response = await Client.SendAsync(request);
         var text = await response.Content.ReadAsStringAsync();
         return (response.StatusCode, text.Length == 0 ? default : JsonDocument.Parse(text).RootElement.Clone());

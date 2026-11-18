@@ -59,6 +59,12 @@ public enum ChangeSetMode
     /// The default for every ability that uses a change set.
     /// </summary>
     Caller,
+
+    /// <summary>
+    /// Each call is a set of its own: made, the call recorded in it, then applied at once, or discarded if the call or
+    /// the apply fails. For a consumer where each call stands alone, such as a workflow step.
+    /// </summary>
+    PerCall,
 }
 
 /// <summary>

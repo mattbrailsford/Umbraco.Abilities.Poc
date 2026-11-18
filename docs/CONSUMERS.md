@@ -1,6 +1,6 @@
 # Consumers: which abilities show up where, and in what shape
 
-Status: **phase 1 built** (tasks 1 to 5, with `GetTools` and `Explain`). The rest is the plan.
+Status: **phases 1 and 2 built** (tasks 1 to 13). Phases 3 and 4 are the plan.
 
 A **consumer** is anything that offers abilities to someone: an AI chat, an MCP server, Umbraco Automate. Today each
 consumer filters and shapes the abilities list in its own code. This plan keeps that job with the consumer, but builds
@@ -52,7 +52,7 @@ Every place below is a consumer filtering or shaping in its own code.
 | `AbilityAIFunction.cs:21`, `:59` | Strips `x-editor` and `x-meta` from schemas and results | Filter `strip-form-keywords` |
 | `AbilitiesMcpProxy.cs:189` | A second copy of the stripping | The same filter, run on the site |
 | `AbilitiesMcpProxy.cs:223` | Its own idea of a listed ability | The consumer's tools |
-| `AbilitiesController.cs:81-91` | Lists every ability, unshaped | `GET abilities?consumer=` |
+| `AbilitiesController.cs:81-91` | Lists every ability, unshaped | `GET abilities`, for the consumer in the `Umb-Consumer` header |
 | `AbilityAction.cs:112` (Automate) | Hard-codes: no change set lifecycle, no Explain, no building blocks | The base policy and two filters |
 | `AbilityAction.cs:83` (Automate) | Decides if a step makes its own change set | Filter `change-set-per-call` |
 | `EntityAction.cs` (Automate) | Makes per-page-type Create and Update, only for Automate | `entity.create`, `entity.update` and filter `split-by-entity-type` |
@@ -239,8 +239,10 @@ The PoC's consumers:
 
 A new consumer gets a sensible list on day one by applying one policy.
 
-The Management API is not a consumer. It is the road MCP travels, and takes the consumer as a parameter
-(`GET abilities?consumer=mcp`).
+The Management API is not a consumer. It is the road MCP travels. A caller names its consumer
+in the `Umb-Consumer` header, set once on its client. Without it, the caller is `mcp`. The consumer is who calls, not
+what is asked for, so it is a header, like `Umb-Change-Set` and `Umb-Approval`. The list answers with
+`Vary: Umb-Consumer`, so a cache keeps one list per consumer.
 
 ### 7. Adding a filter to another package's consumer
 
@@ -405,7 +407,7 @@ public sealed class AbilityToolRunner
 | Adapter | Keeps | Loses |
 | --- | --- | --- |
 | AI (`AbilityAITools`) | Wrap in `AIFunction`; approval wrapper; turn arguments into JSON | Stripping; the list |
-| Management API | HTTP; headers to `changeSetId` and consent; `?consumer=` | Its own list shape |
+| Management API | HTTP; headers to `changeSetId`, consent and the consumer | Its own list shape |
 | MCP proxy | MCP tools and annotations; asking for consent | Stripping; `ListedAbility`'s own shaping |
 | Automate | `IAction`; forms from `x-editor`; bindings; editor values; Automate's object-only output rule | `Include`; deciding the change set; `EntityAction` |
 
@@ -460,14 +462,14 @@ Each task keeps the full suite green. Each is one PR-sized step.
 | 3 | Done. Policies, loop check, `AddToPolicy` | A filter added to a policy reaches every consumer that applies it |
 | 4 | Done. `IAbilityConsumer`, `AbilityConsumerRegistry`, `AddFilter`; `GetTools`, `Explain`, `Validate` | A package adds a consumer with no framework change |
 | 5 | Done. `ManagesChangeSets` fact; the base policy | It runs for every consumer and can't be skipped |
-| 6 | The built-in filters and policies; the three PoC consumers | Automate's list is the same as today's `Include`; every drop has a note |
-| 7 | Keyword list; `strip-form-keywords` | `ForModels` and the MCP copy deleted |
-| 8 | `ChangeSetMode`; `add-change-set-argument`; `change-set-per-call` | `changeSetId` only where there is a conversation |
-| 9 | The AI adapter reads its tools | The AI adapter shrinks; its list is unchanged |
-| 10 | `GET abilities?consumer=`; the MCP proxy reads it | The proxy's stripping and shaping deleted |
-| 11 | Automate reads its tools | `AbilityActionOptions.Include` deleted |
-| 12 | `AddFilter` onto another package's consumer | A sample package hides something from Automate only |
-| 13 | Overrides from config | An admin drops or brings back, and can't bring back past the base policy |
+| 6 | Done. The built-in filters and policies; the three PoC consumers, each registered by its own package | Automate's list is the same as its old `Include`; every drop has a note |
+| 7 | Done. `strip-form-keywords`, also on results (`IAbilityResultFilter`, `ShapeResult`) | `UiHints.ForModels` and the MCP copy deleted |
+| 8 | Done. `ChangeSetMode.PerCall` in the runner; `add-change-set-argument`; `change-set-per-call` | `changeSetId` only where there is a conversation |
+| 9 | Done. The AI adapter reads the `ai-chat` consumer's tools | The AI adapter shrinks; its list is unchanged |
+| 10 | Done. The `Umb-Consumer` header on `GET abilities` and `POST …/invoke` (`mcp` without it); the MCP proxy sets it once | The proxy's stripping and shaping deleted; a tool a consumer doesn't offer is a 404 |
+| 11 | Done. Automate reads the `automate` consumer's tools | `AbilityActionOptions.Include` deleted |
+| 12 | Done in phase 1. `AddFilter` onto another package's consumer | A package adds a filter to a consumer it doesn't own |
+| 13 | Done. Overrides from `Umbraco:Abilities:Consumers` | An admin drops or keeps, and can't keep past the base policy |
 | 14 | Hints: `[Hint]`, `FieldDefinition.Hints`, `x-hints`, `apply-hints`; split today's descriptions | Automate shows text for people; a model reads the same text as today |
 | 15 | `entity.update`, `DependentInput`, `SplitBy`; `split-by-entity-type`; `ResolveInputSchemaAsync` | One Create and one Update per entity type for forms; one tool each for models |
 | 16 | Automate: page type picker and the fields editor (FUDGE) | `EntityAction` deleted |

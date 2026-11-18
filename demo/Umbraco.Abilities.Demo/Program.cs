@@ -2,6 +2,7 @@ using Umbraco.Abilities.Automate;
 using Umbraco.Abilities.Cms;
 using Umbraco.Abilities.Commerce;
 using Umbraco.Abilities.Demo;
+using Umbraco.Abilities.ManagementApi;
 using Umbraco.Cms.Core.Notifications;
 using Umbraco.Commerce.Extensions;
 
@@ -13,6 +14,7 @@ builder.CreateUmbracoBuilder()
     .AddUmbracoCommerce(commerce => commerce.AddSQLite())
     .AddComposers()
     .AddAbilities()
+    .AddAbilitiesManagementApi()
     .AddCommerceAbilities()
     .AddNotificationAsyncHandler<UmbracoApplicationStartedNotification, DemoSetup>()
     .AddNotificationAsyncHandler<UmbracoApplicationStartedNotification, DemoShop>()

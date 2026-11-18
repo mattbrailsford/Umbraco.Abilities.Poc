@@ -5,7 +5,8 @@
 //   UMBRACO_CLIENT_ID      the API user's client id
 //   UMBRACO_CLIENT_SECRET  the API user's client secret
 //
-// The site needs Umbraco.Abilities.ManagementApi and builder.AddAbilities(). Add it to an MCP client, for example:
+// The site needs Umbraco.Abilities.ManagementApi, with builder.AddAbilities().AddAbilitiesManagementApi(). The site's
+// "mcp" consumer decides which tools this lists, and their shape. Add it to an MCP client, for example:
 //
 //   claude mcp add umbraco-abilities -e UMBRACO_BASE_URL=... -e UMBRACO_CLIENT_ID=... -e UMBRACO_CLIENT_SECRET=... \
 //     -- dotnet run --project tools/Umbraco.Abilities.McpProxy

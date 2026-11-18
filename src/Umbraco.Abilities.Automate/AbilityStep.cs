@@ -43,9 +43,7 @@ public sealed partial class AbilityStep(AbilityInvoker invoker, BindingEvaluator
         }
 
         var session = new AbilityToolSession(serviceAccount);
-        var set = writes
-            ? invoker.ChangeSets.Create($"Automate: {context.ExecutionContext.AutomationName}, run {context.RunId}, step {context.StepId}")
-            : null;
+        var set = writes ? invoker.ChangeSets.Create(ChangeSetName(context)) : null;
         if (set is not null)
         {
             session.Open(set.Id);
@@ -81,6 +79,10 @@ public sealed partial class AbilityStep(AbilityInvoker invoker, BindingEvaluator
         var json = JsonSerializer.SerializeToNode(value, AbilityJson.Options);
         return json is null ? ActionResult.Success() : Output.Success(json);
     }
+
+    /// <summary>The name of a step's change set, so a person can tell which automation, run and step made it.</summary>
+    public static string ChangeSetName(ActionContext context)
+        => $"Automate: {context.ExecutionContext?.AutomationName}, run {context.RunId}, step {context.StepId}";
 
     /// <summary>
     /// Settings with their <c>${ … }</c> bindings resolved. A value that is one whole binding keeps its type (a number

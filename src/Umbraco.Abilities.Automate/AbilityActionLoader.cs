@@ -1,21 +1,36 @@
 using Microsoft.Extensions.DependencyInjection;
 
+using Umbraco.Abilities.Consumers;
 using Umbraco.Abilities.Entities;
 using Umbraco.Automate.Core.Actions;
 
 namespace Umbraco.Abilities.Automate;
 
 /// <summary>
-/// Makes the site's Automate actions from its abilities and entity types, at the time it's asked: an action per ability
-/// the options include, and a Create and Update action per subtype of each entity type that can be created.
+/// Makes the site's Automate actions, at the time it's asked: an action per tool the Automate consumer offers, and a
+/// Create and Update action per subtype of each entity type that can be created.
 /// </summary>
-public sealed class AbilityActionLoader(AbilityStep step, EntityAdapterRegistry adapters, AbilityActionOptions options)
+public sealed class AbilityActionLoader(AbilityStep step, AbilityToolProvider tools, EntityAdapterRegistry adapters, AbilityActionOptions options)
 {
+    /// <summary>The Automate consumer's alias.</summary>
+    public const string ConsumerAlias = "automate";
+
+    /// <summary>
+    /// Umbraco Automate: a person builds a step from a form, and publishing the automation is their consent to it. Each
+    /// step stands alone, with no conversation to keep a change set open in.
+    /// </summary>
+    public static IAbilityConsumer Consumer { get; } = new AbilityConsumer(
+        ConsumerAlias,
+        "Umbraco Automate",
+        "Automation steps a person builds from forms. Publishing an automation is the person's consent to its steps.",
+        AbilityAudiences.Person,
+        ConsumerCapabilities.StandingConsent,
+        [FrameworkFilters.ForForms]);
+
     public IEnumerable<IAction> CreateActions()
     {
-        var abilities = step.Invoker.Abilities.All
-            .Where(options.Include)
-            .Select(ability => (IAction)new AbilityAction(ability, step, options));
+        var abilities = tools.GetTools(ConsumerAlias)
+            .Select(tool => (IAction)new AbilityAction(tool, step, options));
 
         return options.EntityActions ? abilities.Concat(EntityActions()) : abilities;
     }
@@ -56,6 +71,7 @@ public static class AbilityActionServiceCollectionExtensions
         var options = new AbilityActionOptions();
         configure?.Invoke(options);
         services.AddSingleton(options);
+        services.AddSingleton(AbilityActionLoader.Consumer);
         services.AddSingleton<AbilityStep>();
         services.AddSingleton<AbilityActionLoader>();
         services.AddSingleton(sp =>
