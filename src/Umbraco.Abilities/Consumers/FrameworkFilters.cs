@@ -97,6 +97,33 @@ public sealed class StripFormKeywordsFilter(IEnumerable<string>? more = null) : 
 }
 
 /// <summary>
+/// Gives the consumer's reader their hints (<see cref="HintAttribute"/>): the ability's hint for the consumer's
+/// <see cref="IAbilityConsumer.Audience"/> is added to its description, and each <c>x-hints</c> keyword in its schemas
+/// and results is replaced by that audience's hint, added to the description next to it. Hints for other readers go.
+/// In both framework policies, so every consumer with the same audience reads the same text.
+/// </summary>
+public sealed class ApplyHintsFilter : IAbilityFilter, IAbilityResultFilter
+{
+    public string Alias => "apply-hints";
+
+    public string Description => "Adds the hints for the consumer's reader to descriptions, and drops the others.";
+
+    public IEnumerable<AbilityTool> Apply(AbilityTool tool, AbilityFilterContext context)
+    {
+        var audience = context.Consumer.Audience;
+        yield return tool with
+        {
+            Description = UiHints.Describe(tool.Description, tool.Descriptor.Hints, audience),
+            InputSchema = UiHints.ApplyHints(tool.InputSchema, audience),
+            OutputSchema = tool.OutputSchema is { } output ? UiHints.ApplyHints(output, audience) : null,
+        };
+    }
+
+    public JsonElement ShapeResult(AbilityTool tool, JsonElement result, AbilityFilterContext context)
+        => UiHints.ApplyHints(result, context.Consumer.Audience);
+}
+
+/// <summary>
 /// Adds the <c>changeSetId</c> argument to tools whose caller chooses the change set (<see cref="ChangeSetMode.Caller"/>).
 /// A conversation can hold several sets open, so a call may have to name one.
 /// </summary>
@@ -145,10 +172,10 @@ public sealed class ChangeSetPerCallFilter : IAbilityFilter
 /// <summary>The framework's filters and policies.</summary>
 public static class FrameworkFilters
 {
-    /// <summary>For a consumer whose reader is a model, in a conversation: no form keywords, and a change set argument.</summary>
+    /// <summary>For a consumer whose reader is a model, in a conversation: its hints, no form keywords, and a change set argument.</summary>
     public const string ForModels = "for-models";
 
-    /// <summary>For a consumer whose reader fills in a form, one call at a time: whole operations, each its own change set.</summary>
+    /// <summary>For a consumer whose reader fills in a form, one call at a time: its hints, whole operations, each its own change set.</summary>
     public const string ForForms = "for-forms";
 
     /// <summary>
@@ -167,10 +194,11 @@ public static class FrameworkFilters
 
         IAbilityFilter strip = new StripFormKeywordsFilter(formKeywords), argument = new AddChangeSetArgumentFilter();
         IAbilityFilter blocks = new HideBuildingBlocksFilter(), explain = new HideExplainFilter(), perCall = new ChangeSetPerCallFilter();
-        filters.Add(strip).Add(argument).Add(blocks).Add(explain).Add(perCall);
+        IAbilityFilter hints = new ApplyHintsFilter();
+        filters.Add(hints).Add(strip).Add(argument).Add(blocks).Add(explain).Add(perCall);
         policies
-            .Add(ForModels, strip.Alias, argument.Alias)
-            .Add(ForForms, blocks.Alias, explain.Alias, perCall.Alias);
+            .Add(ForModels, hints.Alias, strip.Alias, argument.Alias)
+            .Add(ForForms, hints.Alias, blocks.Alias, explain.Alias, perCall.Alias);
 
         return filters;
     }

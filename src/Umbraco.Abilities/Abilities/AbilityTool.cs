@@ -274,9 +274,12 @@ public static class AbilitySchemas
         // An input property can name its editor and carry metadata too, for a form built from the schema (Automate's).
         var (editor, meta) = context.PropertyInfo is null ? (null, null) : (UiHints.EditorOf(attributes), UiHints.MetaOf(attributes));
 
+        // And hints, by audience, for how to fill it in.
+        var hints = context.PropertyInfo is null ? null : UiHints.HintsOf(attributes);
+
         // A format on the property, or on its type: a type with one is written as a string, which its converter reads.
         var format = (context.PropertyInfo is null ? null : ValueFormats.OfMember(attributes)) ?? ValueFormats.Of(context.TypeInfo.Type);
-        if (description is null && editor is null && meta is null && format is null)
+        if (description is null && editor is null && meta is null && hints is null && format is null)
         {
             return schema;
         }
@@ -298,7 +301,7 @@ public static class AbilitySchemas
             node["format"] = format;
         }
 
-        UiHints.WriteTo(node, editor, meta);
+        UiHints.WriteTo(node, editor, meta, hints);
         return node;
     }
 }

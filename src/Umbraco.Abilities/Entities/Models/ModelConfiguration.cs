@@ -47,6 +47,8 @@ internal sealed class PropertyConfig
     public string? Format { get; set; }
 
     public JsonObject? Meta { get; set; }
+
+    public IReadOnlyDictionary<string, string>? Hints { get; set; }
 }
 
 /// <summary>Fluent configuration of one class, held until the class is first described.</summary>
@@ -208,6 +210,9 @@ public sealed class FieldBuilder<T>
     /// <summary>A hint in the field's metadata bag, under an <c>owner.name</c> key. Models never see it.</summary>
     public FieldBuilder<T> Meta(string key, JsonObject value) => Set(() => _config.Meta = UiHints.WithMeta(_config.Meta, key, value));
 
+    /// <summary>How to fill the field, for one audience (<c>model</c> or <c>person</c>). Never names a product.</summary>
+    public FieldBuilder<T> Hint(string audience, string text) => Set(() => _config.Hints = UiHints.WithHint(_config.Hints, audience, text));
+
     public FieldBuilder<T> Field<TValue>(Expression<Func<T, TValue>> property) => _model.Field(property);
 
     public ItemsBuilder<T> Items<TValue>(Expression<Func<T, TValue>> property, params Type[] itemTypes) => _model.Items(property, itemTypes);
@@ -231,6 +236,9 @@ public sealed class ItemsBuilder<T>
     internal ItemsBuilder(ModelBuilder<T> model, PropertyConfig config) => (_model, _config) = (model, config);
 
     public ItemsBuilder<T> Description(string description) => Set(() => _config.Description = description);
+
+    /// <summary>How to fill the items field, for one audience (<c>model</c> or <c>person</c>). Never names a product.</summary>
+    public ItemsBuilder<T> Hint(string audience, string text) => Set(() => _config.Hints = UiHints.WithHint(_config.Hints, audience, text));
 
     public FieldBuilder<T> Field<TValue>(Expression<Func<T, TValue>> property) => _model.Field(property);
 

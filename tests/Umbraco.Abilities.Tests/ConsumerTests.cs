@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -256,13 +257,61 @@ public class ConsumerTests
         Assert.DoesNotContain(tools.GetTools("workflows"), t => t.Id == "changeSet.apply");
     }
 
+    [Fact]
+    public void A_model_reads_the_description_with_model_hints_and_a_person_with_person_hints()
+    {
+        _site.Abilities.Add(new PublishPageAbility());
+        AddConsumer("chat", AbilityAudiences.Model, Chat, FrameworkFilters.ForModels);
+        AddConsumer("workflows", AbilityAudiences.Person, ConsumerCapabilities.StandingConsent, FrameworkFilters.ForForms);
+
+        var model = Tool("chat", "acme.publishPage");
+        var person = Tool("workflows", "acme.publishPage");
+
+        Assert.Equal("Puts a page live. Ask the person first.", model.Description);
+        Assert.Equal("Puts a page live. Check the preview first.", person.Description);
+        Assert.Equal("The page. Use entity.find to turn its name into a key.", PageDescription(model));
+        Assert.Equal("The page. Pick it from the tree.", PageDescription(person));
+        Assert.DoesNotContain(UiHints.HintsKeyword, model.InputSchema.GetRawText());
+        Assert.DoesNotContain(UiHints.HintsKeyword, person.InputSchema.GetRawText());
+
+        static string? PageDescription(AbilityTool tool) => tool.InputSchema.GetProperty("properties").GetProperty("page").GetProperty("description").GetString();
+    }
+
+    [Fact]
+    public void Two_consumers_with_the_same_audience_get_the_same_hints()
+    {
+        _site.Abilities.Add(new PublishPageAbility());
+        AddConsumer("chat", AbilityAudiences.Model, Chat, FrameworkFilters.ForModels);
+        AddConsumer("model-forms", AbilityAudiences.Model, ConsumerCapabilities.StandingConsent, FrameworkFilters.ForForms);
+
+        Assert.Equal(Tool("chat", "acme.publishPage").Description, Tool("model-forms", "acme.publishPage").Description);
+        Assert.Equal(Tool("chat", "entity.getSchema").Description, Tool("model-forms", "entity.getSchema").Description);
+    }
+
+    [Fact]
+    public async Task A_model_reading_a_schema_back_gets_model_hints_only()
+    {
+        AddConsumer("chat", AbilityAudiences.Model, Chat, FrameworkFilters.ForModels);
+        var getSchema = Tool("chat", "entity.getSchema");
+
+        var result = await _site.Runner.InvokeAsync(getSchema, Json("""{ "entityType": "umbraco-commerce-discount" }"""), new AbilityToolSession(SampleAccess.Editor));
+        var shaped = _site.Tools.ShapeResult("chat", getSchema, result.ToJson());
+
+        var active = shaped.GetProperty("result").GetProperty("fields").GetProperty("properties").GetProperty("active").GetProperty("description").GetString();
+        Assert.Equal("Whether the discount is live. Use commerce.activateDiscount to switch it on.", active);
+        Assert.DoesNotContain(UiHints.HintsKeyword, shaped.GetRawText());
+    }
+
     private AbilityToolProvider WithOverrides(AbilityOverrides overrides)
         => new(_site.Abilities, _site.Filters, _site.Policies, _site.Consumers, overrides);
 
     private static JsonObject Json(string json) => JsonNode.Parse(json)!.AsObject();
 
     private void AddConsumer(string alias, ConsumerCapabilities capabilities, params string[] filters)
-        => _site.Consumers.Add(new AbilityConsumer(alias, alias, $"The {alias} consumer.", AbilityAudiences.Model, capabilities, filters));
+        => AddConsumer(alias, AbilityAudiences.Model, capabilities, filters);
+
+    private void AddConsumer(string alias, string audience, ConsumerCapabilities capabilities, params string[] filters)
+        => _site.Consumers.Add(new AbilityConsumer(alias, alias, $"The {alias} consumer.", audience, capabilities, filters));
 
     // The tool for an ability in a consumer's list, kept or dropped as expected.
     private AbilityTool Tool(string consumer, string id, bool kept = true)
@@ -324,5 +373,21 @@ public class ConsumerTests
                 };
             }
         }
+    }
+
+    public sealed record PublishPageInput(
+        [property: Description("The page.")]
+        [property: Hint(AbilityAudiences.Model, "Use entity.find to turn its name into a key.")]
+        [property: Hint(AbilityAudiences.Person, "Pick it from the tree.")]
+        Guid Page);
+
+    // A package's ability with a hint for each reader, on itself and on its input.
+    [Ability("acme.publishPage", "Publish page", Description = "Puts a page live.")]
+    [Hint(AbilityAudiences.Model, "Ask the person first.")]
+    [Hint(AbilityAudiences.Person, "Check the preview first.")]
+    private sealed class PublishPageAbility : AbilityBase<PublishPageInput, object>
+    {
+        protected override Task<AbilityResult> ExecuteAsync(PublishPageInput input, AbilityContext context, CancellationToken cancellationToken)
+            => Task.FromResult(AbilityResult.Ok(null));
     }
 }

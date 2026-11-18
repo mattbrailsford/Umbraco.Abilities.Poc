@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 
 using Umbraco.Abilities.ChangeSets;
+using Umbraco.Abilities.Consumers;
 
 namespace Umbraco.Abilities.Entities;
 
@@ -74,11 +75,13 @@ public abstract class EntityEditAbilityBase<TInput> : AbilityBase<TInput, object
 
 public sealed record GetEntitySchemaInput(
     [property: Description("Entity type, e.g. 'umbraco-commerce-discount' (a UDI entity type).")] string EntityType,
-    [property: Description("Optional item type aliases (from an items field's x-item-types) to get the full schema for. Use group:alias when an alias appears in several groups.")] string[]? ItemTypes = null,
+    [property: Description("Optional item type aliases to get the full schema for.")]
+    [property: Hint(AbilityAudiences.Model, "From an items field's x-item-types. Use group:alias when an alias appears in several groups.")] string[]? ItemTypes = null,
     [property: Description("The subtype, for entity types that have them, e.g. a document's content type alias.")] string? Subtype = null);
 
 [Ability("entity.getSchema", "Get entity schema", Kind = AbilityKind.Read, UsesChangeSet = false,
-    Description = "Returns an entity type's fields as JSON Schema. An items field lists its item types (x-item-types). " +
+    Description = "Returns an entity type's fields as JSON Schema.")]
+[Hint(AbilityAudiences.Model, "An items field lists its item types (x-item-types). " +
                   "Call it first. Call again with itemTypes to get the fields of the item types you will add. " +
                   "capabilities lists what the type supports beyond setting values, such as delete and move. " +
                   "A field with enum takes one of those values as written: it is not a reference, so don't look it up. " +
@@ -158,7 +161,8 @@ public sealed record FindEntityInput(
     [property: Description("Only entities of this subtype, e.g. a document's content type alias.")] string? Subtype = null);
 
 [Ability("entity.find", "Find entities", Kind = AbilityKind.Read,
-    Description = "Finds entities by name, live and in the active change set. Use it to turn a name the person used into a key, " +
+    Description = "Finds entities by name, live and in the active change set.")]
+[Hint(AbilityAudiences.Model, "Use it to turn a name the person used into a key, " +
                   "for a field with x-references. Each result has its subtype. A field with enum needs no lookup.")]
 public sealed class FindEntityAbility(EntityAdapterRegistry adapters, ChangeSetService changeSets)
     : AbilityBase<FindEntityInput, IReadOnlyList<EntitySummary>>
@@ -245,14 +249,16 @@ public sealed class GetEntityAbility(EntityAdapterRegistry adapters, ChangeSetSe
 
 public sealed record CreateEntityInput(
     [property: Description("Entity type to create.")] string EntityType,
-    [property: Description("Optional key for the new entity. Leave it out and one is made and returned. Choose one only when other entities in the set must refer to it, and make it a new random GUID, not a pattern.")] Guid? Key = null,
+    [property: Description("Optional key for the new entity. Leave it out and one is made and returned.")]
+    [property: Hint(AbilityAudiences.Model, "Choose one only when other entities in the set must refer to it, and make it a new random GUID, not a pattern.")] Guid? Key = null,
     [property: Description("Field values, keyed by field alias.")] JsonObject? Fields = null,
     [property: Description("The subtype to create, for entity types that have them, e.g. a document's content type alias.")] string? Subtype = null,
-    [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }. Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
+    [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }.")]
+    [property: Hint(AbilityAudiences.Model, "Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
 
 [Ability("entity.create", "Create entity", Kind = AbilityKind.Write, Reversible = true, Granular = true,
-    Description = "Creates an entity in the active change set. Nothing goes live until the set is applied. " +
-                  "Returns the new key. Add items to items fields afterwards with entity.addItem.")]
+    Description = "Creates an entity in the active change set. Nothing goes live until the set is applied. Returns the new key.")]
+[Hint(AbilityAudiences.Model, "Add items to items fields afterwards with entity.addItem.")]
 public sealed class CreateEntityAbility : EntityEditAbilityBase<CreateEntityInput>
 {
     protected override bool Creates => true;
@@ -273,10 +279,12 @@ public sealed record SetEntityValueInput(
     [property: Description("Entity key.")] Guid? Key,
     [property: Description("Path of the value: a field alias, going down through items by key and objects by field, e.g. \"title\", \"blocks/{itemKey}/heading\" or \"blocks/{itemKey}/settings/theme\".")] string Path,
     [property: Description("The new value, matching the field's schema. null clears it.")] JsonNode? Value,
-    [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }. Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
+    [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }.")]
+    [property: Hint(AbilityAudiences.Model, "Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
 
 [Ability("entity.setValue", "Set entity value", Kind = AbilityKind.Write, Reversible = true, Granular = true,
-    Description = "Sets the value at a path, in the active change set. A path goes down through items by key and objects by " +
+    Description = "Sets the value at a path, in the active change set.")]
+[Hint(AbilityAudiences.Model, "A path goes down through items by key and objects by " +
                   "field. Give a culture for values that vary by culture. Problem paths from changeSet.validate have the same form.")]
 public sealed class SetEntityValueAbility : EntityEditAbilityBase<SetEntityValueInput>
 {
@@ -290,14 +298,18 @@ public sealed record AddEntityItemInput(
     [property: Description("Entity type.")] string EntityType,
     [property: Description("Entity key.")] Guid? Key,
     [property: Description("Path of the items field, e.g. \"rules\", or \"blocks/{itemKey}/cards\" for one inside an item.")] string FieldPath,
-    [property: Description("Item type alias, from the field's x-item-types.")] string ItemType,
-    [property: Description("Optional key for the new item. Leave it out and one is made and returned. Choose one only when another item must refer to it, and make it a new random GUID, not a pattern.")] Guid? ItemKey = null,
+    [property: Description("Item type alias.")]
+    [property: Hint(AbilityAudiences.Model, "From the field's x-item-types.")] string ItemType,
+    [property: Description("Optional key for the new item. Leave it out and one is made and returned.")]
+    [property: Hint(AbilityAudiences.Model, "Choose one only when another item must refer to it, and make it a new random GUID, not a pattern.")] Guid? ItemKey = null,
     [property: Description("Field values for the new item, keyed by field alias.")] JsonObject? Fields = null,
     [property: Description("Optional zero-based position. Omit to append.")] int? Position = null,
-    [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }. Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
+    [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }.")]
+    [property: Hint(AbilityAudiences.Model, "Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
 
 [Ability("entity.addItem", "Add entity item", Kind = AbilityKind.Write, Reversible = true, Granular = true,
-    Description = "Adds a typed item to an items field, in the active change set. Returns the item's path; set its fields " +
+    Description = "Adds a typed item to an items field, in the active change set.")]
+[Hint(AbilityAudiences.Model, "Returns the item's path; set its fields " +
                   "at '<item path>/<field>', and use '<item path>/<items field>' as fieldPath to add items inside it.")]
 public sealed class AddEntityItemAbility : EntityEditAbilityBase<AddEntityItemInput>
 {
@@ -315,7 +327,8 @@ public sealed record RemoveEntityItemInput(
     [property: Description("Entity key.")] Guid? Key,
     [property: Description("Path of the items field.")] string FieldPath,
     [property: Description("Key of the item to remove.")] Guid ItemKey,
-    [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }. Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
+    [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }.")]
+    [property: Hint(AbilityAudiences.Model, "Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
 
 [Ability("entity.removeItem", "Remove entity item", Kind = AbilityKind.Write, Reversible = true, Granular = true,
     Description = "Removes an item from an items field, in the active change set.")]
@@ -334,7 +347,8 @@ public sealed record MoveEntityItemInput(
     [property: Description("Path of the items field.")] string FieldPath,
     [property: Description("Key of the item to move.")] Guid ItemKey,
     [property: Description("New zero-based position.")] int Position,
-    [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }. Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
+    [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }.")]
+    [property: Hint(AbilityAudiences.Model, "Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
 
 [Ability("entity.moveItem", "Move entity item", Kind = AbilityKind.Write, Reversible = true, Granular = true,
     Description = "Moves an item within its items field, in the active change set.")]
@@ -352,8 +366,8 @@ public sealed record DeleteEntityInput(
     [property: Description("Key of the entity to delete.")] Guid? Key) : IEntityEditInput;
 
 [Ability("entity.delete", "Delete entity", Kind = AbilityKind.Write, Reversible = true,
-    Description = "Deletes an entity, in the active change set. It stays live until the set is applied; inside the set it " +
-                  "reads as gone. Only for entity types whose capabilities (from entity.getSchema) include delete.")]
+    Description = "Deletes an entity, in the active change set. It stays live until the set is applied; inside the set it reads as gone.")]
+[Hint(AbilityAudiences.Model, "Only for entity types whose capabilities (from entity.getSchema) include delete.")]
 public sealed class DeleteEntityAbility : EntityEditAbilityBase<DeleteEntityInput>
 {
     protected override object? Apply(Entity entity, DeleteEntityInput input, EntityEditContext context)
@@ -377,8 +391,8 @@ public sealed record MoveEntityInput(
     [property: Description("Key of the new parent. Leave it out to move the entity to the root.")] Guid? Parent = null) : IEntityEditInput;
 
 [Ability("entity.move", "Move entity", Kind = AbilityKind.Write, Reversible = true,
-    Description = "Moves an entity to another parent in its tree, in the active change set. Leave parent out for the root. " +
-                  "Only for entity types whose capabilities (from entity.getSchema) include move.")]
+    Description = "Moves an entity to another parent in its tree, in the active change set. Leave parent out for the root.")]
+[Hint(AbilityAudiences.Model, "Only for entity types whose capabilities (from entity.getSchema) include move.")]
 public sealed class MoveEntityAbility : EntityEditAbilityBase<MoveEntityInput>
 {
     protected override object? Apply(Entity entity, MoveEntityInput input, EntityEditContext context)

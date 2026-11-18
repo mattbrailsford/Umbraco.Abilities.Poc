@@ -179,6 +179,12 @@ public sealed record FieldDefinition(string Alias, string Description, FieldType
     /// </summary>
     public JsonObject? Meta { get; init; }
 
+    /// <summary>
+    /// How to use the field, by audience (<c>model</c>, <c>person</c>), written as <c>x-hints</c>. The description says
+    /// what the field is; a hint says how to fill it, for one kind of reader. See <see cref="HintAttribute"/>.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? Hints { get; init; }
+
     // ── For FieldType.Items ──────────────────────────────────────────────────────────────────────
 
     /// <summary>The group whose registered item types the field holds. Item types come from a registry, so other packages add them.</summary>

@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 
 using Umbraco.Abilities.ChangeSets;
+using Umbraco.Abilities.Consumers;
 using Umbraco.Abilities.Entities;
 using Umbraco.Abilities.Entities.Models;
 using Umbraco.Abilities.Samples.Commerce.Domain;
@@ -41,7 +42,9 @@ public sealed class DiscountEditModel : EntityModel
     [EntityKey("document"), Description("Optional page that promotes the discount.")]
     public Guid? LandingPage { get; set; }
 
-    [Description("Whether the discount is live. Use commerce.activateDiscount to switch it on."), DefaultValue(false)]
+    [Description("Whether the discount is live."), DefaultValue(false)]
+    [Hint(AbilityAudiences.Model, "Use commerce.activateDiscount to switch it on.")]
+    [Hint(AbilityAudiences.Person, "Leave it off to check the discount before customers get it.")]
     public bool? Active { get; set; }
 
     [Items(DiscountAdapter.RuleGroup, Min = 1), Description("All rules must match for the discount to apply.")]

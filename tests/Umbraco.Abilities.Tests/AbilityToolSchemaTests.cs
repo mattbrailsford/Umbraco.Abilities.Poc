@@ -20,7 +20,7 @@ public class AbilityToolSchemaTests
             .Select(ability => ability.Descriptor)
             .Select(descriptor => (
                 descriptor.Id,
-                Framework: JsonNode.Parse(UiHints.Without(AbilitySchemas.InputSchema(descriptor.InputType), UiHints.FormKeywords).GetRawText()),
+                Framework: JsonNode.Parse(UiHints.Without(AbilitySchemas.InputSchema(descriptor.InputType), [.. UiHints.FormKeywords, UiHints.HintsKeyword]).GetRawText()),
                 MEAI: JsonNode.Parse(AIJsonUtilities.CreateJsonSchema(descriptor.InputType, serializerOptions: AbilityJson.Options).GetRawText())))
             .Select(s => (s.Id, Framework: WithoutAddedFormats(s.Framework, s.MEAI), s.MEAI))
             .Where(s => !JsonNode.DeepEquals(s.Framework, s.MEAI))
