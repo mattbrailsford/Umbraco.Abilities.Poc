@@ -90,9 +90,10 @@ The details and the lessons are in [docs/FINDINGS.md](docs/FINDINGS.md). The tes
   not tried. The proxy asks the person before a call that can't be undone (MCP elicitation); only headless Claude
   Code, which can't answer, is tried. Automate actions and a backoffice editor would use the same abilities, but neither is
   built here.
-- **A real model, at scale.** The tests script the tool calls. One model built discounts and sample pages, and edited
-  sample pages, from text in a few runs (see [Against a real model](docs/FINDINGS.md#against-a-real-model)). That shows
-  the tools are usable, not how often a model gets them right, or how it does on real Umbraco documents or workflows.
+- **A real model, at scale.** The tests script the tool calls. One model built discounts and pages, and edited pages, from
+  text in a few runs, on the samples and on the real demo site over MCP (see
+  [Against a real model](docs/FINDINGS.md#against-a-real-model)). That shows the tools are usable, not how often a
+  model gets them right, or how it does on workflows.
 - **Persistence and scale.** Sets are in memory, and working state is recomputed by replaying every call
   on each read.
 - **Load balanced sites.** Change sets, waiting approvals and the side effect queue are kept in memory on one server.
@@ -123,7 +124,9 @@ dotnet run --project tools/Umbraco.Abilities.ModelRun -- "Free shipping over 500
 dotnet run --project tools/Umbraco.Abilities.ModelRun -- "On the Summer sale page, make the hero dark" document edit
 ```
 
-It is not a test: each run calls the Claude API, costs money, and can give a different result.
+It is not a test: each run calls the Claude API, costs money, and can give a different result. To run it against a real
+site such as the demo, through the MCP proxy, also set `UMBRACO_BASE_URL`, `UMBRACO_CLIENT_ID` and
+`UMBRACO_CLIENT_SECRET`, and build the proxy first.
 
 ## Where to go next
 

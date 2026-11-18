@@ -5,6 +5,7 @@ using Umbraco.Abilities.Entities;
 using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.Actions;
 using Umbraco.Cms.Core.Models;
+using Umbraco.Cms.Core.Models.Entities;
 using Umbraco.Cms.Core.Models.ContentEditing;
 using Umbraco.Cms.Core.Scoping;
 using Umbraco.Cms.Core.Services;
@@ -134,7 +135,7 @@ public sealed class CmsDocumentAdapter(
     public override Task<IReadOnlyList<EntitySummary>> FindAsync(string query, CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<EntitySummary>>(entities.GetAll(UmbracoObjectTypes.Document)
             .Where(e => e.Name?.Contains(query, StringComparison.OrdinalIgnoreCase) == true)
-            .Select(e => new EntitySummary(Type, e.Key, e.Name!, EditUrl(e.Key)))
+            .Select(e => new EntitySummary(Type, e.Key, e.Name!, EditUrl(e.Key), (e as IContentEntitySlim)?.ContentTypeAlias))
             .ToList());
 
     // ── Authorization: the CMS's own permission model ─────────────────────────────────────────────

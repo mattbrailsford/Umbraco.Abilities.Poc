@@ -176,7 +176,7 @@ public abstract class EntityAdapterBase<TModel> : IAuthorizingEntityAdapter
     public EntitySummary ToSummary(Entity entity)
     {
         var name = _info.Name is { } nameProperty ? EntityValues.ReadAny(entity.Fields, ModelSchemas.AliasOf(nameProperty))?.GetValue<string>() : null;
-        return new EntitySummary(EntityType, entity.Key, name ?? "(unnamed)", GetEditUrl(entity.Key));
+        return new EntitySummary(EntityType, entity.Key, name ?? "(unnamed)", GetEditUrl(entity.Key), entity.Subtype);
     }
 
     /// <summary>The model an entity describes.</summary>

@@ -315,6 +315,7 @@ public static class SchemaWriter
                     ["key"] = new JsonObject { ["type"] = "string", ["format"] = "uuid" },
                 },
                 ["required"] = new JsonArray("entityType", "key"),
+                ["x-references"] = new JsonArray(types.Select(t => (JsonNode?)t).ToArray()),
             };
         }
 

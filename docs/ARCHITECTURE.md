@@ -95,7 +95,7 @@ object field of the block (`blocks/{key}/settings/theme`), and so is a grid bloc
 | --- | --- | --- |
 | `x-item-types` | The array holds keyed, typed items from a group in the item type registry | Paths by key; plugin seams (discount rules, Automate steps); add, remove and move |
 | `x-variations` | The dimensions the value varies by (the CMS's culture and segment, or a product's own, such as currency), at any depth | Which variant an edit or a problem is about. A heading can vary inside an invariant block list |
-| `x-references` | The value is the key of another entity (by UDI type), or of an item in the same entity | Reference checks, and creating referenced entities in the same change set |
+| `x-references` | The value is the key of another entity (by UDI type), or of an item in the same entity. A list of types when it can point at several; the value then names its type | Reference checks, and creating referenced entities in the same change set |
 
 Three smaller notes help a model, and change nothing the framework does: `x-edit` (how a handled value is edited),
 `x-bindings` (a value can be a binding) and `x-references-item-in` (the items field a reference points into). The
@@ -516,7 +516,7 @@ A standalone [proof of concept](../) implements all three layers, with stand-ins
 | A step's exits are fields, one per outcome | Automate stores links as connections with an optional outcome, and any action can name its outcomes. As a list of connections, checking an outcome is one the step has needs Automate-only code, and the schema can only describe outcomes in text | A step with one exit has `next`; a step that names outcomes has an `outcomes` object with one exit per outcome, and no `next`. The generic checks refuse a wrong name and report an exit to a missing step by path. The adapter converts to and from Automate's connections. Fan-out, connection filters, the "any result" exit and Switch's cases are not covered |
 | Typing moves the work, not the line count | Moving the samples to model classes left their size about the same: Commerce went from 74 to 62 statement lines, and the real CMS adapter from 621 to 599 lines. But a discount's structure was previously written twice, as field definitions and as string-keyed JSON reads. Now it is written once. Typed values also exposed a validator bug that only parsed JSON had hidden | Make EntityAdapterBase\<TModel> the default for package developers, with IEntityAdapter over a typed document as the escape hatch for a schema that is data. Automate's workflow turned out not to need it: only its steps vary, so they are `List<DynamicItem>` |
 
-Not yet proven: the real Commerce and Automate models (including every kind of Automate connection), persistence, opening a set in an editor, and how reliably real models use the tools beyond a few runs, or on real Umbraco documents.
+Not yet proven: the real Commerce and Automate models (including every kind of Automate connection), persistence, opening a set in an editor, and how reliably real models use the tools beyond a few runs.
 
 ## Checked against the real models
 

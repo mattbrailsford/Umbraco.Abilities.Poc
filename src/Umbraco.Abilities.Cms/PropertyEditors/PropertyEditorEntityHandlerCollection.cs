@@ -36,5 +36,6 @@ public sealed class PropertyEditorEntityHandlersComposer : IComposer
             .Add(() => builder.TypeLoader.GetTypes<IPropertyEditorEntityHandler>())
             .Exclude<ValueEditorHandler>()
             .Exclude<BlockEditorHandler>()
+            .Exclude<MultiNodeTreePickerHandler>()
             .Exclude<JsonValueEditorHandler>();
 }

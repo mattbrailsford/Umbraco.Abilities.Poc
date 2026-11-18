@@ -154,18 +154,19 @@ public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemT
 
 public sealed record FindEntityInput(
     [property: Description("Entity type to search, e.g. 'umbraco-commerce-collection'.")] string EntityType,
-    [property: Description("Words in the entity's name.")] string Query);
+    [property: Description("Words in the entity's name. Leave it empty to list them all, for example every one of a subtype.")] string Query = "",
+    [property: Description("Only entities of this subtype, e.g. a document's content type alias.")] string? Subtype = null);
 
 [Ability("entity.find", "Find entities", Kind = AbilityKind.Read,
     Description = "Finds entities by name, live and in the active change set. Use it to turn a name the person used into a key, " +
-                  "for a field with x-references. A field with enum needs no lookup.")]
+                  "for a field with x-references. Each result has its subtype. A field with enum needs no lookup.")]
 public sealed class FindEntityAbility(EntityAdapterRegistry adapters, ChangeSetService changeSets)
     : AbilityBase<FindEntityInput, IReadOnlyList<EntitySummary>>
 {
     protected override async Task<AbilityResult> ExecuteAsync(FindEntityInput input, AbilityContext context, CancellationToken cancellationToken)
     {
         var adapter = adapters.Get(input.EntityType);
-        var found = (await adapter.FindAsync(input.Query, cancellationToken)).ToList();
+        var found = (await adapter.FindAsync(input.Query ?? string.Empty, cancellationToken)).ToList();
 
         if (changeSets.CurrentId is { } setId)
         {
@@ -183,11 +184,16 @@ public sealed class FindEntityAbility(EntityAdapterRegistry adapters, ChangeSetS
                 }
 
                 var reference = adapter.ToSummary(entity);
-                if (reference.Name.Contains(input.Query, StringComparison.OrdinalIgnoreCase))
+                if (reference.Name.Contains(input.Query ?? string.Empty, StringComparison.OrdinalIgnoreCase))
                 {
                     found.Add(reference);
                 }
             }
+        }
+
+        if (input.Subtype is { Length: > 0 } subtype)
+        {
+            found.RemoveAll(r => !string.Equals(r.Subtype, subtype, StringComparison.OrdinalIgnoreCase));
         }
 
         // Only what the user may read. (What the set itself touches was checked when it was recorded.)

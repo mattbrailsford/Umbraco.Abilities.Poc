@@ -5,18 +5,19 @@ using Anthropic;
 
 using Microsoft.Extensions.AI;
 
-using Umbraco.Abilities;
-using Umbraco.Abilities.AI;
-using Umbraco.Abilities.Samples;
-using Umbraco.Abilities.Samples.Cms;
+using Umbraco.Abilities.ModelRun;
 
 // A real model builds an entity from a description, using only the generic tools every adapter gets.
 // The prompt below names no product, entity field or item type: everything the model learns comes from the tools.
 //
 //   dotnet run --project tools/Umbraco.Abilities.ModelRun -- "<description>" [entityType] [create|edit]
 //
-// "edit" asks the model to change entities that already exist, instead of creating one. The site starts with a few
-// pages and media items (see SeedContent below), so there is something to find, link to and edit.
+// "edit" asks the model to change entities that already exist, instead of creating one.
+//
+// By default it runs against the in-memory samples, which start with a few pages and media items (see SampleTarget),
+// so there is something to find, link to and edit. Set UMBRACO_BASE_URL, UMBRACO_CLIENT_ID and UMBRACO_CLIENT_SECRET
+// to run against a real Umbraco site instead, such as the demo site: the tools then come from the MCP proxy, as an MCP
+// client would get them (see McpTarget).
 //
 // Needs ANTHROPIC_API_KEY. Each run calls the Claude API, so it costs money.
 
@@ -25,15 +26,14 @@ var entityType = args.Length > 1 ? args[1] : "umbraco-commerce-discount";
 var edit = args.Length > 2 && args[2] == "edit";
 const string model = "claude-opus-5-5";
 
-var site = SampleSite.Create();
-await SeedContent(site);
+await using RunTarget target = Environment.GetEnvironmentVariable("UMBRACO_BASE_URL") is { Length: > 0 } siteUrl
+    ? await McpTarget.CreateAsync(siteUrl)
+    : await SampleTarget.CreateAsync();
 
 // No change set is open at the start: the model creates one, and it becomes the conversation's current set. Applying
 // is left to a person, so the model doesn't get apply or discard.
-var session = new AbilityToolSession(SampleAccess.Editor);
 var surfaceOwned = new[] { "changeSet_apply", "changeSet_discard" };
-var tools = AbilityAITools
-    .Create(site.Abilities, site.Invoker, session)
+var tools = target.Tools
     .Where(t => !surfaceOwned.Contains(t.Name))
     .Select(t => (AITool)new LoggingFunction(t))
     .ToList();
@@ -64,6 +64,7 @@ var messages = new List<ChatMessage>
 };
 
 Console.WriteLine($"Model:       {model}");
+Console.WriteLine($"Site:        {target.Name}");
 Console.WriteLine($"Entity type: {entityType}");
 Console.WriteLine($"Mode:        {(edit ? "edit" : "create")}");
 Console.WriteLine($"Description: {description}");
@@ -82,89 +83,8 @@ Console.WriteLine($"Finish reason: {response.FinishReason}. Tool calls: {Logging
 
 // What a person would see before approving, then approve it as they would.
 Console.WriteLine();
-Console.WriteLine("── Change set check ──");
-if (session.ChangeSetId is not { } setId)
-{
-    Console.WriteLine($"The model left {session.OpenChangeSetIds.Count} change sets open, not one.");
-    return;
-}
-
-Console.WriteLine($"Current change set: {site.ChangeSets.Get(setId).Name}");
-var validation = await site.ChangeSets.ValidateAsync(setId);
-var problems = validation.SelectMany(e => e.Problems).ToList();
-Console.WriteLine(problems.Count == 0 ? "Valid." : string.Join(Environment.NewLine, problems.Select(p => $"  {p.Path}: {p}")));
-
-var applied = await site.ChangeSets.ApplyAsync(setId, new AbilityContext(session.UserKey));
-Console.WriteLine($"Applied by a person: {applied.Status} {applied.Message}");
-
-Console.WriteLine();
-Console.WriteLine("── Live entities after apply ──");
-foreach (var saved in applied.Result as IEnumerable<EntitySummary> ?? [])
-{
-    var entity = await site.Adapters.Get(saved.EntityType).LoadAsync(saved.Key);
-    Console.WriteLine(entity?.ToJson().ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-}
-
-// A small site to work on: two pages in English and Danish, and two images. Saved the way an editor's save would be.
-static async Task SeedContent(SampleSite site)
-{
-    var beach = new MediaRequestModel
-    {
-        Id = Guid.NewGuid(),
-        Name = "Beach banner",
-        AltText = "A sandy beach at sunset",
-        Crops = [new MediaCropRequestModel { Id = Guid.NewGuid(), Alias = "wide", Width = 1920, Height = 600 }],
-    };
-    var team = new MediaRequestModel { Id = Guid.NewGuid(), Name = "Team photo", AltText = "The team in the office" };
-    await site.Media.SaveModelAsync(beach);
-    await site.Media.SaveModelAsync(team);
-
-    await site.Pages.SaveModelAsync(new Page
-    {
-        Key = Guid.NewGuid(),
-        Title = { ["en-US"] = "Summer sale", ["da-DK"] = "Sommerudsalg" },
-        UrlSegment = { ["en-US"] = "summer-sale", ["da-DK"] = "sommerudsalg" },
-        Tags = ["sale", "summer"],
-        Intro = new RichTextValue { Markup = "<p>Our biggest sale of the year.</p>" },
-        Blocks =
-        [
-            new Hero
-            {
-                Heading = { ["en-US"] = "Summer sale", ["da-DK"] = "Sommerudsalg" },
-                Subheading = { ["en-US"] = "Up to 30% off", ["da-DK"] = "Op til 30% rabat" },
-                Settings = new HeroSettings { Theme = "light" },
-            },
-            new CardGrid
-            {
-                Heading = { ["en-US"] = "Top picks" },
-                Cards =
-                [
-                    new Card { Title = "Sandals", Text = "Light and comfy." },
-                    new Card { Title = "Sun hats", Text = "Shade for every day." },
-                    new Card { Title = "Beach towels", Text = "Big and soft." },
-                ],
-            },
-        ],
-        Promos = { ["en-US"] = [new Promo { Text = "Free shipping over 500" }], ["da-DK"] = [new Promo { Text = "Gratis fragt over 500" }] },
-        Image = [new MediaEntry { Media = beach.Id }],
-    });
-
-    await site.Pages.SaveModelAsync(new Page
-    {
-        Key = Guid.NewGuid(),
-        Title = { ["en-US"] = "About us", ["da-DK"] = "Om os" },
-        UrlSegment = { ["en-US"] = "about-us", ["da-DK"] = "om-os" },
-        Grid =
-        [
-            new RichText
-            {
-                Text = { ["en-US"] = "We have sold summer clothes since 1998.", ["da-DK"] = "Vi har solgt sommertøj siden 1998." },
-                Layout = new GridPlacement { ColumnSpan = 12 },
-            },
-        ],
-        Image = [new MediaEntry { Media = team.Id }],
-    });
-}
+Console.WriteLine("── Change set check, and a person applies it ──");
+await target.ValidateAndApplyAsync();
 
 /// <summary>Prints each tool call and its outcome, so the run reads as a transcript.</summary>
 internal sealed class LoggingFunction(AIFunction inner) : DelegatingAIFunction(inner)
@@ -181,7 +101,11 @@ internal sealed class LoggingFunction(AIFunction inner) : DelegatingAIFunction(i
 
         var result = await base.InvokeCoreAsync(arguments, cancellationToken);
         var json = result is JsonElement element ? element : JsonSerializer.SerializeToElement(result);
-        if (json.TryGetProperty("success", out var ok) && !ok.GetBoolean())
+
+        // An ability's own result says success; an MCP tool's result says isError.
+        var failed = (json.ValueKind == JsonValueKind.Object && json.TryGetProperty("success", out var ok) && !ok.GetBoolean())
+            || (json.ValueKind == JsonValueKind.Object && json.TryGetProperty("isError", out var error) && error.ValueKind == JsonValueKind.True);
+        if (failed)
         {
             Failures++;
             Console.WriteLine($"  ✗ {Shorten(json.ToString(), 600)}");
