@@ -38,6 +38,20 @@ public class CurrentChangeSetTests
     }
 
     [Fact]
+    public async Task Change_sets_created_by_many_conversations_at_once_are_all_kept()
+    {
+        // A site serves many requests at once. A real model run with five conversations in parallel lost a set it
+        // had just created, because the store wasn't safe for that.
+        var agents = Enumerable.Range(0, 200).Select(_ => new ScriptedAgent(_site)).ToList();
+
+        var created = await Task.WhenAll(agents.Select((agent, i) => Task.Run(() => agent.StartChangeSetAsync($"Set {i}"))));
+
+        var validated = await Task.WhenAll(agents.Select(agent => Task.Run(() => agent.OkAsync("changeSet_validate", "{}"))));
+        Assert.Equal(200, created.Distinct().Count());
+        Assert.All(validated, v => Assert.True(v.GetProperty("valid").GetBoolean()));
+    }
+
+    [Fact]
     public async Task With_two_change_sets_open_every_call_must_name_one()
     {
         var christmas = await _agent.StartChangeSetAsync("Christmas");

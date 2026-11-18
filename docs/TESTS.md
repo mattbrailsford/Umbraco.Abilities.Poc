@@ -37,6 +37,8 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
   name one. No ability takes the id: the AI adapter adds an optional `changeSetId` to every tool that uses a set, and the set is ambient
   for that call only
   - `CurrentChangeSetTests` (all)
+- Change sets made by many conversations at once are all kept
+  - `CurrentChangeSetTests.Change_sets_created_by_many_conversations_at_once_are_all_kept`
 - An HTTP request names its change set in the `Umb-Change-Set` header; an unknown set is refused before the request runs
   - `CmsDocumentAdapterTests.A_request_naming_a_change_set_in_its_header_works_in_that_set_for_that_request_only`
   - `CmsDocumentAdapterTests.A_request_naming_an_unknown_change_set_is_refused_before_it_runs`
