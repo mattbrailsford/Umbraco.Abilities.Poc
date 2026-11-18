@@ -65,6 +65,21 @@ public sealed class AbilitiesMcpProxyTests : AbilitiesApiTestBase
     }
 
     [Test]
+    public async Task An_MCP_client_gets_schemas_without_the_hints_meant_for_UIs()
+    {
+        // The Management API keeps x-editor and x-meta for UIs (see its tests). A model reads none of it.
+        await SignInAsEditorAsync();
+        var client = await ConnectAsync();
+
+        var result = await client.CallToolAsync("entity_getSchema", new Dictionary<string, object?> { ["entityType"] = "document", ["subtype"] = "article" });
+        var text = TextOf(result);
+        Assert.That(text, Does.Contain("\"title\""));
+        Assert.That(text, Does.Not.Contain("x-editor").And.Not.Contain("x-meta"));
+        var tools = await client.ListToolsAsync();
+        Assert.That(tools.Select(t => t.ProtocolTool.InputSchema.GetRawText()), Has.None.Contains("x-editor").And.None.Contains("x-meta"));
+    }
+
+    [Test]
     public async Task An_MCP_client_is_told_which_tools_only_read_and_which_need_a_person_to_approve_them()
     {
         await SignInAsEditorAsync();

@@ -446,6 +446,17 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
     write at once. It is a `ConcurrentDictionary` now, as `DraftSetService` and the approvals already were. A test makes
     200 sets from 200 conversations at once. A real store (a database) needs the same care: two calls in one set at
     once would still race, since a set's list of changes isn't locked.
+31. **Hints for a UI fit in the schema without a model seeing them.** `x-editor` (an editor UI alias and its config)
+    and `x-meta` (an open bag of `owner.name` hints) are built: on fields, from `[Editor]` and `[Meta]` on a model
+    property or an ability's input, from the fluent set-up, and from the CMS data type of every document field. The
+    Management API keeps them for a UI. The AI tools and the MCP proxy strip them, so the model's schema is what it
+    was. Three things came up while building it:
+    - The first CMS key, `umbraco.cms.dataType`, broke the lowercase rule, and the code refused it at once. It is
+      `umbraco.cms.data-type` now. Checking keys in code, not only in the meta-schema, caught it before any test looked.
+    - JSON Schema can't measure a value's size, so the meta-schema checks key names and that values are objects. The
+      4 KB limit is checked in code (`UiHints.WithMeta`), when a key is set.
+    - The bag passed the "delete it" test: Acme's theme picker on a field changes nothing about validation, and a
+      value outside the allowed list is still refused.
 
 ## Developer experience of adapters
 
@@ -905,8 +916,10 @@ What it means:
 ### Proposal: an ability loader in Automate
 
 Automate takes a dependency on `Umbraco.Abilities`, and a loader registers each ability as an action: its id, name,
-description, input form, output schema and outcomes, all from the ability. Abilities name no Automate type. This is a
-proposal, not built.
+description, input form, output schema and outcomes, all from the ability. Abilities name no Automate type. The loader
+is a proposal, not built. The schema side of it is built here (finding 31): `x-editor`, `x-meta`, stripping both for
+models, and the data type on CMS fields. A test-side form reader (`FormEditors` in `UiHintsTests`) shows the editor
+order below. Not built yet: a way to name a value type's `format`, and the output type on the descriptor.
 
 **Inputs and outputs: abilities already have them.** Each ability has a named C# input type (`AbilityDescriptor.InputType`),
 with a description on every field and DataAnnotations, and a typed output (`AbilityBase<TInput, TOutput>`; the
@@ -980,7 +993,7 @@ Umbraco.AI and a backoffice screen would all read it. So it starts as `x-editor`
 | On fields only, at first | Add it to item types or entities when a real case needs it |
 | The owner owns a value's shape. A breaking change is a new key, such as `acme.color.v2` | Readers of the old shape keep working |
 | A key two products read is proposed as a keyword, through Umbraco's contribution and RFC process, and the old key works for one more major | Shared meaning shouldn't be an unwritten agreement between products |
-| The meta-schema checks key names, that values are objects, and the size limit. The rest are rules for people | What can be checked like code is |
+| The meta-schema checks key names and that values are objects. Code checks those and the size limit when a key is set. The rest are rules for people | What can be checked like code is |
 
 **Editable models are copied across products.** Automate builds its settings forms with `EditableModelSchemaBuilder`
 (`Settings/EditableModelSchemaBuilder.cs`, an `[EditableModelField]` attribute with `EditorUiAlias`). Umbraco.AI has its
@@ -996,7 +1009,7 @@ This proof of concept can show it works, not decide it.
 | --- | --- |
 | CMS core (by RFC) | One shared editable model description that products build forms from, in place of each product's own copy |
 | Automate | Register step types as instances (from the loader), not only by attribute scan. Build a settings form and output schema from JSON Schema. A registry mapping `format` to an editor UI. Ideally typed bindings |
-| Abilities | Expose the output type on the descriptor. An `x-editor` keyword and an optional `[Editor]` attribute that sets it. An `x-meta` bag on fields, checked by the meta-schema and stripped for models. A way to name a value type's `format`. The data type on CMS entity fields. An idempotency key, or a "don't retry" mark, for Writes that can't be undone. An event concept, if abilities are to be triggers |
+| Abilities | Built: an `x-editor` keyword and an optional `[Editor]` attribute that sets it; an `x-meta` bag on fields, checked by the meta-schema and in code, and stripped for models; the data type on CMS entity fields. Still to do: expose the output type on the descriptor; a way to name a value type's `format`; an idempotency key, or a "don't retry" mark, for Writes that can't be undone; an event concept, if abilities are to be triggers |
 
 ## Checked against the existing MCP servers
 

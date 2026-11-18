@@ -61,6 +61,18 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
     }
 
     [Test]
+    public async Task The_Management_API_keeps_each_fields_editor_for_a_UI_to_build_a_form_from()
+    {
+        await SignInAsEditorAsync();
+
+        // A UI, such as an Automate settings form or a change set screen, reads x-editor and x-meta. MCP strips them.
+        var schema = await OkAsync("entity.getSchema", """{ "entityType": "document", "subtype": "article" }""");
+        var title = schema.GetProperty("fields").GetProperty("properties").GetProperty("title");
+        Assert.That(title.GetProperty("x-editor").GetProperty("alias").GetString(), Is.Not.Empty);
+        Assert.That(title.GetProperty("x-meta").TryGetProperty("umbraco.cms.data-type", out _), Is.True);
+    }
+
+    [Test]
     public async Task A_caller_builds_a_page_in_a_change_set_named_in_a_header_and_it_is_saved_as_that_user_on_apply()
     {
         var editor = await SignInAsEditorAsync();

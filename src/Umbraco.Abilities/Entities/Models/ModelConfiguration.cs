@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations;
 using System.Linq.Expressions;
@@ -40,6 +41,10 @@ internal sealed class PropertyConfig
     public int? Max { get; set; }
 
     public List<ValidationAttribute> Rules { get; } = [];
+
+    public FieldEditor? Editor { get; set; }
+
+    public JsonObject? Meta { get; set; }
 }
 
 /// <summary>Fluent configuration of one class, held until the class is first described.</summary>
@@ -191,6 +196,12 @@ public sealed class FieldBuilder<T>
 
     /// <summary>A DataAnnotations rule, e.g. <c>new RangeAttribute(1, 100)</c>, reported on the field's path.</summary>
     public FieldBuilder<T> Rule(ValidationAttribute rule) => Set(() => _config.Rules.Add(rule));
+
+    /// <summary>The editor a UI should use for the field, by its editor UI alias. Models never see it.</summary>
+    public FieldBuilder<T> Editor(string alias, JsonObject? config = null) => Set(() => _config.Editor = new FieldEditor(alias, config));
+
+    /// <summary>A hint in the field's metadata bag, under an <c>owner.name</c> key. Models never see it.</summary>
+    public FieldBuilder<T> Meta(string key, JsonObject value) => Set(() => _config.Meta = UiHints.WithMeta(_config.Meta, key, value));
 
     public FieldBuilder<T> Field<TValue>(Expression<Func<T, TValue>> property) => _model.Field(property);
 

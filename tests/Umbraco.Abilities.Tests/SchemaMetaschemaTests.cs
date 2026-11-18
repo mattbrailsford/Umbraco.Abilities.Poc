@@ -19,8 +19,9 @@ public class SchemaMetaschemaTests
     [Fact]
     public void Every_tools_input_schema_is_valid_JSON_Schema()
     {
-        var problems = _agent.Tools.Values
-            .SelectMany(tool => SchemaMetaschema.Problems(tool.Name, tool.JsonSchema))
+        // As a UI reads them, with x-editor and x-meta: a model's copy is the same minus those.
+        var problems = _agent.Tools.Keys
+            .SelectMany(tool => SchemaMetaschema.Problems(tool, _agent.UiTool(tool).JsonSchema))
             .ToList();
 
         Assert.True(problems.Count == 0, string.Join("\n", problems));
@@ -31,7 +32,7 @@ public class SchemaMetaschemaTests
     {
         var (checkedSchemas, problems) = await SchemaMetaschema.CheckEntitySchemasAsync(
             _site.Adapters.All.Select(a => a.EntityType),
-            arguments => _agent.OkAsync("entity_getSchema", arguments));
+            arguments => _agent.UiOkAsync("entity_getSchema", arguments));
 
         Assert.True(checkedSchemas > _site.Adapters.All.Count, $"Only {checkedSchemas} schemas were checked.");
         Assert.True(problems.Count == 0, string.Join("\n", problems));
@@ -45,10 +46,17 @@ public class SchemaMetaschemaTests
     [InlineData("""{ "type": "string", "description": "d", "x-edit": "e", "x-oops": 1 }""")]
     [InlineData("""{ "type": "array", "x-item-types": [{ "alias": "hero" }] }""")]
     [InlineData("""{ "type": "string", "x-variations": "culture" }""")]
+    [InlineData("""{ "type": "string", "x-editor": "Umb.PropertyEditorUi.TextArea" }""")]
+    [InlineData("""{ "type": "string", "x-editor": { "config": {} } }""")]
+    [InlineData("""{ "type": "string", "x-meta": { "color": {} } }""")]
+    [InlineData("""{ "type": "string", "x-meta": { "Acme.Color": {} } }""")]
+    [InlineData("""{ "type": "string", "x-meta": { "acme.color": "red" } }""")]
     public void The_meta_schema_catches_a_mistake_in_a_field_deep_inside_a_schema(string field)
     {
         // A type JSON Schema doesn't have, a null description, an x- keyword the framework doesn't define, an item type
-        // without its group and name, and variations that aren't a list. Each sits two levels down, as a real field would.
+        // without its group and name, variations that aren't a list, an editor without an alias, and a metadata key
+        // without an owner, in capitals, or with a value that isn't an object. Each sits two levels down, as a real
+        // field would.
         using var schema = JsonDocument.Parse($$"""
             { "type": "object", "properties": { "seo": { "type": "object", "properties": { "field": {{field}} } } } }
             """);
@@ -64,6 +72,7 @@ public class SchemaMetaschemaTests
               "type": "object",
               "properties": {
                 "title": { "type": "string", "description": "Title.", "x-variations": ["culture"], "x-bindings": true },
+                "theme": { "type": "string", "x-editor": { "alias": "Acme.ThemePicker", "config": { "swatches": true } }, "x-meta": { "acme.theme": { "preview": "hero" } } },
                 "blocks": { "type": "array", "x-edit": "Items.", "x-item-types": [{ "alias": "hero", "group": "blocks", "name": "Hero" }] }
               }
             }

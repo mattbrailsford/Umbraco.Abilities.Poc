@@ -272,10 +272,32 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
         // Real data types bring Umbraco's own value schemas: the riskiest part to get wrong.
         var (checkedSchemas, problems) = await Umbraco.Abilities.Tests.SchemaMetaschema.CheckEntitySchemasAsync(
             [_documents.EntityType, _media.EntityType],
-            arguments => _agent.OkAsync("entity_getSchema", arguments));
+            arguments => _agent.UiOkAsync("entity_getSchema", arguments));
 
         Assert.That(checkedSchemas, Is.GreaterThan(2));
         Assert.That(problems, Is.Empty);
+    }
+
+    [Test]
+    public async Task Each_field_names_its_data_types_editor_for_a_UI_and_a_model_sees_neither()
+    {
+        // A form or a change set screen shows each field with the editor the backoffice uses, and can load the data
+        // type's configuration by its key. The model gets the same fields without them.
+        var ui = await _agent.UiOkAsync("entity_getSchema", """{ "entityType": "document", "subtype": "landingPage" }""");
+        var subtitle = ui.GetProperty("fields").GetProperty("properties").GetProperty("subtitle");
+        var dataType = subtitle.GetProperty("x-meta").GetProperty("umbraco.cms.data-type");
+        var textbox = await GetRequiredService<IDataTypeService>().GetAsync(dataType.GetProperty("key").GetGuid());
+        Assert.That(textbox!.Id, Is.EqualTo(Constants.DataTypes.Textbox));
+        Assert.That(dataType.GetProperty("editorAlias").GetString(), Is.EqualTo(Constants.PropertyEditors.Aliases.TextBox));
+        Assert.That(textbox.EditorUiAlias, Is.Not.Null.And.Not.Empty);
+        Assert.That(subtitle.GetProperty("x-editor").GetProperty("alias").GetString(), Is.EqualTo(textbox.EditorUiAlias));
+
+        // Block properties are mapped the same way, so a block's fields carry their data types too.
+        var hero = await _agent.UiOkAsync("entity_getSchema", """{ "entityType": "document", "subtype": "landingPage", "itemTypes": ["hero"] }""");
+        Assert.That(hero.ToString(), Does.Contain("umbraco.cms.data-type"));
+
+        var model = await _agent.OkAsync("entity_getSchema", """{ "entityType": "document", "subtype": "landingPage", "itemTypes": ["hero"] }""");
+        Assert.That(model.ToString(), Does.Not.Contain("x-editor").And.Not.Contain("x-meta"));
     }
 
     [Test]
@@ -1620,8 +1642,13 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
 
         private readonly AbilityToolSession _session = new(Constants.Security.SuperUserKey);
 
+        private readonly Dictionary<string, AbilityTool> _uiTools;
+
         public Agent(AbilityRegistry abilities, AbilityInvoker invoker)
-            => _tools = AbilityAITools.Create(abilities, invoker, _session).ToDictionary(t => t.Name);
+        {
+            _tools = AbilityAITools.Create(abilities, invoker, _session).ToDictionary(t => t.Name);
+            _uiTools = abilities.All.Select(a => new AbilityTool(a, invoker, _session)).ToDictionary(t => t.Name);
+        }
 
         /// <summary>The conversation's current change set: the only one open in it.</summary>
         public Guid? ChangeSetId => _session.ChangeSetId;
@@ -1635,6 +1662,17 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
 
         public async Task StartChangeSetAsync(string name)
             => await OkAsync("changeSet_create", $$"""{ "name": "{{name}}" }""");
+
+        /// <summary>
+        /// Calls an ability as a UI would, through the Management API: the same result, with the keywords meant for
+        /// UIs (x-editor, x-meta) left in.
+        /// </summary>
+        public async Task<JsonElement> UiOkAsync(string tool, string json)
+        {
+            var result = (await _uiTools[tool].InvokeAsync(JsonNode.Parse(json)!.AsObject(), AbilityConsent.Given)).ToJson();
+            Assert.That(result.GetProperty("success").GetBoolean(), Is.True, $"{tool} failed: {result}");
+            return result.GetProperty("result");
+        }
 
         public async Task<JsonElement> OkAsync(string tool, string json)
         {

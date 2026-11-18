@@ -355,14 +355,22 @@ public static class AbilitySchemas
         var description = attributes
             .Select(provider => provider?.GetCustomAttributes(typeof(DescriptionAttribute), inherit: true).OfType<DescriptionAttribute>().FirstOrDefault())
             .FirstOrDefault(attribute => attribute is not null)?.Description;
-        if (description is null)
+
+        // An input property can name its editor and carry metadata too, for a form built from the schema (Automate's).
+        var (editor, meta) = context.PropertyInfo is null ? (null, null) : (UiHints.EditorOf(attributes), UiHints.MetaOf(attributes));
+        if (description is null && editor is null && meta is null)
         {
             return schema;
         }
 
         // A schema of true (anything) has to become an object to hold a description.
         var node = schema as JsonObject ?? new JsonObject();
-        node.Insert(0, "description", description);
+        if (description is not null)
+        {
+            node.Insert(0, "description", description);
+        }
+
+        UiHints.WriteTo(node, editor, meta);
         return node;
     }
 }

@@ -13,6 +13,20 @@
       "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" }, "minItems": 1 }]
     },
     "x-references-item-in": { "type": "string" },
+    "x-editor": {
+      "type": "object",
+      "properties": {
+        "alias": { "type": "string", "minLength": 1 },
+        "config": { "type": "object" }
+      },
+      "required": ["alias"],
+      "additionalProperties": false
+    },
+    "x-meta": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z0-9]+(\\.[a-z0-9-]+)+$" },
+      "additionalProperties": { "type": "object" }
+    },
     "x-item-types": {
       "type": "array",
       "items": {
@@ -29,6 +43,6 @@
     }
   },
   "patternProperties": {
-    "^x-(?!(edit|bindings|variations|references|references-item-in|item-types)$)": false
+    "^x-(?!(edit|bindings|variations|references|references-item-in|item-types|editor|meta)$)": false
   }
 }

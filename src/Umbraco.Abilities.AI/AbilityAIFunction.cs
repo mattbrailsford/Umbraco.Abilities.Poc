@@ -18,6 +18,7 @@ public sealed class AbilityAIFunction : AIFunction
     public AbilityAIFunction(IAbility ability, AbilityInvoker invoker, AbilityToolSession session)
     {
         _tool = new AbilityTool(ability, invoker, session);
+        JsonSchema = UiHints.ForModels(_tool.JsonSchema);
         AdditionalProperties = new Dictionary<string, object?>
         {
             ["abilityId"] = ability.Descriptor.Id,
@@ -30,7 +31,8 @@ public sealed class AbilityAIFunction : AIFunction
 
     public override string Description => _tool.Description;
 
-    public override JsonElement JsonSchema => _tool.JsonSchema;
+    /// <summary>The tool's input schema, without the keywords meant for UIs (<c>x-editor</c>, <c>x-meta</c>).</summary>
+    public override JsonElement JsonSchema { get; }
 
     public override IReadOnlyDictionary<string, object?> AdditionalProperties { get; }
 
@@ -53,7 +55,8 @@ public sealed class AbilityAIFunction : AIFunction
         // Consent is the host's: an ability that needs it is wrapped in ApprovalRequiredAIFunction (see AbilityAITools),
         // and the chat client only calls it once the person approved. Umbraco.AI's approval policy decides the same way:
         // it asks (Interactive), skips the call (DenyAll, DenyApprovalRequired), or was told up front to run it (AllowAll).
-        return (await _tool.InvokeAsync(input, AbilityConsent.Given, cancellationToken)).ToJson();
+        // A result can hold a schema (entity.getSchema); the model gets it without the UI keywords too.
+        return UiHints.ForModels((await _tool.InvokeAsync(input, AbilityConsent.Given, cancellationToken)).ToJson());
     }
 }
 
