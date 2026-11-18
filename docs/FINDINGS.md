@@ -930,7 +930,9 @@ Automate alike.
 people give a value a custom UI. The loader needs the same reach, without abilities naming Automate. In order:
 
 1. **The field names its editor.** An optional attribute on an input property, such as `[Editor("Acme.CronEditor",
-   config)]`, goes into the schema as an `x-editor` hint. Models ignore it; a UI uses it. For one-off cases.
+   config)]`, goes into the schema as an `x-editor` keyword: an editor UI alias and its configuration. Models don't
+   see it; a UI uses it. For one-off cases. It is a keyword, not metadata, because the idea is the CMS's and several
+   products read it (see below).
 2. **The value's type maps to an editor.** A package gives a value type a stable name in the schema (JSON Schema's
    `format`, such as `"format": "cron"`), and registers, on the UI side, which editor that format uses. Every field of
    that type, in any ability, then gets it. This is how Umbraco's property editors already work: an editor serves a
@@ -951,12 +953,50 @@ people give a value a custom UI. The loader needs the same reach, without abilit
 editor and its configuration. The CMS adapter could add the data type to each field, so a form shows what the
 backoffice shows. A backoffice screen for a change set would need the same.
 
+**Metadata the contract doesn't define.** Every `x-` keyword in the schema today is one the framework acts on:
+`x-references` is checked, `x-item-types` drives adding and moving items. The meta-schema rejects any other `x-` keyword,
+so a typo fails a test (finding 27). That leaves no room for a hint only one product reads, and a framework keyword for
+each such hint would mean a framework change per hint. So each field gets one open bag, `x-meta`, which the framework
+carries and never reads. An adapter can fill it (the CMS adapter adding a field's data type), as can an attribute on an
+input property or the fluent set-up.
+
+**Who owns a key.** A key is prefixed by whoever defines what it means, not by who reads it. A hint one product
+invents, such as `acme.color`, goes in the bag under that product's name. A meaning several products share is not a bag
+key at all: it is a keyword. The editor hint is the first of those. Its idea already belongs to the CMS (every data type
+has `IDataType.EditorUiAlias`, and every product's editor alias points into the same backoffice registry), and Automate,
+Umbraco.AI and a backoffice screen would all read it. So it starts as `x-editor`.
+
+**Rules for the bag:**
+
+| Rule | Why |
+| --- | --- |
+| Every key is `owner.name`, lowercase, such as `acme.color`. `umbraco.` is for Umbraco's own packages. No unprefixed keys | Owners can't clash, and unprefixed names stay free for future keywords |
+| Hints only: a key may change how a field looks or is edited, never validation, saving, permissions or what the entity is | If deleting the whole bag breaks anything, the key wasn't metadata and needs a keyword |
+| Plain JSON data: no code, no scripts, no HTML to render as-is | The schema is passed between products and shown in UIs |
+| No secrets and no personal data | The schema is shown to many users and copied to many places |
+| Small: a size limit per key, such as 4 KB | The schema is read on every call |
+| Readers ignore keys they don't know, cope with missing ones, and treat values as untrusted (an editor alias is used only if that editor is registered) | A third party writes these values |
+| Models never see it: the AI tools and MCP strip it | It costs no tokens, and can't mislead. What a model needs goes in the description or a keyword |
+| On fields only, at first | Add it to item types or entities when a real case needs it |
+| The owner owns a value's shape. A breaking change is a new key, such as `acme.color.v2` | Readers of the old shape keep working |
+| A key two products read is proposed as a keyword, through Umbraco's contribution and RFC process, and the old key works for one more major | Shared meaning shouldn't be an unwritten agreement between products |
+| The meta-schema checks key names, that values are objects, and the size limit. The rest are rules for people | What can be checked like code is |
+
+**Editable models are copied across products.** Automate builds its settings forms with `EditableModelSchemaBuilder`
+(`Settings/EditableModelSchemaBuilder.cs`, an `[EditableModelField]` attribute with `EditorUiAlias`). Umbraco.AI has its
+own (`Umbraco.AI.Core/EditableModels/`: `AIEditableModelSchemaBuilder`, `AIEditableModelFieldAttribute`, on `v18/dev`,
+5bc5d7c3b). Both describe a set of fields someone edits, each with an editor, which is what an ability's input schema
+describes too. One shared description in core, with each product's form built from it, would remove the copies; the
+abilities schema plus `x-editor` is a candidate. That is a core CMS change, so it goes through Umbraco's RFC process.
+This proof of concept can show it works, not decide it.
+
 **What changes where:**
 
 | Who | Change |
 | --- | --- |
+| CMS core (by RFC) | One shared editable model description that products build forms from, in place of each product's own copy |
 | Automate | Register step types as instances (from the loader), not only by attribute scan. Build a settings form and output schema from JSON Schema. A registry mapping `format` to an editor UI. Ideally typed bindings |
-| Abilities | Expose the output type on the descriptor. An optional `[Editor]` attribute and a way to name a value type's `format`. The data type on CMS entity fields. An idempotency key, or a "don't retry" mark, for Writes that can't be undone. An event concept, if abilities are to be triggers |
+| Abilities | Expose the output type on the descriptor. An `x-editor` keyword and an optional `[Editor]` attribute that sets it. An `x-meta` bag on fields, checked by the meta-schema and stripped for models. A way to name a value type's `format`. The data type on CMS entity fields. An idempotency key, or a "don't retry" mark, for Writes that can't be undone. An event concept, if abilities are to be triggers |
 
 ## Checked against the existing MCP servers
 
