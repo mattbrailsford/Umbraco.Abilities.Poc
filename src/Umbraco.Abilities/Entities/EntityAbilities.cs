@@ -80,7 +80,9 @@ public sealed record GetEntitySchemaInput(
 [Ability("entity.getSchema", "Get entity schema", Kind = AbilityKind.Read, UsesChangeSet = false,
     Description = "Returns an entity type's fields as JSON Schema. An items field lists its item types (x-item-types). " +
                   "Call it first. Call again with itemTypes to get the fields of the item types you will add. " +
-                  "capabilities lists what the type supports beyond setting values, such as delete and move.")]
+                  "capabilities lists what the type supports beyond setting values, such as delete and move. " +
+                  "A field with enum takes one of those values as written: it is not a reference, so don't look it up. " +
+                  "Only a field with x-references points at another entity.")]
 public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemTypeRegistry registry)
     : AbilityBase<GetEntitySchemaInput, JsonObject>
 {
@@ -155,7 +157,8 @@ public sealed record FindEntityInput(
     [property: Description("Words in the entity's name.")] string Query);
 
 [Ability("entity.find", "Find entities", Kind = AbilityKind.Read,
-    Description = "Finds entities by name, live and in the active change set. Use it to turn a name the person used into a key.")]
+    Description = "Finds entities by name, live and in the active change set. Use it to turn a name the person used into a key, " +
+                  "for a field with x-references. A field with enum needs no lookup.")]
 public sealed class FindEntityAbility(EntityAdapterRegistry adapters, ChangeSetService changeSets)
     : AbilityBase<FindEntityInput, IReadOnlyList<EntitySummary>>
 {

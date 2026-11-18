@@ -710,7 +710,10 @@ What it showed:
   the model started with no set, created one, and every later call used it without the id.
 - **A fixed list of values reads like a reference.** Each run, the model first looked up customer groups as an entity
   type, and the error listing the known types sent it back. A field's allowed values are in the schema, but nothing
-  says the field isn't a reference to look up.
+  said the field isn't a reference to look up. The schema and find tools now say that a field with `enum` takes one
+  of its values as written, and only a field with `x-references` needs a lookup. Rerun on 18-11-2026, the first two
+  descriptions took 10 calls each with none failed (68k and 73k tokens in), and neither looked up customer groups. The
+  second read from the schema that there is no Gold group, and said so.
 - **Derived keys change on save.** The applied discount's rules have different keys from the ones the model was given,
   as described in [What the mapping costs](WRITING-AN-ADAPTER.md#what-the-mapping-costs).
 
