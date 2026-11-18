@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 
 using Umbraco.Abilities.ChangeSets;
+using Umbraco.Abilities.Consumers;
 using Umbraco.Abilities.Cms.PropertyEditors;
 using Umbraco.Abilities.Entities;
 using Umbraco.Cms.Core.DynamicRoot;
@@ -255,12 +256,13 @@ public abstract class ContentTypeEntityAdapterBase<TType>(CmsContentSchemas sche
         ];
         if (HasParent)
         {
-            var description = this is ITreeEntityAdapter
-                ? $"The parent {EntityType}; none at the root. To move an existing one, use entity.move."
-                : $"The parent {EntityType}. Only used when creating.";
+            var tree = this is ITreeEntityAdapter;
+            var description = tree ? $"The parent {EntityType}; none at the root." : $"The parent {EntityType}. Only used when creating.";
             fields.Add(new FieldDefinition(ContentFields.Parent, description, FieldType.EntityReference)
             {
                 ReferencesEntityType = EntityType,
+                // Moving is a tool of its own: only a model picks tools by name.
+                Hints = tree ? UiHints.WithHint(null, AbilityAudiences.Model, $"To move an existing {EntityType}, use entity.move.") : null,
             });
         }
 

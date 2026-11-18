@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 
+using Umbraco.Abilities.Consumers;
 using Umbraco.Abilities.Entities;
 using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.PropertyEditors;
@@ -68,7 +69,7 @@ public sealed class JsonValueEditorHandler(IPropertyEditorSchemaService? schemas
         }
 
         var field = context.Field(FieldType.Json) with { JsonSchema = schema };
-        return Task.FromResult(schema is null ? field with { Description = $"{field.Description} A value in the '{editor}' editor's own format." } : field);
+        return Task.FromResult(schema is null ? field with { Hints = UiHints.WithHint(field.Hints, AbilityAudiences.Model, $"A value in the '{editor}' editor's own format.") } : field);
     }
 
     public Task<JsonNode?> ReadAsync(JsonNode stored, PropertyValueReader reader, CancellationToken cancellationToken = default)

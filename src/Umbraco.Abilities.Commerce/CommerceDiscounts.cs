@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 
 using Umbraco.Abilities.ChangeSets;
+using Umbraco.Abilities.Consumers;
 using Umbraco.Abilities.Entities;
 using Umbraco.Abilities.Entities.Models;
 using Umbraco.Cms.Core.Services;
@@ -55,7 +56,8 @@ public sealed class DiscountModel : EntityModel
     [EntityName, Required, Description("Name shown to editors.")]
     public string? Name { get; set; }
 
-    [Required, EntityKey(CommerceStoreAdapter.Type), Description("The store the discount belongs to. Find stores with entity.find.")]
+    [Required, EntityKey(CommerceStoreAdapter.Type), Description("The store the discount belongs to.")]
+    [Hint(AbilityAudiences.Model, "Find stores with entity.find.")]
     public Guid? Store { get; set; }
 
     [Description("A short unique name for code. Made from the name when left empty.")]
@@ -376,13 +378,12 @@ public sealed class CommerceDiscountAdapter(
     // Commerce's price editor stores one amount per currency. Say so, as the setting's type alone doesn't.
     private static SettingDescriptor Describe(UmbracoCommerceSettingDefinition s)
     {
-        var description = s.Description;
-        if (s.EditorUiAlias == PriceEditor)
-        {
-            description = $"{description} An object of amounts by currency key, such as {{\"<currency key>\": 50}}. Find the store's currencies with entity.find (entityType {CommerceCurrencyAdapter.Type}).".Trim();
-        }
+        // The price editor shows a box per currency, so a person needs no help. A model writes the object itself.
+        var hints = s.EditorUiAlias == PriceEditor
+            ? UiHints.WithHint(null, AbilityAudiences.Model, $"An object of amounts by currency key, such as {{\"<currency key>\": 50}}. Find the store's currencies with entity.find (entityType {CommerceCurrencyAdapter.Type}).")
+            : null;
 
-        return new SettingDescriptor(s.Key, s.Label, description, s.PropertyType, s.ValidationRules, s.EditorUiAlias, s.SortOrder);
+        return new SettingDescriptor(s.Key, s.Label, s.Description, s.PropertyType, s.ValidationRules, s.EditorUiAlias, s.SortOrder) { Hints = hints };
     }
 
     // A group inside the rules: its own match type, and child rules.

@@ -257,7 +257,8 @@ public sealed record CreateEntityInput(
     [property: Description("Field values, keyed by field alias.")] JsonObject? Fields = null,
     [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }.")]
     [property: Hint(AbilityAudiences.Model, "Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null,
-    [property: Description("Optional key for the new entity. Leave it out and one is made and returned.")]
+    [property: Description("Optional key for the new entity. Leave it out and one is made.")]
+    [property: Hint(AbilityAudiences.Model, "Choose one to refer to the entity from others in the same change set. The key is returned either way.")]
     [property: Hint(AbilityAudiences.Model, "Choose one only when other entities in the set must refer to it, and make it a new random GUID, not a pattern.")] Guid? Key = null) : IEntityEditInput;
 
 [Ability("entity.create", "Create entity", Kind = AbilityKind.Write, Reversible = true,

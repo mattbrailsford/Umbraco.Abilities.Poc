@@ -69,7 +69,8 @@ public sealed record ResolveConflictInput(
     [property: Description("The conflict's path.")]
     [property: Hint(AbilityAudiences.Model, "As listed by changeSet.validate or changeSet.summarize.")] string Path,
     [property: Description("Which value to keep: 'yours' (the change set's) or 'theirs' (saved by someone else since).")] string Keep,
-    [property: Description("The conflict's variant, as changeSet.summarize shows it, e.g. { \"culture\": \"da-DK\" }.")] Dictionary<string, string>? Variant = null);
+    [property: Description("The conflict's variant, e.g. { \"culture\": \"da-DK\" }.")]
+    [property: Hint(AbilityAudiences.Model, "As changeSet.summarize shows it.")] Dictionary<string, string>? Variant = null);
 
 [Ability("changeSet.resolveConflict", "Resolve change set conflict", Kind = AbilityKind.Write, Reversible = true,
     Description = "When someone else changed something the change set also changed, keeps one of the two values. Changes nothing live.")]
