@@ -593,6 +593,109 @@ This is for add-on products (Commerce, Forms, Automate, Umbraco.AI itself), not 
 
 A looser link, kept as an idea for now: a change set is a reviewed group of changes, which is close to what a selective deploy transfers.
 
+## Proposal: what core covers, and what products write
+
+> **Status:** Proposal. Delete and move are built and tested on real CMS documents (finding 28 in
+> [FINDINGS](FINDINGS.md#what-building-it-taught-us)); the rest is not built. From reading the tools of Umbraco's six
+> product MCP servers (see [Checked against the existing MCP servers](FINDINGS.md#checked-against-the-existing-mcp-servers)).
+
+The rule: if an operation has the same shape for every entity type, core owns it, and products don't write it. A
+product writes an ability only for what is truly its own: something that happens, or a report.
+
+### Core: built once, works for every adapter
+
+| Operation | How | Today |
+| --- | --- | --- |
+| Edit an entity: schema, find, get, create, set a value, add, remove and move an item, validate | Derived from the adapter | Built |
+| Delete, move to another parent | Optional adapter capabilities. `entity.getSchema` lists them for the entity types whose adapter has them | Built, for CMS documents |
+| Copy, sort | The same. Copy is a load, then a create with new keys | Not built |
+| Capabilities from other packages | So a capability core lacks is written once, not by every product (see [Capabilities other packages ship](#capabilities-other-packages-ship)) | Open: two designs tried, neither settled |
+| Draft and published | An optional capability for entities with a published state: publish, unpublish, schedule. Recordable in a change set, so publishing is reviewed with the edits | Not built. Least certain: it may stay a product ability per product |
+| History and references | Optional reads an adapter can add: versions, audit entries, "where is this used" | Not built |
+| File upload | One ability that stores a file and returns a reference a field can hold (see [What doesn't fit the entity approach](FINDINGS.md#what-doesnt-fit-the-entity-approach)) | Not built |
+| Long jobs and downloads | A standard pattern: start, check status, get the result or a file | Not built |
+| Catalogues of types | A product's field types, step types or rule types are item types in the schema, so they need no list tools of their own | Built, through item types |
+| A tool list per user, and groups | The list of abilities is filtered by what the user may do, and abilities carry tags so a client can ask for a short list | Not built: the list is the same for everyone |
+| Change sets: create, validate, summarize, apply, discard | Generic | Built |
+
+The capabilities above are optional because products differ. Commerce discounts have no tree, and Forms forms have no
+published state. An adapter opts in to what its product supports, and the framework derives the
+tools.
+
+### How optional capabilities work
+
+Each capability is a small optional interface on the adapter, the way `IVersionedEntityAdapter` and
+`IAuthorizingEntityAdapter` already are. The framework gives one generic ability per capability, which works for any
+entity type whose adapter has the interface.
+
+- **One ability per capability,** such as `entity.delete`, `entity.move` or `entity.publish`. It is listed only when at
+  least one registered adapter supports it.
+- **The schema says what a type supports.** `entity.getSchema` returns a `capabilities` list, so a caller knows before
+  it tries.
+- **An unsupported type is a correctable problem** on `entityType`, pointing at the schema's capabilities.
+- **Each is recorded in a change set** like any other edit, so it is reviewed and applied with the rest.
+- **Each is authorized.** `EntityPermission` has `Delete` and `Move` (later `Publish`), checked the way `Update` is.
+  The checks follow what changed, not which ability changed it (`EntityAccess.RequestsFor`), so setting a parent with
+  `entity.setValue` is checked as a move.
+
+| Capability | What the adapter adds | How it fits change sets |
+| --- | --- | --- |
+| Delete (built) | `IDeletableEntityAdapter.DeleteAsync(key)`. The product decides whether that means a recycle bin, and says so with `CanRestore`. A drafting adapter stages it instead (`StageAsync` gets the entity marked deleted) | `entity.delete` marks the working copy deleted (`Entity.Deleted`), as EF Core's `Remove` does. The entity reads as gone in the set, and is deleted on apply after the product's saves. References to it from other entities in the set become problems |
+| Move (built) | `ITreeEntityAdapter.ParentField`: the root reference field holding the parent. The adapter saves a changed parent as a move | A move sets that field, so it is a value edit: reads, rebasing and conflicts work unchanged |
+| Sort | Not designed yet: a sort order changes the entity's siblings too | |
+| Copy | Nothing. An optional hook clears values that must be unique, such as an alias or a code | The framework loads the entity, gives it and its items new keys at record time, and creates it |
+| Publish, unpublish, schedule | `IPublishableEntityAdapter.PublishAsync(key, variants, date?)` | Recorded as a request, and run after that entity saves, in the same product transaction. Run live, it can't be undone, so it needs approval |
+| History and rollback | `IHistoryEntityAdapter : IVersionedEntityAdapter`, which lists versions | Rollback needs no adapter code: the framework loads the old version and records the differences as edits, so a person reviews it like any change |
+| Where used | `IReferencedEntityAdapter.FindReferencesAsync(key)` | A read. Outgoing references are already in the schema; only incoming ones need the product |
+| File upload | Not an entity capability. A core `file.upload` ability returns a reference, and the adapter turns it into media when it saves | The file must last as long as the set, which ties to storage |
+
+For example:
+
+```csharp
+public interface IDeletableEntityAdapter : IEntityAdapter
+{
+    /// <summary>True when the product can restore a deleted entity, such as from the CMS recycle bin.</summary>
+    bool CanRestore { get; }
+
+    /// <summary>Deletes the entity, in the product's unit of work.</summary>
+    Task DeleteAsync(Guid key, CancellationToken cancellationToken = default);
+}
+```
+
+Suggested order from here: copy and rollback, which need almost no adapter code. Publish last, since it is still an
+open decision below.
+
+### Capabilities other packages ship
+
+Open. Core can't ship every capability, so another package should be able to add one that products opt in to,
+without each product writing the tool itself. Two designs were tried and neither is settled (finding 29):
+
+| Design | How a product opts in | Trade-off |
+| --- | --- | --- |
+| Field roles | Tags a field with a role word (`x-role`), such as `archived` | Neither package references the other. But it can only set values, and adds a new idea to learn |
+| Adapter interface | Implements an interface the package ships, such as `IArchivableEntityAdapter`, with one ability on a shared base. Kept on the `entity-capability-seam` branch | Plainer, and can ask the product for more than a field. The product, or a bridge package, references the third party |
+
+Both stop at value changes. A capability like delete needs the change set itself to know, so it stays in core. Settle
+this against the first real package that needs it, not a made-up one.
+
+### Products: one ability class per operation
+
+| Kind | Examples from the MCP servers |
+| --- | --- |
+| Things that happen | Capture or refund a payment; trigger an automation; replay, suspend or terminate a run; decide an approval; approve or reject a form entry; retry a workflow; test a connection; start or stop an A/B test; lock a persona; rebuild an index |
+| Reports and analytics | Forms analytics, Engage profiles and reports, Commerce sales figures, content and SEO audits |
+| Product-only state | Engage's tracking switch |
+
+These follow the existing ability rules: a Read or a Write, and an approval when a Write can't be undone and runs
+outside a change set.
+
+### Left where they are for now
+
+- **Developer schema tools** (document types, data types, templates, scripts, logs, indexes) stay in the CMS Dev MCP
+  server. Document types could become entities later, but they matter less for editors and models.
+- **The MCP layer** keeps what isn't about the site's data: hosting, sign-in, plain-language rules for editors, and
+  asking the person for consent.
+
 ## Next steps and decisions
 
 The cheapest proof is in the Draft Sets PoC, before the Abilities contract exists.
@@ -608,6 +711,7 @@ Decisions:
 - [ ] Where are change sets stored: memory only, or the database from the start?
 - [ ] Who owns change sets once they are generic: the CMS team, the AI team or the Abilities owner?
 - [ ] Which non-CMS entity pilots first: a Commerce discount or an Automate workflow?
+- [ ] Is draft and published a core capability, or a product ability in each product (see [the proposal](#proposal-what-core-covers-and-what-products-write))?
 
 ## Sources
 

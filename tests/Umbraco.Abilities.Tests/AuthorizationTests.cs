@@ -103,7 +103,7 @@ public class AuthorizationTests
 
         public Task<IReadOnlyList<Problem>> ValidateAsync(Entity entity, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
-        public Task<EntitySummary> SaveAsync(Entity entity, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<EntitySummary> SaveAsync(Entity? before, Entity entity, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public Task<IReadOnlyList<EntitySummary>> FindAsync(string query, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 

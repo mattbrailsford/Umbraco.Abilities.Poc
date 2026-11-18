@@ -19,6 +19,7 @@ namespace Umbraco.Abilities.Cms;
 /// the document types. The schema, reading and writing values through each editor's handler, and mapping Umbraco's
 /// validation errors come from <see cref="ContentTypeEntityAdapterBase{TType}"/>. This class is what is only about
 /// documents: loading, validating through <see cref="IContentEditingService"/>, permissions, and drafts.
+/// Documents can be deleted (to the recycle bin) and moved: both are staged in the draft set and applied with it.
 /// <para>
 /// It is also the adapter to CMS Draft Sets: inside a change set, content changes are staged into a CMS draft set (per
 /// property) instead of being kept and replayed by the change set, so the draft set is the source of truth for content,
@@ -35,7 +36,7 @@ public sealed class CmsDocumentAdapter(
     IContentPermissionService permissions,
     IUnitOfWorkProvider unitOfWork,
     Func<Guid> actingUser)
-    : ContentTypeEntityAdapterBase<IContentType>(schemas), IDraftingEntityAdapter
+    : ContentTypeEntityAdapterBase<IContentType>(schemas), IDraftingEntityAdapter, IDeletableEntityAdapter, ITreeEntityAdapter
 {
     public const string Type = Constants.UdiEntityType.Document;
 
@@ -49,6 +50,15 @@ public sealed class CmsDocumentAdapter(
     public override string DisplayName => "Document";
 
     public override IUnitOfWorkProvider UnitOfWork { get; } = unitOfWork;
+
+    /// <summary>Deleted documents go to the recycle bin.</summary>
+    public bool CanRestore => true;
+
+    public string ParentField => ContentFields.Parent;
+
+    /// <summary>Not used: a document in a change set is deleted through its draft set (<see cref="StageAsync"/>).</summary>
+    public Task DeleteAsync(Guid key, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Content is deleted through its CMS draft set.");
 
     protected override IEnumerable<IContentType> ListTypes() => contentTypes.GetAll().Where(t => !t.IsElement);
 
@@ -80,11 +90,45 @@ public sealed class CmsDocumentAdapter(
             problems.Add(new Problem(string.Empty, $"Umbraco refused the document: {attempt.Status}."));
         }
 
+        // Umbraco checks a move only when it runs, so check here what it would refuse: a parent that doesn't allow the
+        // document's type, or one inside the document itself.
+        if (document.Version is not null
+            && await _draftSets.GetLiveAsync(EntityUdis.For(Type, document.Key)) is { } live
+            && live.ParentKey != content.ParentKey
+            && MoveProblem(document, content) is { } moveProblem)
+        {
+            problems.Add(moveProblem);
+        }
+
         return problems;
     }
 
+    private Problem? MoveProblem(Entity document, ContentValues content)
+    {
+        if (content.ParentKey is not { } parentKey)
+        {
+            return FindType(content.TypeKey) is { AllowedAsRoot: true } ? null : new Problem(ContentFields.Parent, "This document type isn't allowed at the root.");
+        }
+
+        // A parent created in the same set isn't saved yet; Umbraco checks it when the move runs.
+        if (entities.Get(parentKey, UmbracoObjectTypes.Document) is not { } parent)
+        {
+            return null;
+        }
+
+        if (parent.Path.Split(',').Contains(entities.Get(document.Key, UmbracoObjectTypes.Document)?.Id.ToString()))
+        {
+            return new Problem(ContentFields.Parent, "A document can't be moved under itself.");
+        }
+
+        var parentType = contentTypes.Get(((Umbraco.Cms.Core.Models.Entities.IContentEntitySlim)parent).ContentTypeKey);
+        return parentType?.AllowedContentTypes?.Any(t => t.Key == content.TypeKey) == true
+            ? null
+            : new Problem(ContentFields.Parent, $"{parent.Name} doesn't allow this document type under it.");
+    }
+
     /// <summary>Not used: content in a change set is applied through its draft set (<see cref="ApplyDraftAsync"/>).</summary>
-    public override Task<EntitySummary> SaveAsync(Entity document, CancellationToken cancellationToken = default)
+    public override Task<EntitySummary> SaveAsync(Entity? before, Entity document, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Content is applied through its CMS draft set.");
 
     public override Task<IReadOnlyList<EntitySummary>> FindAsync(string query, CancellationToken cancellationToken = default)
@@ -116,25 +160,27 @@ public sealed class CmsDocumentAdapter(
         {
             EntityPermission.Read => (ActionBrowse.ActionLetter, "read"),
             EntityPermission.Create => (ActionNew.ActionLetter, "create"),
+            EntityPermission.Delete => (ActionDelete.ActionLetter, "delete"),
+            EntityPermission.Move => (ActionMove.ActionLetter, "move"),
             _ => (ActionUpdate.ActionLetter, "update"),
         };
 
-        ContentAuthorizationStatus status;
-        if (request.Permission == EntityPermission.Create)
+        // A new document is checked on its parent. Every other check is on the document itself.
+        var parent = request.Entity?.Fields[ContentFields.Parent] is { } node && Guid.TryParse(node.ToString(), out var key) ? key : (Guid?)null;
+        var status = request.Permission == EntityPermission.Create
+            ? await OnParentAsync(user, parent, permission)
+            : await _permissions.AuthorizeAccessAsync(user, request.Key, permission);
+
+        // As the backoffice does: a move also needs create permission on the new parent.
+        if (status == ContentAuthorizationStatus.Success && request.Permission == EntityPermission.Move)
         {
-            var parent = request.Entity?.Fields[ContentFields.Parent] is { } node && Guid.TryParse(node.ToString(), out var key) ? key : (Guid?)null;
-            status = parent is { } parentKey
-                ? await _permissions.AuthorizeAccessAsync(user, parentKey, permission)
-                : await _permissions.AuthorizeRootAccessAsync(user, permission);
-        }
-        else
-        {
-            status = await _permissions.AuthorizeAccessAsync(user, request.Key, permission);
+            status = await OnParentAsync(user, parent, ActionNew.ActionLetter);
+            verb = "move this document there";
         }
 
         if (status != ContentAuthorizationStatus.Success)
         {
-            return status == ContentAuthorizationStatus.NotFound ? "Not found." : $"You don't have permission to {verb} this document.";
+            return status == ContentAuthorizationStatus.NotFound ? "Not found." : $"You don't have permission to {verb}{(verb.Contains(' ') ? string.Empty : " this document")}.";
         }
 
         var cultures = request.Variants.Select(v => v.Culture).OfType<string>().ToHashSet();
@@ -145,6 +191,23 @@ public sealed class CmsDocumentAdapter(
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// A permission on a parent, or the root. A parent that isn't live yet was created in the same set, which was checked
+    /// on its own parent when it was created, so it's allowed.
+    /// </summary>
+    private async Task<ContentAuthorizationStatus> OnParentAsync(Umbraco.Cms.Core.Models.Membership.IUser user, Guid? parent, string permission)
+    {
+        if (parent is not { } parentKey)
+        {
+            return await _permissions.AuthorizeRootAccessAsync(user, permission);
+        }
+
+        var status = await _permissions.AuthorizeAccessAsync(user, parentKey, permission);
+        return status == ContentAuthorizationStatus.NotFound && entities.Get(parentKey, UmbracoObjectTypes.Document) is null
+            ? ContentAuthorizationStatus.Success
+            : status;
     }
 
     // ── CMS Draft Sets: the change set hands content changes to a CMS draft set ─────────────────────
@@ -161,6 +224,12 @@ public sealed class CmsDocumentAdapter(
     /// </summary>
     public async Task StageAsync(Guid draftId, Entity? before, Entity after, CancellationToken cancellationToken = default)
     {
+        if (after.Deleted)
+        {
+            await _draftSets.StageDeleteAsync(draftId, EntityUdis.For(Type, after.Key));
+            return;
+        }
+
         var content = await ToContentAsync(after, cancellationToken);
         var values = content.Values.Select(v => new DraftValue(v.Alias, v.Culture, v.Segment, v.Value)).ToList();
         if (before is null || before.Version is null)
@@ -178,7 +247,14 @@ public sealed class CmsDocumentAdapter(
 
         var changed = (await TouchedValuesAsync(before, after, cancellationToken)).Select(t => t.Alias == ContentFields.Name
             ? new DraftValue(DraftSetService.NameAlias, t.Culture, null, content.Variants.FirstOrDefault(v => v.Culture == t.Culture && v.Segment is null)?.Name is { } name ? JsonValue.Create(name) : null)
-            : values.FirstOrDefault(v => v.Alias == t.Alias && v.Culture == t.Culture && v.Segment == t.Segment) ?? new DraftValue(t.Alias, t.Culture, t.Segment, null));
+            : values.FirstOrDefault(v => v.Alias == t.Alias && v.Culture == t.Culture && v.Segment == t.Segment) ?? new DraftValue(t.Alias, t.Culture, t.Segment, null)).ToList();
+
+        // A new parent is a move, staged as the draft set's parent value.
+        if (!JsonNode.DeepEquals(before.Fields[ContentFields.Parent], after.Fields[ContentFields.Parent]))
+        {
+            changed.Add(new DraftValue(DraftSetService.ParentAlias, null, null, content.ParentKey is { } parent ? JsonValue.Create(parent.ToString()) : null));
+        }
+
         await _draftSets.StageChangesAsync(draftId, EntityUdis.For(Type, after.Key), changed);
     }
 
@@ -208,7 +284,12 @@ public sealed class CmsDocumentAdapter(
         => _draftSets.ResolveAsync(
             draftId,
             EntityUdis.For(Type, key),
-            path == ContentFields.Name ? DraftSetService.NameAlias : path,
+            path switch
+            {
+                ContentFields.Name => DraftSetService.NameAlias,
+                ContentFields.Parent => DraftSetService.ParentAlias,
+                _ => path,
+            },
             variant.Culture,
             variant.Segment,
             keep == ConflictSide.Yours ? DraftKeep.Draft : DraftKeep.Live);
@@ -221,7 +302,12 @@ public sealed class CmsDocumentAdapter(
         return Task.CompletedTask;
     }
 
-    private static string PathOf(string alias) => alias == DraftSetService.NameAlias ? ContentFields.Name : alias;
+    private static string PathOf(string alias) => alias switch
+    {
+        DraftSetService.NameAlias => ContentFields.Name,
+        DraftSetService.ParentAlias => ContentFields.Parent,
+        _ => alias,
+    };
 
     private static StoredContent Stored(DraftContent content)
         => new(content.Key, content.ContentTypeKey, content.Names, content.Values.Select(v => new StoredValue(v.Alias, v.Culture, v.Segment, v.Value)).ToList(), content.Version, content.ParentKey);

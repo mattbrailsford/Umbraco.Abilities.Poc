@@ -186,7 +186,8 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
             GetRequiredService<IJsonSerializer>(),
             GetRequiredService<ICoreScopeProvider>(),
             GetRequiredService<IEventAggregator>(),
-            GetRequiredService<IAuditService>());
+            GetRequiredService<IAuditService>(),
+            GetRequiredService<IIdKeyMap>());
         // What documents and media share: the property editor handlers and the schema they build.
         var contentSchemas = new CmsContentSchemas(
             ContentTypeService,
@@ -487,6 +488,191 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
         Assert.That(saved.ParentId, Is.EqualTo(blog.Id));
         Assert.That(saved.Name, Is.EqualTo("Hello again"));
     }
+
+    [Test]
+    public async Task A_page_moved_in_a_change_set_is_under_its_new_parent_in_the_set_and_moves_when_applied()
+    {
+        var (blogType, postType) = await CreateBlogTypesAsync();
+        var news = await CreateLiveAsync(blogType.Key, "News");
+        var archive = await CreateLiveAsync(blogType.Key, "Archive");
+        var post = await CreateLiveAsync(postType.Key, "Hello", news.Key);
+
+        var schema = await _agent.OkAsync("entity_getSchema", """{ "entityType": "document", "subtype": "post" }""");
+        Assert.That(schema.GetProperty("capabilities").EnumerateArray().Select(c => c.GetString()), Is.EqualTo(new[] { "delete", "move" }));
+
+        await _agent.StartChangeSetAsync("Archive a post");
+        await _agent.OkAsync("entity_move", $$"""{ "entityType": "document", "key": "{{post.Key}}", "parent": "{{archive.Key}}" }""");
+
+        // Under its new parent in the set; still under the old one live.
+        var read = await _agent.OkAsync("entity_get", $$"""{ "entityType": "document", "key": "{{post.Key}}" }""");
+        Assert.That(read.GetProperty("fields").GetProperty("parent").GetString(), Is.EqualTo(archive.Key.ToString()));
+        Assert.That(ContentService.GetById(post.Key)!.ParentId, Is.EqualTo(news.Id));
+
+        await _agent.OkAsync("changeSet_apply", SetJson());
+        Assert.That(ContentService.GetById(post.Key)!.ParentId, Is.EqualTo(archive.Id));
+    }
+
+    [Test]
+    public async Task A_page_can_be_moved_under_a_parent_created_in_the_same_set()
+    {
+        var (blogType, postType) = await CreateBlogTypesAsync();
+        var news = await CreateLiveAsync(blogType.Key, "News");
+        var post = await CreateLiveAsync(postType.Key, "Hello", news.Key);
+
+        await _agent.StartChangeSetAsync("New archive");
+        var archive = (await _agent.OkAsync("entity_create", """{ "entityType": "document", "subtype": "blog", "fields": { "name": "Archive" } }""")).GetProperty("key").GetGuid();
+        await _agent.OkAsync("entity_move", $$"""{ "entityType": "document", "key": "{{post.Key}}", "parent": "{{archive}}" }""");
+
+        await _agent.OkAsync("changeSet_apply", SetJson());
+        Assert.That(ContentService.GetById(post.Key)!.ParentId, Is.EqualTo(ContentService.GetById(archive)!.Id));
+    }
+
+    [Test]
+    public async Task A_move_Umbraco_would_refuse_is_a_problem_on_the_parent_before_it_is_applied()
+    {
+        var (blogType, postType) = await CreateBlogTypesAsync();
+        var news = await CreateLiveAsync(blogType.Key, "News");
+        var post = await CreateLiveAsync(postType.Key, "Hello", news.Key);
+
+        await _agent.StartChangeSetAsync("Bad moves");
+        await _agent.OkAsync("entity_move", $$"""{ "entityType": "document", "key": "{{post.Key}}" }""");
+        await _agent.OkAsync("entity_move", $$"""{ "entityType": "document", "key": "{{news.Key}}", "parent": "{{post.Key}}" }""");
+
+        var validation = await _agent.OkAsync("changeSet_validate", SetJson());
+        var problems = validation.GetProperty("entities").EnumerateArray()
+            .SelectMany(e => e.GetProperty("problems").EnumerateArray().Select(p => $"{e.GetProperty("entity").GetProperty("name").GetString()}|{p.GetProperty("path").GetString()}|{p.GetProperty("errorMessages")[0].GetString()}"))
+            .ToList();
+        Assert.That(problems, Is.EquivalentTo(new[]
+        {
+            "Hello|parent|This document type isn't allowed at the root.",
+            "News|parent|A document can't be moved under itself.",
+        }), string.Join(", ", problems));
+    }
+
+    [Test]
+    public async Task A_page_deleted_in_a_change_set_is_gone_in_the_set_and_goes_to_the_recycle_bin_when_applied()
+    {
+        var (blogType, _) = await CreateBlogTypesAsync();
+        var news = await CreateLiveAsync(blogType.Key, "News");
+
+        await _agent.StartChangeSetAsync("Remove the news");
+        var deleted = await _agent.OkAsync("entity_delete", $$"""{ "entityType": "document", "key": "{{news.Key}}" }""");
+        Assert.That(deleted.GetProperty("canRestore").GetBoolean(), Is.True);
+
+        // Gone in the set, still live outside it.
+        await _agent.FailAsync("entity_get", $$"""{ "entityType": "document", "key": "{{news.Key}}" }""");
+        Assert.That((await _agent.OkAsync("entity_find", """{ "entityType": "document", "query": "News" }""")).EnumerateArray(), Is.Empty);
+        Assert.That(ContentService.GetById(news.Key)!.Trashed, Is.False);
+
+        var summary = await _agent.OkAsync("changeSet_summarize", SetJson());
+        Assert.That(summary.GetProperty("entities")[0].GetProperty("change").GetString(), Is.EqualTo("deleted"));
+
+        await _agent.OkAsync("changeSet_apply", SetJson());
+        Assert.That(ContentService.GetById(news.Key)!.Trashed, Is.True);
+    }
+
+    [Test]
+    public async Task A_page_moved_out_of_a_page_deleted_in_the_same_set_is_moved_first_and_not_deleted()
+    {
+        var (blogType, postType) = await CreateBlogTypesAsync();
+        var news = await CreateLiveAsync(blogType.Key, "News");
+        var archive = await CreateLiveAsync(blogType.Key, "Archive");
+        var post = await CreateLiveAsync(postType.Key, "Hello", news.Key);
+
+        await _agent.StartChangeSetAsync("Close the news");
+        await _agent.OkAsync("entity_delete", $$"""{ "entityType": "document", "key": "{{news.Key}}" }""");
+        await _agent.OkAsync("entity_move", $$"""{ "entityType": "document", "key": "{{post.Key}}", "parent": "{{archive.Key}}" }""");
+
+        await _agent.OkAsync("changeSet_apply", SetJson());
+        Assert.Multiple(() =>
+        {
+            Assert.That(ContentService.GetById(news.Key)!.Trashed, Is.True);
+            Assert.That(ContentService.GetById(post.Key)!.Trashed, Is.False);
+            Assert.That(ContentService.GetById(post.Key)!.ParentId, Is.EqualTo(archive.Id));
+        });
+    }
+
+    [Test]
+    public async Task A_page_created_and_deleted_in_one_set_is_never_saved()
+    {
+        await _agent.StartChangeSetAsync("Change of mind");
+        var page = await CreatePageAsync();
+        await _agent.OkAsync("entity_delete", $$"""{ "entityType": "document", "key": "{{page}}" }""");
+
+        await _agent.OkAsync("changeSet_apply", SetJson());
+        Assert.That(ContentService.GetById(page), Is.Null);
+    }
+
+    [Test]
+    public async Task Moving_and_deleting_take_the_CMS_permissions_for_them_however_the_change_is_made()
+    {
+        var (blogType, postType) = await CreateBlogTypesAsync();
+        var news = await CreateLiveAsync(blogType.Key, "News");
+        var archive = await CreateLiveAsync(blogType.Key, "Archive");
+        var post = await CreateLiveAsync(postType.Key, "Hello", news.Key);
+
+        // A user who may update pages, but not move or delete them.
+        _agent.UserKey = await CreateUserAsync("Updaters", ActionBrowse.ActionLetter, ActionUpdate.ActionLetter);
+        await _agent.StartChangeSetAsync("Not allowed");
+        var move = await _agent.FailAsync("entity_move", $$"""{ "entityType": "document", "key": "{{post.Key}}", "parent": "{{archive.Key}}" }""");
+        var setParent = await _agent.FailAsync("entity_setValue", $$"""{ "entityType": "document", "key": "{{post.Key}}", "path": "parent", "value": "{{archive.Key}}" }""");
+        var delete = await _agent.FailAsync("entity_delete", $$"""{ "entityType": "document", "key": "{{post.Key}}" }""");
+        Assert.Multiple(() =>
+        {
+            Assert.That(move.GetProperty("message").GetString(), Is.EqualTo("You don't have permission to move this document."));
+            Assert.That(setParent.GetProperty("message").GetString(), Is.EqualTo("You don't have permission to move this document."));
+            Assert.That(delete.GetProperty("message").GetString(), Is.EqualTo("You don't have permission to delete this document."));
+        });
+        await _agent.OkAsync("changeSet_discard", "{}");
+
+        // A user who may move pages, but not create under the new parent: refused, as in the backoffice.
+        _agent.UserKey = await CreateUserAsync("Movers", ActionBrowse.ActionLetter, ActionMove.ActionLetter);
+        await _agent.StartChangeSetAsync("Not there");
+        move = await _agent.FailAsync("entity_move", $$"""{ "entityType": "document", "key": "{{post.Key}}", "parent": "{{archive.Key}}" }""");
+        Assert.That(move.GetProperty("message").GetString(), Is.EqualTo("You don't have permission to move this document there."));
+    }
+
+    [Test]
+    public async Task A_page_moved_in_both_the_set_and_the_backoffice_is_a_conflict_on_its_parent()
+    {
+        var (blogType, postType) = await CreateBlogTypesAsync();
+        var news = await CreateLiveAsync(blogType.Key, "News");
+        var archive = await CreateLiveAsync(blogType.Key, "Archive");
+        var old = await CreateLiveAsync(blogType.Key, "Old");
+        var post = await CreateLiveAsync(postType.Key, "Hello", news.Key);
+
+        await _agent.StartChangeSetAsync("Archive a post");
+        await _agent.OkAsync("entity_move", $$"""{ "entityType": "document", "key": "{{post.Key}}", "parent": "{{archive.Key}}" }""");
+
+        await Task.Delay(20);
+        Assert.That((await ContentEditingService.MoveAsync(post.Key, old.Key, Constants.Security.SuperUserKey)).Success, Is.True);
+
+        var refused = await _agent.FailAsync("changeSet_apply", SetJson());
+        Assert.That(refused.GetProperty("problems")[0].GetProperty("path").GetString(), Does.EndWith("/parent"));
+
+        await _agent.OkAsync("changeSet_resolveConflict", $$"""
+            { "changeSetId": "{{_agent.ChangeSetId}}", "entityType": "document", "key": "{{post.Key}}", "path": "parent", "keep": "theirs" }
+            """);
+        await _agent.OkAsync("changeSet_apply", SetJson());
+        Assert.That(ContentService.GetById(post.Key)!.ParentId, Is.EqualTo(old.Id));
+    }
+
+    /// <summary>Blogs, allowed at the root, hold posts, which aren't.</summary>
+    private async Task<(IContentType Blog, IContentType Post)> CreateBlogTypesAsync()
+    {
+        var post = new ContentTypeBuilder().WithAlias("post").WithName("Post").WithContentVariation(ContentVariation.Nothing).Build();
+        await ContentTypeService.CreateAsync(post, Constants.Security.SuperUserKey);
+        var blog = new ContentTypeBuilder().WithAlias("blog").WithName("Blog").WithContentVariation(ContentVariation.Nothing).Build();
+        blog.AllowedAsRoot = true;
+        blog.AllowedContentTypes = [new ContentTypeSort(post.Key, 0, post.Alias)];
+        await ContentTypeService.CreateAsync(blog, Constants.Security.SuperUserKey);
+        return (blog, post);
+    }
+
+    private async Task<IContent> CreateLiveAsync(Guid contentTypeKey, string name, Guid? parent = null)
+        => (await ContentEditingService.CreateAsync(
+            new ContentCreateModel { ContentTypeKey = contentTypeKey, ParentKey = parent, Variants = [new VariantModel { Name = name }] },
+            Constants.Security.SuperUserKey)).Result.Content!;
 
     private async Task CreateBrochureTypeAsync()
     {

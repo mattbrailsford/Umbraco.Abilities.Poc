@@ -40,7 +40,12 @@ public interface IEntityAdapter
     /// <summary>Domain rules beyond the schema (ranges, dates in order, uniqueness). Problems by path.</summary>
     Task<IReadOnlyList<Problem>> ValidateAsync(Entity entity, CancellationToken cancellationToken = default);
 
-    Task<EntitySummary> SaveAsync(Entity entity, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Saves an entity. <paramref name="before"/> is the entity as it is live now, loaded just before the save (null when
+    /// creating), so the adapter can see what changed and do what the product needs for it, such as running a move
+    /// when the parent changed.
+    /// </summary>
+    Task<EntitySummary> SaveAsync(Entity? before, Entity entity, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<EntitySummary>> FindAsync(string query, CancellationToken cancellationToken = default);
 
@@ -56,6 +61,31 @@ public interface IVersionedEntityAdapter : IEntityAdapter
 {
     /// <summary>A stored version, as <see cref="IEntityAdapter.LoadAsync"/> returned it then; null if the history no longer has it.</summary>
     Task<Entity?> LoadVersionAsync(Guid key, long version, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// An adapter whose entities can be deleted. The framework then offers <c>entity.delete</c> for its entity type: the
+/// delete is recorded in a change set like any edit, the entity reads as gone inside the set, and it is deleted when the
+/// set is applied, after the set's other changes to the product are saved.
+/// </summary>
+public interface IDeletableEntityAdapter : IEntityAdapter
+{
+    /// <summary>True when the product can restore a deleted entity, such as from the CMS recycle bin.</summary>
+    bool CanRestore { get; }
+
+    /// <summary>Deletes the entity, in the product's unit of work. Not called for adapters that keep their own drafts: their draft applies the delete.</summary>
+    Task DeleteAsync(Guid key, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// An adapter whose entities sit in a tree. The framework then offers <c>entity.move</c> for its entity type, which sets
+/// <see cref="ParentField"/>. The adapter saves a changed parent as a move, in <see cref="IEntityAdapter.SaveAsync"/>
+/// (or its draft). A change to the parent field, by any ability, is checked as <see cref="EntityPermission.Move"/>.
+/// </summary>
+public interface ITreeEntityAdapter : IEntityAdapter
+{
+    /// <summary>The alias of a root reference field holding the parent's key; no value means the entity is at the root.</summary>
+    string ParentField { get; }
 }
 
 public sealed record EntitySubtype(string Alias, string Name);

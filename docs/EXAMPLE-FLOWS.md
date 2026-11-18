@@ -27,6 +27,7 @@ tested separately.
 | `entity_addItem` | Adds an item (a block, a rule, a step) to an items field at any path |
 | `entity_setValue` | Sets the value at any path |
 | `entity_removeItem`, `entity_moveItem` | Removes or moves an item (not used below) |
+| `entity_delete`, `entity_move` | Deletes an entity, or moves it to another parent, for types whose schema lists `delete` or `move` under `capabilities` (not used below) |
 | `entity_get` | Reads an entity. Inside a change set it includes the set's changes |
 | `changeSet_validate` | Checks everything in the set. Problems come back by path |
 | `changeSet_summarize` | What applying the set would do, for a person to review |

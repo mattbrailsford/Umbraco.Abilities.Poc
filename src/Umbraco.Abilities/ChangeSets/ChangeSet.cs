@@ -168,7 +168,8 @@ public interface IDraftingEntityAdapter : IEntityAdapter
 
     /// <summary>
     /// Records an edit into the draft. <paramref name="before"/> is the entity as the draft had it (null when the edit
-    /// creates it), so the product can record only what changed.
+    /// creates it), so the product can record only what changed. <paramref name="after"/> is marked
+    /// <see cref="Entity.Deleted"/> when the edit deletes it; after that the draft loads it as gone.
     /// </summary>
     Task StageAsync(Guid draftId, Entity? before, Entity after, CancellationToken cancellationToken = default);
 

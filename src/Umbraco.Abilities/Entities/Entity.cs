@@ -23,6 +23,12 @@ public sealed class Entity
     /// <summary>The fields' values, by alias.</summary>
     public JsonObject Fields { get; set; } = [];
 
+    /// <summary>
+    /// Marked for deletion, as EF Core's <c>Remove</c> marks one: inside a change set the entity then reads as gone, and
+    /// applying the set deletes it. Only an <see cref="IDeletableEntityAdapter"/>'s entities can be marked.
+    /// </summary>
+    public bool Deleted { get; set; }
+
     public Entity Clone() => new()
     {
         EntityType = EntityType,
@@ -30,6 +36,7 @@ public sealed class Entity
         Subtype = Subtype,
         Version = Version,
         Fields = (JsonObject)Fields.DeepClone(),
+        Deleted = Deleted,
     };
 
     /// <summary>The form tools show.</summary>

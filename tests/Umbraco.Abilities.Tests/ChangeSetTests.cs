@@ -283,7 +283,7 @@ public class ChangeSetTests
         await _agent.OkAsync("entity_setValue", $$"""{ "entityType": "document", "key": "{{page}}", "path": "title", "value": "Big launch", "variant": { "culture": "en-US" } }""");
 
         var live = (await _site.Pages.LoadAsync(page))!;
-        await _site.Pages.SaveAsync(live);
+        await _site.Pages.SaveAsync(live, live);
         _site.ContentDatabase.ForgetHistory(); // e.g. a version clean-up
 
         var refused = await _agent.FailAsync("changeSet_apply", SetJson());

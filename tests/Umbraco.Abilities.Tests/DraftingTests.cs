@@ -83,7 +83,7 @@ public class DraftingTests
 
         public Task<IReadOnlyList<Problem>> ValidateAsync(Entity entity, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<Problem>>([]);
 
-        public Task<EntitySummary> SaveAsync(Entity entity, CancellationToken cancellationToken = default)
+        public Task<EntitySummary> SaveAsync(Entity? before, Entity entity, CancellationToken cancellationToken = default)
             => throw new NotSupportedException("Applied through the draft.");
 
         public Task<IReadOnlyList<EntitySummary>> FindAsync(string query, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<EntitySummary>>([]);

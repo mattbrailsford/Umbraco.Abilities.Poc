@@ -1,3 +1,6 @@
+using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
+
 using Umbraco.Abilities.Entities;
 using Umbraco.Abilities.Entities.Models;
 using Umbraco.Abilities.Samples;
@@ -262,6 +265,61 @@ public class TypedModelTests
         Assert.IsType<CardGrid>(Assert.Single((await _site.Pages.LoadModelAsync(saved.Key))!.Blocks));
         var problems = await SchemaValidator.ValidateAsync((await _site.Pages.LoadAsync(saved.Key))!, page, await TypesAsync(_site.Pages), (_, _) => Task.FromResult(true));
         Assert.Contains(problems, p => p.Path == $"blocks/{saved.Blocks[0].Key}");
+    }
+
+    [Fact]
+    public async Task A_typed_adapter_can_be_given_the_model_as_it_is_live_when_it_saves()
+    {
+        var notes = new NoteAdapter(new InMemoryDatabase("Notes"), _site.ItemTypes);
+        _site.Adapters.Add(notes);
+        _site.Abilities.Add(new PinNoteAbility(notes));
+        var agent = new ScriptedAgent(_site);
+
+        // In a change set: a new note has nothing before it; an edited one is seen as it was.
+        await agent.StartChangeSetAsync("Notes");
+        var key = (await agent.OkAsync("entity_create", """{ "entityType": "note", "fields": { "text": "First" } }""")).GetProperty("key").GetGuid();
+        await agent.OkAsync("changeSet_apply", $$"""{ "changeSetId": "{{agent.ChangeSetId}}" }""");
+        Assert.Null(notes.Before);
+
+        await agent.StartChangeSetAsync("Rename");
+        await agent.OkAsync("entity_setValue", $$"""{ "entityType": "note", "key": "{{key}}", "path": "text", "value": "Second" }""");
+        await agent.OkAsync("changeSet_apply", $$"""{ "changeSetId": "{{agent.ChangeSetId}}" }""");
+        Assert.Equal("First", notes.Before!.Text);
+
+        // Run directly, outside a change set, too.
+        await agent.OkAsync("test_pinNote", $$"""{ "note": "{{key}}" }""");
+        Assert.Equal(("Second", false), (notes.Before!.Text, notes.Before.Pinned));
+        Assert.True((await notes.LoadModelAsync(key))!.Pinned);
+    }
+
+    [Entity("note", "Note", Description = "A short note.")]
+    private sealed class Note : EntityModel
+    {
+        [EntityName, Required, Description("The note's text.")]
+        public string? Text { get; set; }
+
+        [Description("Pinned to the top.")]
+        public bool Pinned { get; set; }
+    }
+
+    /// <summary>A typed adapter that wants to see what changed: it overrides the save that is given the model before.</summary>
+    private sealed class NoteAdapter(InMemoryDatabase database, ItemTypeRegistry itemTypes) : InMemoryModelAdapter<Note>(database, itemTypes, "/notes")
+    {
+        public Note? Before { get; private set; }
+
+        public override Task SaveModelAsync(Note? before, Note model, CancellationToken cancellationToken = default)
+        {
+            Before = before;
+            return SaveModelAsync(model, cancellationToken);
+        }
+    }
+
+    private sealed record PinNoteInput([property: EntityKey("note")] Guid Note);
+
+    [Ability("test.pinNote", "Pin note", Kind = AbilityKind.Write)]
+    private sealed class PinNoteAbility(NoteAdapter notes) : ModelEditAbilityBase<PinNoteInput, Note>(notes)
+    {
+        protected override void Edit(Note note, PinNoteInput input) => note.Pinned = true;
     }
 
     private sealed record UnmarkedInput(Guid Discount);

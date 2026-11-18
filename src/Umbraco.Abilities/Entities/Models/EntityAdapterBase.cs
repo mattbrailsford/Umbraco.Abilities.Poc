@@ -72,8 +72,19 @@ public abstract class EntityAdapterBase<TModel> : IAuthorizingEntityAdapter
     /// <summary>Loads the model, or null if there is none with this key. Set its [EntityVersion] if it has one.</summary>
     public abstract Task<TModel?> LoadModelAsync(Guid key, CancellationToken cancellationToken = default);
 
-    /// <summary>Saves the model, creating it when it is new. Throw to fail the save; the product's transaction rolls back.</summary>
-    public abstract Task SaveModelAsync(TModel model, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Saves the model, creating it when it is new. Throw to fail the save; the product's transaction rolls back.
+    /// Override this, or the overload given the model before when the save needs to see what changed.
+    /// </summary>
+    public virtual Task SaveModelAsync(TModel model, CancellationToken cancellationToken = default)
+        => throw new NotImplementedException($"{GetType().Name} must override SaveModelAsync.");
+
+    /// <summary>
+    /// Saves the model, given the model as it is live now (null when creating), so the product can act on what changed,
+    /// such as a new parent. By default, calls <see cref="SaveModelAsync(TModel, CancellationToken)"/>.
+    /// </summary>
+    public virtual Task SaveModelAsync(TModel? before, TModel model, CancellationToken cancellationToken = default)
+        => SaveModelAsync(model, cancellationToken);
 
     /// <summary>
     /// Whether the user may read, create or change the entity, asked of the product's own permission model. Null when
@@ -153,9 +164,9 @@ public abstract class EntityAdapterBase<TModel> : IAuthorizingEntityAdapter
         return [.. ModelSchemas.Validate(model), .. problems];
     }
 
-    public async Task<EntitySummary> SaveAsync(Entity entity, CancellationToken cancellationToken = default)
+    public async Task<EntitySummary> SaveAsync(Entity? before, Entity entity, CancellationToken cancellationToken = default)
     {
-        await SaveModelAsync(ToModel(entity), cancellationToken);
+        await SaveModelAsync(before is null ? null : ToModel(before), ToModel(entity), cancellationToken);
         return ToSummary(entity);
     }
 
@@ -326,7 +337,7 @@ public abstract class ModelEditAbilityBase<TInput, TModel>(EntityAdapterBase<TMo
             return EntityAccess.Denied(denied);
         }
 
-        await adapter.SaveModelAsync(model, cancellationToken);
+        await adapter.SaveModelAsync(adapter.ToModel(before), model, cancellationToken);
         return Success(adapter.ToSummary(adapter.ToEntity(model)));
     }
 

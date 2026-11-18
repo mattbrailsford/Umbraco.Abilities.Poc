@@ -15,8 +15,11 @@ public interface IEntityEditInput
 
     Guid? Key { get; }
 
-    /// <summary>The variant to edit, e.g. <c>{ "culture": "da-DK" }</c>. Values that don't vary ignore it.</summary>
-    Dictionary<string, string>? Variant { get; }
+    /// <summary>
+    /// The variant to edit, e.g. <c>{ "culture": "da-DK" }</c>. Values that don't vary ignore it. Inputs for edits that
+    /// don't touch values by variant (a delete, a move) leave it out.
+    /// </summary>
+    Dictionary<string, string>? Variant => null;
 }
 
 /// <summary>Base for entity edits: recorded into a change set, applied to a working copy on replay.</summary>
@@ -76,7 +79,8 @@ public sealed record GetEntitySchemaInput(
 
 [Ability("entity.getSchema", "Get entity schema", Kind = AbilityKind.Read, UsesChangeSet = false,
     Description = "Returns an entity type's fields as JSON Schema. An items field lists its item types (x-item-types). " +
-                  "Call it first. Call again with itemTypes to get the fields of the item types you will add.")]
+                  "Call it first. Call again with itemTypes to get the fields of the item types you will add. " +
+                  "capabilities lists what the type supports beyond setting values, such as delete and move.")]
 public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemTypeRegistry registry)
     : AbilityBase<GetEntitySchemaInput, JsonObject>
 {
@@ -108,6 +112,7 @@ public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemT
                 ["values"] = d.Values is { } values ? new JsonArray(values.Select(v => (JsonNode?)v).ToArray()) : null,
             }).ToArray()),
             ["fields"] = SchemaWriter.Fields(schema.Root, itemTypes, context.UserKey),
+            ["capabilities"] = new JsonArray(Capabilities(adapter).Select(c => (JsonNode?)c).ToArray()),
         };
 
         if (input.ItemTypes is { Length: > 0 })
@@ -128,6 +133,20 @@ public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemT
         }
 
         return Success(output);
+    }
+
+    /// <summary>What an entity type can do beyond setting values: the optional adapter interfaces it implements.</summary>
+    private static IEnumerable<string> Capabilities(IEntityAdapter adapter)
+    {
+        if (adapter is IDeletableEntityAdapter)
+        {
+            yield return "delete";
+        }
+
+        if (adapter is ITreeEntityAdapter)
+        {
+            yield return "move";
+        }
     }
 }
 
@@ -154,8 +173,13 @@ public sealed class FindEntityAbility(EntityAdapterRegistry adapters, ChangeSetS
 
             foreach (var key in touched)
             {
-                var entity = await changeSets.GetWorkingStateAsync(set, input.EntityType, key, cancellationToken);
-                var reference = adapter.ToSummary(entity!);
+                // An entity the set deletes isn't found.
+                if (await changeSets.GetWorkingStateAsync(set, input.EntityType, key, cancellationToken) is not { } entity)
+                {
+                    continue;
+                }
+
+                var reference = adapter.ToSummary(entity);
                 if (reference.Name.Contains(input.Query, StringComparison.OrdinalIgnoreCase))
                 {
                     found.Add(reference);
@@ -311,5 +335,59 @@ public sealed class MoveEntityItemAbility : EntityEditAbilityBase<MoveEntityItem
     {
         EntityEditor.MoveItem(Target(entity, input, context), input.FieldPath, input.ItemKey, input.Position);
         return new { moved = input.ItemKey, position = input.Position };
+    }
+}
+
+public sealed record DeleteEntityInput(
+    [property: Description("Entity type.")] string EntityType,
+    [property: Description("Key of the entity to delete.")] Guid? Key) : IEntityEditInput;
+
+[Ability("entity.delete", "Delete entity", Kind = AbilityKind.Write, Reversible = true,
+    Description = "Deletes an entity, in the active change set. It stays live until the set is applied; inside the set it " +
+                  "reads as gone. Only for entity types whose capabilities (from entity.getSchema) include delete.")]
+public sealed class DeleteEntityAbility : EntityEditAbilityBase<DeleteEntityInput>
+{
+    protected override object? Apply(Entity entity, DeleteEntityInput input, EntityEditContext context)
+    {
+        if (context.Adapter is not IDeletableEntityAdapter deletable)
+        {
+            throw new AbilityInputException(
+                $"{context.Adapter.DisplayName} can't be deleted here. entity.getSchema lists what an entity type supports under capabilities.",
+                [new Problem("entityType", "Can't be deleted.")]);
+        }
+
+        // Marked, not deleted: the change set reads it as gone, and deletes it when the set is applied.
+        entity.Deleted = true;
+        return new { deleted = entity.Key, canRestore = deletable.CanRestore };
+    }
+}
+
+public sealed record MoveEntityInput(
+    [property: Description("Entity type.")] string EntityType,
+    [property: Description("Key of the entity to move.")] Guid? Key,
+    [property: Description("Key of the new parent. Leave it out to move the entity to the root.")] Guid? Parent = null) : IEntityEditInput;
+
+[Ability("entity.move", "Move entity", Kind = AbilityKind.Write, Reversible = true,
+    Description = "Moves an entity to another parent in its tree, in the active change set. Leave parent out for the root. " +
+                  "Only for entity types whose capabilities (from entity.getSchema) include move.")]
+public sealed class MoveEntityAbility : EntityEditAbilityBase<MoveEntityInput>
+{
+    protected override object? Apply(Entity entity, MoveEntityInput input, EntityEditContext context)
+    {
+        if (context.Adapter is not ITreeEntityAdapter tree)
+        {
+            throw new AbilityInputException(
+                $"{context.Adapter.DisplayName} can't be moved. entity.getSchema lists what an entity type supports under capabilities.",
+                [new Problem("entityType", "Can't be moved.")]);
+        }
+
+        if (input.Parent == entity.Key)
+        {
+            throw new AbilityInputException("An entity can't be its own parent.", [new Problem("parent", "Can't be the entity itself.")]);
+        }
+
+        // Set like any value, so the reference is checked against the field's schema, and rebasing and review see a value.
+        EntityEditor.SetValue(Target(entity, input, context), tree.ParentField, input.Parent is { } parent ? JsonValue.Create(parent.ToString()) : null);
+        return new { moved = entity.Key, parent = input.Parent };
     }
 }

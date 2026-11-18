@@ -89,7 +89,8 @@ public sealed class ResolveConflictAbility(ChangeSetService changeSets) : Abilit
 public static class FrameworkAbilities
 {
     /// <summary>
-    /// Adds the generic entity abilities (schema, find, get, create, set a value, add, remove and move an item) and the
+    /// Adds the generic entity abilities (schema, find, get, create, set a value, add, remove and move an item, delete and
+    /// move an entity) and the
     /// change set abilities. Every surface starts with these; products add their own after.
     /// </summary>
     public static AbilityRegistry AddFrameworkAbilities(this AbilityRegistry abilities, EntityAdapterRegistry adapters, ItemTypeRegistry itemTypes, ChangeSetService changeSets)
@@ -102,6 +103,8 @@ public static class FrameworkAbilities
             .Add(new AddEntityItemAbility())
             .Add(new RemoveEntityItemAbility())
             .Add(new MoveEntityItemAbility())
+            .Add(new DeleteEntityAbility())
+            .Add(new MoveEntityAbility())
             .Add(new CreateChangeSetAbility(changeSets))
             .Add(new ValidateChangeSetAbility(changeSets))
             .Add(new SummarizeChangeSetAbility(changeSets))
