@@ -470,7 +470,7 @@ Creation prompts are a feature of Umbraco.AI built on the three layers, not part
 | --- | --- | --- |
 | Backoffice "Create with AI" action | Entity action on any entity type with an adapter | Opens the editor showing the set's working state |
 | Copilot | Chat on a create screen or anywhere in the backoffice | Same; follow-up messages ("make it 15%") are more edits in the set |
-| Automate | Generic action "Create {entity} from text", fed by earlier steps | The set waits for approval in Automate's existing approval flow, then is applied |
+| Automate | Generic action "Create {entity} from text", fed by earlier steps. Every other ability as its own action, through a loader in Automate that depends on Abilities and builds each form from the ability's schema (proposed: see [FINDINGS](FINDINGS.md#proposal-an-ability-loader-in-automate)) | The set waits for approval in Automate's Request Approval step, then is applied |
 | MCP | The derived abilities, through two generic Management API endpoints (list the abilities, call one) with the `Umb-Change-Set` header. MCP Dev builds one tool per listed ability and keeps the session's open change set (built as a proof: findings 21 and 22) | The client applies the set, or leaves it for a person |
 
 The editor needs to load a set's working state into a create or edit screen. For CMS content the PoC's read overlay does this. Other products need a way to open their editor with a given model; this is not yet checked for Commerce or Automate.
