@@ -222,6 +222,71 @@ public class ConsumerTests
     }
 
     [Fact]
+    public void A_form_consumer_gets_a_Create_and_an_Update_per_entity_type_and_a_model_one_of_each()
+    {
+        AddConsumer("chat", AbilityAudiences.Model, Chat, FrameworkFilters.ForModels);
+        AddConsumer("workflows", AbilityAudiences.Person, ConsumerCapabilities.StandingConsent, FrameworkFilters.ForForms);
+
+        var forms = _site.Tools.GetTools("workflows");
+        var create = Assert.Single(forms, t => t.Id == "entity.create:document");
+        Assert.Equal("Create Page", create.Title);
+        Assert.Equal("document", create.FixedArguments["entityType"].GetString());
+        Assert.False(create.InputSchema.GetProperty("properties").TryGetProperty("entityType", out _));
+        Assert.Contains(forms, t => t.Id == "entity.update:umbraco-commerce-discount" && t.Title == "Update Discount");
+        Assert.DoesNotContain(forms, t => t.Id is "entity.create" or "entity.update" or "entity.create:umbraco-commerce-collection");
+
+        var chat = _site.Tools.GetTools("chat").Select(t => t.Id).ToList();
+        Assert.Single(chat, id => id.StartsWith("entity.create", StringComparison.Ordinal));
+        Assert.Single(chat, id => id.StartsWith("entity.update", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task An_update_changes_only_the_values_given_in_one_change_set()
+    {
+        AddConsumer("workflows", AbilityAudiences.Person, ConsumerCapabilities.StandingConsent, FrameworkFilters.ForForms);
+        var session = new AbilityToolSession(SampleAccess.Editor);
+        var made = await _site.Runner.InvokeAsync(
+            Tool("workflows", "entity.create:document"),
+            Json("""{ "variant": { "culture": "en-US" }, "fields": { "title": "Launch", "urlSegment": "launch" } }"""),
+            session,
+            AbilityConsent.Given);
+        var key = made.ToJson().GetProperty("result").GetProperty("key").GetGuid();
+
+        var updated = await _site.Runner.InvokeAsync(
+            Tool("workflows", "entity.update:document"),
+            Json($$"""{ "key": "{{key}}", "variant": { "culture": "en-US" }, "fields": { "title": "Launched" } }"""),
+            session,
+            AbilityConsent.Given,
+            changeSetName: "Retitle");
+
+        Assert.True(updated.Success, updated.Message);
+        Assert.Equal(("Retitle", false), (updated.ChangeSet!.Name, updated.ChangeSet.Open));
+        var page = (await _site.Pages.LoadAsync(key))!.ToJson()["fields"]!;
+        Assert.Equal("Launched", page["title"]!["en-US"]!.GetValue<string>());
+        Assert.Equal("launch", page["urlSegment"]!["en-US"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task A_form_resolves_the_fields_input_to_the_entity_types_fields_with_person_hints()
+    {
+        AddConsumer("workflows", AbilityAudiences.Person, ConsumerCapabilities.StandingConsent, FrameworkFilters.ForForms);
+
+        var create = (await _site.Tools.ResolveInputSchemaAsync("workflows", "entity.create:umbraco-commerce-discount", []))!.Value;
+        var update = (await _site.Tools.ResolveInputSchemaAsync("workflows", "entity.update:umbraco-commerce-discount", []))!.Value;
+
+        var createFields = create.GetProperty("properties").GetProperty("fields");
+        var updateFields = update.GetProperty("properties").GetProperty("fields");
+        Assert.Contains("name", createFields.GetProperty("required").EnumerateArray().Select(r => r.GetString()));
+        Assert.Empty(updateFields.GetProperty("required").EnumerateArray());
+        Assert.Equal(
+            "Whether the discount is live. Leave it off to check the discount before customers get it. Leave it empty to keep it as it is.",
+            updateFields.GetProperty("properties").GetProperty("active").GetProperty("description").GetString());
+        Assert.False(create.GetProperty("properties").TryGetProperty("entityType", out _), "fixed by the split");
+        Assert.False(create.GetProperty("properties").TryGetProperty("subtype", out _), "a discount has no subtypes");
+        Assert.DoesNotContain(UiHints.HintsKeyword, create.GetRawText() + update.GetRawText());
+    }
+
+    [Fact]
     public void A_model_consumers_tools_have_no_keywords_meant_for_forms()
     {
         AddConsumer("chat", Chat, FrameworkFilters.ForModels);

@@ -1,0 +1,18 @@
+{
+  "name": "Umbraco.Abilities.Automate",
+  "version": "0.1.0",
+  "extensions": [
+    {
+      "type": "propertyEditorUi",
+      "alias": "Umb.Abilities.PropertyEditorUi.DependentInput",
+      "name": "Abilities: dependent input (FUDGE)",
+      "element": "/App_Plugins/UmbracoAbilities/dependent-input.js",
+      "meta": {
+        "label": "Dependent input",
+        "icon": "icon-list",
+        "group": "common",
+        "propertyEditorSchemaAlias": "Umbraco.Plain.Json"
+      }
+    }
+  ]
+}

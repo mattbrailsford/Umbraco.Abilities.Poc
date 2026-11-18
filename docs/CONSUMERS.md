@@ -1,6 +1,6 @@
 # Consumers: which abilities show up where, and in what shape
 
-Status: **phases 1 to 3 built** (tasks 1 to 14). Phase 4 is the plan.
+Status: **all four phases built** (tasks 1 to 18). The fields editor for Automate is a FUDGE, tried on the demo site.
 
 A **consumer** is anything that offers abilities to someone: an AI chat, an MCP server, Umbraco Automate. Today each
 consumer filters and shapes the abilities list in its own code. This plan keeps that job with the consumer, but builds
@@ -451,6 +451,25 @@ Automate tweak to ask for, added to the list in FINDINGS: **a settings form that
 pattern as the dynamic output schema. Automate's own Create Content would gain real editors from it too, in place of
 its JSON property box.
 
+Built (tasks 15 and 16):
+
+- The facts are `SplitBy`, `SplitTitle`, `DependentInput` and `DependsOn` on `[Ability]`, held in
+  `AbilityDescriptor.Input`. An ability that states them implements `IDynamicInputAbility`: it lists the values an
+  argument can take, resolves its input schema once some are chosen, and reads a form's editor values.
+- The filter is `split-by-choice`, not `split-by-entity-type`: it splits by whatever argument the ability names, so it
+  knows nothing about entities. It is in `for-forms`. Each split tool has the value fixed (`FixedArguments`) and out of
+  its input, an id such as `entity.create:document`, and a title such as "Create Document".
+- Choices are a labelled list in the schema (`oneOf` of `const` and `title`), so a dropdown shows each page type's name.
+- `AbilityToolProvider.ResolveInputSchemaAsync` resolves a tool's input, and shapes it with the consumer's result
+  filters. So an update's fields carry the person hint "Leave it empty to keep it as it is." and a model never sees it.
+  The Management API serves it as `POST abilities/{id}/input-schema`.
+- Automate lists its own filter, `automate-editors`, after `for-forms`. It names Automate's editor for every field
+  (`x-editor`), and the fields editor for the dependent input. A package adding its own filter to its own consumer.
+- The fields editor (`App_Plugins/UmbracoAbilities/dependent-input.js`) watches the page type in the same form, asks
+  for the input's schema, and draws each field with its editor. A FUDGE until Automate's form can depend on its own
+  values.
+- `EntityAction` and `AbilityActionOptions.EntityActions` are deleted. Every Automate action is an `AbilityAction`.
+
 ### 15. Only types a person can create
 
 ```csharp
@@ -461,6 +480,8 @@ public sealed record EntitySubtype(string Alias, string Name, bool Creatable = t
   compositions such as "Article Controls" are not.
 - The page type picker on Create offers only creatable types. Update picks an existing page, so its type is known.
 - `entity.create` refuses a subtype that isn't creatable, with a clear problem, for models too.
+
+Built (task 17): `entity.getSchema` lists each subtype with `creatable`, and `entity.update` still offers every type.
 
 ## Ordered tasks
 
@@ -482,10 +503,10 @@ Each task keeps the full suite green. Each is one PR-sized step.
 | 12 | Done in phase 1. `AddFilter` onto another package's consumer | A package adds a filter to a consumer it doesn't own |
 | 13 | Done. Overrides from `Umbraco:Abilities:Consumers` | An admin drops or keeps, and can't keep past the base policy |
 | 14 | Done. Hints: `[Hint]`, `FieldDefinition.Hints`, `x-hints`, `apply-hints`; split today's descriptions | Automate shows text for people; a model reads the same text as today |
-| 15 | `entity.update`, `DependentInput`, `SplitBy`; `split-by-entity-type`; `ResolveInputSchemaAsync` | One Create and one Update per entity type for forms; one tool each for models |
-| 16 | Automate: page type picker and the fields editor (FUDGE) | `EntityAction` deleted |
-| 17 | `Creatable` subtypes in the CMS adapter | "Article Controls" can't be picked |
-| 18 | Docs: ARCHITECTURE (a consumers layer), FINDINGS, TESTS, README, REVIEWING | |
+| 15 | Done. `entity.update`, `DependentInput`, `SplitBy`; `split-by-choice`; `ResolveInputSchemaAsync` | One Create and one Update per entity type for forms; one tool each for models |
+| 16 | Done. Automate: page type picker and the fields editor (FUDGE) | `EntityAction` deleted |
+| 17 | Done. `Creatable` subtypes in the CMS adapter | "Article Controls" can't be picked |
+| 18 | Done. Docs: ARCHITECTURE (a consumers layer), FINDINGS, TESTS, README, REVIEWING | |
 
 ## Test plan
 

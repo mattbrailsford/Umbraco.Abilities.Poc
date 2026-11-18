@@ -17,7 +17,8 @@ using Umbraco.Cms.Core.Security;
 namespace Umbraco.Abilities.ManagementApi;
 
 /// <summary>
-/// Every ability over the Management API, through two generic endpoints: list a consumer's tools, and call one. An HTTP
+/// Every ability over the Management API, through generic endpoints: list a consumer's tools, call one, and resolve a
+/// tool's input once some arguments are chosen. An HTTP
 /// caller, such as the Umbraco CMS MCP Dev server, names the consumer it is in the <c>Umb-Consumer</c> header (set once
 /// on its client; <see cref="McpConsumer"/> when it doesn't) and builds one tool per listed tool, so a new ability needs no new endpoint and no new release of the
 /// caller. The API is not a consumer itself: it is the road one travels. It offers only that consumer's tools, shaped by
@@ -117,6 +118,28 @@ public sealed class AbilitiesController(
             : AbilityConsent.None;
         var result = await runner.InvokeAsync(tool, arguments, session, consent, cancellationToken);
         return StatusCode(StatusCodeOf(result), tools.ShapeResult(consumer, tool, result.ToJson()));
+    }
+
+    /// <summary>
+    /// A tool's input schema once some of its arguments are chosen, such as the page type, for a form that shows what
+    /// depends on them. Each choice is as current as the site: a page type added a moment ago is in it. Shaped by the
+    /// consumer's filters, as the list is.
+    /// </summary>
+    [HttpPost("{id}/input-schema")]
+    [MapToApiVersion("1.0")]
+    [ProducesResponseType<JsonElement>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> InputSchema(string id, [FromBody] JsonObject? chosen, CancellationToken cancellationToken)
+    {
+        var consumer = Consumer;
+        if (consumers.Find(consumer) is null)
+        {
+            return UnknownConsumer(consumer);
+        }
+
+        return await tools.ResolveInputSchemaAsync(consumer, id, chosen ?? [], cancellationToken) is { } schema
+            ? Ok(schema)
+            : NotFound(new ProblemDetails { Title = "Unknown tool", Detail = $"The {consumer} consumer offers no tool '{id}'.", Status = StatusCodes.Status404NotFound });
     }
 
     // The consumer the caller named, or the MCP server's when it named none.

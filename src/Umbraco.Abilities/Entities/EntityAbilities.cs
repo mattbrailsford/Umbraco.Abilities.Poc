@@ -23,8 +23,12 @@ public interface IEntityEditInput
     Dictionary<string, string>? Variant => null;
 }
 
+/// <summary>Base for entity edits that return plain JSON. See <see cref="EntityEditAbilityBase{TInput, TOutput}"/>.</summary>
+public abstract class EntityEditAbilityBase<TInput> : EntityEditAbilityBase<TInput, object>
+    where TInput : IEntityEditInput;
+
 /// <summary>Base for entity edits: recorded into a change set, applied to a working copy on replay.</summary>
-public abstract class EntityEditAbilityBase<TInput> : AbilityBase<TInput, object>, IEntityEditAbility
+public abstract class EntityEditAbilityBase<TInput, TOutput> : AbilityBase<TInput, TOutput>, IEntityEditAbility
     where TInput : IEntityEditInput
 {
     protected virtual bool Creates => false;
@@ -98,7 +102,7 @@ public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemT
             return Success(new JsonObject
             {
                 ["entityType"] = input.EntityType,
-                ["subtypes"] = new JsonArray(subtypes.Select(s => (JsonNode?)new JsonObject { ["alias"] = s.Alias, ["name"] = s.Name }).ToArray()),
+                ["subtypes"] = new JsonArray(subtypes.Select(s => (JsonNode?)new JsonObject { ["alias"] = s.Alias, ["name"] = s.Name, ["creatable"] = s.Creatable }).ToArray()),
                 ["next"] = "Call again with a subtype to get its fields.",
             });
         }
@@ -249,17 +253,18 @@ public sealed class GetEntityAbility(EntityAdapterRegistry adapters, ChangeSetSe
 
 public sealed record CreateEntityInput(
     [property: Description("Entity type to create.")] string EntityType,
-    [property: Description("Optional key for the new entity. Leave it out and one is made and returned.")]
-    [property: Hint(AbilityAudiences.Model, "Choose one only when other entities in the set must refer to it, and make it a new random GUID, not a pattern.")] Guid? Key = null,
-    [property: Description("Field values, keyed by field alias.")] JsonObject? Fields = null,
     [property: Description("The subtype to create, for entity types that have them, e.g. a document's content type alias.")] string? Subtype = null,
+    [property: Description("Field values, keyed by field alias.")] JsonObject? Fields = null,
     [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }.")]
-    [property: Hint(AbilityAudiences.Model, "Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
+    [property: Hint(AbilityAudiences.Model, "Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null,
+    [property: Description("Optional key for the new entity. Leave it out and one is made and returned.")]
+    [property: Hint(AbilityAudiences.Model, "Choose one only when other entities in the set must refer to it, and make it a new random GUID, not a pattern.")] Guid? Key = null) : IEntityEditInput;
 
-[Ability("entity.create", "Create entity", Kind = AbilityKind.Write, Reversible = true, Granular = true,
-    Description = "Creates an entity in the active change set. Nothing goes live until the set is applied. Returns the new key.")]
+[Ability("entity.create", "Create entity", Kind = AbilityKind.Write, Reversible = true,
+    Description = "Creates an entity in the active change set. Nothing goes live until the set is applied. Returns the new key.",
+    SplitBy = "entityType", SplitTitle = "Create {0}", DependentInput = "fields", DependsOn = ["entityType", "subtype"])]
 [Hint(AbilityAudiences.Model, "Add items to items fields afterwards with entity.addItem.")]
-public sealed class CreateEntityAbility : EntityEditAbilityBase<CreateEntityInput>
+public sealed class CreateEntityAbility(EntityAdapterRegistry adapters) : EntityEditAbilityBase<CreateEntityInput, EntitySummary>, IDynamicInputAbility
 {
     protected override bool Creates => true;
 
@@ -271,6 +276,217 @@ public sealed class CreateEntityAbility : EntityEditAbilityBase<CreateEntityInpu
         EntityEditor.SetFields(target, entity.Fields, context.Schema.Root, string.Empty, input.Fields);
         EntityEditor.FillDefaults(target, entity.Fields, context.Schema.Root, string.Empty);
         return context.Adapter.ToSummary(entity);
+    }
+
+    public Task<IReadOnlyList<AbilityChoice>> GetChoicesAsync(string argument, JsonObject chosen, CancellationToken cancellationToken = default)
+        => EntityInputs.ChoicesAsync(adapters, argument, chosen, creating: true, cancellationToken);
+
+    public Task<JsonElement> ResolveInputSchemaAsync(JsonObject chosen, CancellationToken cancellationToken = default)
+        => EntityInputs.ResolveAsync(adapters, typeof(CreateEntityInput), chosen, creating: true, cancellationToken);
+
+    public Task<JsonObject> FromEditorValuesAsync(JsonObject chosen, JsonObject values, ISet<string> bound, CancellationToken cancellationToken = default)
+        => EntityInputs.FromEditorValuesAsync(adapters, chosen, values, bound, cancellationToken);
+}
+
+public sealed record UpdateEntityInput(
+    [property: Description("Entity type to update.")] string EntityType,
+    [property: Description("Key of the entity to update.")] Guid? Key,
+    [property: Description("The entity's subtype, e.g. a document's content type alias. Optional: it picks the fields to show, and is checked against the entity's own.")] string? Subtype = null,
+    [property: Description("The values to change, keyed by field alias. Fields left out stay as they are.")] JsonObject? Fields = null,
+    [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }.")]
+    [property: Hint(AbilityAudiences.Model, "Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null) : IEntityEditInput;
+
+[Ability("entity.update", "Update entity", Kind = AbilityKind.Write, Reversible = true,
+    Description = "Changes some of an entity's values at once, in the active change set. Values left out stay as they are.",
+    SplitBy = "entityType", SplitTitle = "Update {0}", DependentInput = "fields", DependsOn = ["entityType", "subtype"])]
+[Hint(AbilityAudiences.Model, "Takes top-level fields only. Use entity.setValue for a value inside items, and entity.addItem to add items.")]
+public sealed class UpdateEntityAbility(EntityAdapterRegistry adapters) : EntityEditAbilityBase<UpdateEntityInput, EntitySummary>, IDynamicInputAbility
+{
+    protected override object? Apply(Entity entity, UpdateEntityInput input, EntityEditContext context)
+    {
+        if (input.Subtype is { } subtype && !string.Equals(subtype, entity.Subtype, StringComparison.Ordinal))
+        {
+            throw new AbilityInputException(
+                $"{context.Adapter.DisplayName} {entity.Key} is a {entity.Subtype}, not a {subtype}.",
+                [new Problem("subtype", $"Is {entity.Subtype}.")]);
+        }
+
+        var target = Target(entity, input, context);
+        foreach (var (alias, value) in input.Fields ?? [])
+        {
+            EntityEditor.SetValue(target, alias, value?.DeepClone());
+        }
+
+        return context.Adapter.ToSummary(entity);
+    }
+
+    public Task<IReadOnlyList<AbilityChoice>> GetChoicesAsync(string argument, JsonObject chosen, CancellationToken cancellationToken = default)
+        => EntityInputs.ChoicesAsync(adapters, argument, chosen, creating: false, cancellationToken);
+
+    public Task<JsonElement> ResolveInputSchemaAsync(JsonObject chosen, CancellationToken cancellationToken = default)
+        => EntityInputs.ResolveAsync(adapters, typeof(UpdateEntityInput), chosen, creating: false, cancellationToken);
+
+    public Task<JsonObject> FromEditorValuesAsync(JsonObject chosen, JsonObject values, ISet<string> bound, CancellationToken cancellationToken = default)
+        => EntityInputs.FromEditorValuesAsync(adapters, chosen, values, bound, cancellationToken);
+}
+
+/// <summary>
+/// What <c>entity.create</c> and <c>entity.update</c> share as dynamic inputs: the entity types and subtypes to choose
+/// from, and the chosen subtype's fields as the <c>fields</c> input's schema.
+/// </summary>
+internal static class EntityInputs
+{
+    private const string KeepHint = "Leave it empty to keep it as it is.";
+
+    public static async Task<IReadOnlyList<AbilityChoice>> ChoicesAsync(
+        EntityAdapterRegistry adapters, string argument, JsonObject chosen, bool creating, CancellationToken cancellationToken)
+    {
+        switch (argument)
+        {
+            case "entityType":
+                return adapters.All.Where(a => a.CanCreate).Select(a => new AbilityChoice(a.EntityType, a.DisplayName)).ToList();
+            case "subtype" when Text(chosen, "entityType") is { } entityType && adapters.Find(entityType) is { } adapter:
+                var subtypes = await adapter.GetSubtypesAsync(cancellationToken);
+                return subtypes.Where(s => s.Creatable || !creating).Select(s => new AbilityChoice(s.Alias, s.Name)).ToList();
+            default:
+                return [];
+        }
+    }
+
+    public static async Task<JsonElement> ResolveAsync(
+        EntityAdapterRegistry adapters, Type inputType, JsonObject chosen, bool creating, CancellationToken cancellationToken)
+    {
+        var schema = JsonNode.Parse(AbilitySchemas.InputSchema(inputType).GetRawText())!.AsObject();
+        var properties = schema["properties"]!.AsObject();
+        OneOf(properties, "entityType", await ChoicesAsync(adapters, "entityType", chosen, creating, cancellationToken));
+
+        if (Text(chosen, "entityType") is not { } entityType || adapters.Find(entityType) is not { } adapter)
+        {
+            return JsonSerializer.SerializeToElement(schema);
+        }
+
+        if (!creating && properties["key"] is JsonObject key)
+        {
+            // The entity to update, picked from that type's entities.
+            key["x-references"] = entityType;
+            if (schema["required"] is not JsonArray required)
+            {
+                schema["required"] = required = [];
+            }
+
+            if (!required.Any(r => r?.GetValue<string>() == "key"))
+            {
+                required.Add("key");
+            }
+        }
+
+        var subtypes = await ChoicesAsync(adapters, "subtype", chosen, creating, cancellationToken);
+        var subtype = Text(chosen, "subtype");
+        if (subtypes.Count > 0)
+        {
+            OneOf(properties, "subtype", subtypes);
+            if (subtype is null)
+            {
+                return JsonSerializer.SerializeToElement(schema);
+            }
+        }
+        else
+        {
+            properties.Remove("subtype");
+        }
+
+        var entity = await adapter.GetSchemaAsync(subtype, cancellationToken);
+        var fields = SchemaWriter.Fields(entity.Root);
+        fields["description"] = properties["fields"]?["description"]?.DeepClone();
+        if (!creating)
+        {
+            // An update changes only what is given: nothing is required, and a person is told an empty value stays.
+            fields["required"] = new JsonArray();
+            foreach (var (_, field) in fields["properties"]!.AsObject())
+            {
+                var hints = UiHints.WithHint(field![UiHints.HintsKeyword]?.Deserialize<Dictionary<string, string>>(), AbilityAudiences.Person, KeepHint);
+                field[UiHints.HintsKeyword] = JsonSerializer.SerializeToNode(hints);
+            }
+        }
+
+        properties["fields"] = fields;
+
+        // The variant, as one choice per dimension a field varies by.
+        var used = entity.Root.Fields.SelectMany(f => f.VariesBy).ToHashSet(StringComparer.Ordinal);
+        if (properties["variant"] is JsonObject variant)
+        {
+            var dimensions = new JsonObject();
+            foreach (var dimension in entity.Dimensions.Where(d => used.Contains(d.Name)))
+            {
+                var property = new JsonObject { ["type"] = "string", ["description"] = dimension.Description };
+                if (dimension.Values is { Count: > 0 } values)
+                {
+                    property["enum"] = new JsonArray(values.Select(v => (JsonNode?)v).ToArray());
+                }
+
+                dimensions[dimension.Name] = property;
+            }
+
+            if (dimensions.Count == 0)
+            {
+                properties.Remove("variant");
+            }
+            else
+            {
+                variant.Remove("additionalProperties");
+                variant["type"] = "object";
+                variant["properties"] = dimensions;
+            }
+        }
+
+        return JsonSerializer.SerializeToElement(schema);
+    }
+
+    public static async Task<JsonObject> FromEditorValuesAsync(
+        EntityAdapterRegistry adapters, JsonObject chosen, JsonObject values, ISet<string> bound, CancellationToken cancellationToken)
+    {
+        if (Text(chosen, "entityType") is not { } entityType || adapters.Find(entityType) is not IEditorValueEntityAdapter editors)
+        {
+            return values;
+        }
+
+        var subtype = Text(chosen, "subtype");
+        var schema = await editors.GetSchemaAsync(subtype, cancellationToken);
+        var read = new JsonObject();
+        var problems = new List<Problem>();
+        foreach (var (alias, value) in values)
+        {
+            if (value is null || bound.Contains(alias) || schema.Root.Fields.FirstOrDefault(f => f.Alias == alias) is not { Editor: not null })
+            {
+                read[alias] = value?.DeepClone();
+                continue;
+            }
+
+            try
+            {
+                read[alias] = await editors.FromEditorValueAsync(subtype, alias, value.DeepClone(), cancellationToken);
+            }
+            catch (AbilityInputException ex)
+            {
+                problems.AddRange(ex.Problems);
+            }
+        }
+
+        return problems.Count > 0 ? throw new AbilityInputException("Some values could not be read.", problems) : read;
+    }
+
+    private static string? Text(JsonObject chosen, string name)
+        => chosen[name] is JsonValue value && value.GetValueKind() == JsonValueKind.String && value.GetValue<string>() is { Length: > 0 } text ? text : null;
+
+    // The choices as JSON Schema's labelled list: each value a const, with its name as the title.
+    private static void OneOf(JsonObject properties, string name, IReadOnlyList<AbilityChoice> choices)
+    {
+        if (properties[name] is not JsonObject property || choices.Count == 0)
+        {
+            return;
+        }
+
+        property["oneOf"] = new JsonArray(choices.Select(c => (JsonNode?)new JsonObject { ["const"] = c.Value, ["title"] = c.Name }).ToArray());
     }
 }
 

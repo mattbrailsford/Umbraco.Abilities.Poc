@@ -546,6 +546,23 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
       unshaped, such as a building block in Automate still asking for `changeSetId`. So "keep" cancels a drop as it
       happens, and the filters after it still run.
 
+    One Create and one Update per entity type (phase 4) showed:
+    - **A split is a fact the ability states, and a filter any consumer can apply.** `entity.create` says it can be
+      split by `entityType`; a form consumer applies `split-by-choice` and lists "Create Document" and "Create
+      Discount". A model consumer doesn't, and keeps one `entity_create`. The filter knows no entity: the ability lists
+      the values.
+    - **An input that depends on a choice must be resolved when asked, not when listed.** A page type added a minute
+      ago must be pickable. So the choices and the fields come from the ability each time a form asks
+      (`ResolveInputSchemaAsync`), shaped by the same consumer's result filters, so hints still fit the reader.
+    - **Editor values are the ability's to read.** A form sends what each editor gives (a picker's list, a dropdown's
+      list of one). The entity abilities read their fields through the adapter, as `EntityAction` did. Only the form's
+      own shapes (a picked key, a dropdown's choice, an empty value) stay in Automate's action.
+    - **A consumer's own filter beats special cases in its adapter.** Automate needs an editor named on every field,
+      including fields resolved later. One result filter on its own consumer does both, so the form and the fields
+      editor read the same keyword.
+    - **The deleted code was the per-type code.** `EntityAction` (300 lines) built forms and called `entity.create` and
+      `entity.setValue` itself. Now a Create step is one call to `entity.create`, the same as a model's.
+
 36. **A description is for every reader; a hint is for one.** Today's descriptions were written for models: "call
     `entity.getSchema` first", "from the field's `x-item-types`". A person reading an Automate form got that too.
     Splitting each into a description and a hint keyed by audience (`model` or `person`) fixed it. Building it showed:
@@ -1122,7 +1139,7 @@ models. Proven by tests against real Umbraco and Automate (`AbilityActionTests`)
 
 | Question | Shown? |
 | --- | --- |
-| Each page type is a Create and an Update action, with that type's fields and editors | Yes |
+| Each entity type is a Create and an Update action, the page type picked in the form, its fields drawn by the fields editor | Yes. Tested on the server, and tried on the demo site (18-11-2026): the dropdown listed the page types by name with "Article Controls" left out, and picking Article drew its fields with Umbraco's editors (text box, date picker, content pickers). The fields editor is a FUDGE |
 | A value from Umbraco's own editor (the tree picker) is read as the field's value | Yes, for the tree picker. Other editors whose value differs (media picker, rich text) aren't tried |
 | A missing mandatory value fails the step with the field's path, and nothing is saved | Yes |
 | Umbraco's property editors work inside Automate's settings form | **Yes, for the simple ones.** On the demo site (Clean starter kit, 18-11-2026), "Create Article" showed the text box, text area, date picker, content picker (limited to the Authors page by its data type), media picker, tags and toggles, each with its data type's settings and defaults. Picking an author worked. Rich text and block editors aren't in a form yet |
@@ -1130,9 +1147,9 @@ models. Proven by tests against real Umbraco and Automate (`AbilityActionTests`)
 | Descriptions read well to a person | No. They're written for models. The parent says "to move an existing one, use entity.move"; a field the adapter has no handler for says "a value in the 'Umbraco.ElementPicker' editor's own format"; Delete entity says "in the active change set", which a person never sees |
 | One broken action leaves the rest usable | **No.** Automate reads every action's output schema as an object. One "any value" schema (Delete and Move entity had one) made its action list fail, so the editor showed no actions at all. Fixed: only object schemas are given, with a test |
 | Our actions don't overlap Automate's own | No. Automate already has Create, Find, Get, Move and Publish Content. "Create Article" sits beside "Create Content". Which one an author should pick, and whether Automate's should be built from the abilities instead, is open |
-| Only types a person creates are listed | No. Every document type is, so the Clean starter kit also gets actions such as "Create Article Controls" |
-| The action list stays usable on a large site | Unknown. Two actions per page type and media type: about 20 on the Clean starter kit, 100 or more on big sites |
-| A page type added later shows up | Unknown. Automate builds its action list once. In the tests it was built after the types were made |
+| Only types a person creates are listed | Yes. A type allowed neither at the root nor under any type, such as "Article Controls", isn't offered to create, and `entity.create` refuses it |
+| The action list stays usable on a large site | Yes. Two actions per entity type that can be created, however many page types there are |
+| A page type added later shows up | Yes. The form is built each time Automate asks for it, with the page types there are then |
 | Pages are published | No. Create and Update save a draft. Publishing isn't an ability yet |
 | Update can clear a value | No. Empty means "keep it" |
 
@@ -1152,10 +1169,9 @@ marked `FUDGE` in the code. None needs a change to Automate's data or its editor
 | 3 | An `AbilitySettings` class holds the input as JSON, only so the action has a settings type | Automate resolves a step's settings, and passes them to the action, only when `SettingsType` is set | Pass the settings dictionary (or JSON) when an action has no settings type |
 | 4 | The action resolves `${ … }` bindings itself, with Automate's public `BindingEvaluator`, keeping a whole binding's type | Automate's resolver is internal, and only resolves string properties marked `SupportsBindings` on a C# settings class | Resolve bindings in dictionary or JSON settings, and keep a value's type when the setting is one whole binding |
 | 5 | The form says its type is `AbilitySettings` and each field's property type is `JsonNode` | `EditableModelSchema` and its fields describe C# properties; the form came from JSON Schema, so there are none | Let a form be built from data alone, or from JSON Schema directly |
-| 6 | `entity.create`'s `fields` is a JSON code editor | Automate has dynamic output schemas and outcomes, but not dynamic settings, and those fields change with the entity type picked | Dynamic settings forms (`GetSettingsSchemaAsync(settings)`), as output schemas already are |
+| 6 | A Create or Update step's `fields` are drawn by a custom editor, `Umb.Abilities.PropertyEditorUi.DependentInput`, that watches the page type in the same form, asks the Management API for that type's fields, and draws each with its editor | Automate has dynamic output schemas and outcomes, but not dynamic settings, and those fields change with the page type picked | Dynamic settings forms (`GetSettingsSchemaAsync(settings)`), as output schemas already are |
 
-With 1 to 5 changed, the loader is one class per ability, one per entity action, and a registration line, with no
-workaround. 6 is what an
+With 1 to 5 changed, the loader is one class for every ability and a registration line, with no workaround. 6 is what an
 editor gains: a form that changes with the entity type, as Run AI Agent's output changes with its agent.
 
 ## Checked against the existing MCP servers

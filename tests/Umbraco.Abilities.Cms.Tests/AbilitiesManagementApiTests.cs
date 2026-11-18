@@ -77,6 +77,33 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
     }
 
     [Test]
+    public async Task A_form_gets_a_tools_input_with_the_fields_of_the_page_type_chosen()
+    {
+        await SignInAsEditorAsync();
+
+        async Task<(HttpStatusCode Status, string Body)> InputSchemaAsync(string tool, string chosen, string consumer)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, GetManagementApiUrl<AbilitiesController>(x => x.InputSchema(tool, null, CancellationToken.None)))
+            {
+                Content = new StringContent(chosen, System.Text.Encoding.UTF8, "application/json"),
+            };
+            request.Headers.Add(AbilitiesController.ConsumerHeader, consumer);
+            using var response = await Client.SendAsync(request);
+            return (response.StatusCode, await response.Content.ReadAsStringAsync());
+        }
+
+        // A form consumer has one Create per entity type: the page type is chosen, and the fields follow it.
+        var (status, body) = await InputSchemaAsync("entity.create:document", """{ "subtype": "article" }""", FormConsumer.Alias);
+        Assert.That(status, Is.EqualTo(HttpStatusCode.OK), body);
+        var fields = JsonDocument.Parse(body).RootElement.GetProperty("properties").GetProperty("fields");
+        Assert.That(fields.GetProperty("properties").TryGetProperty("title", out _), Is.True, body);
+        Assert.That(fields.GetProperty("required").EnumerateArray().Select(r => r.GetString()), Does.Contain("title"));
+
+        // A model has one entity.create for every type, so the MCP server has no such tool.
+        Assert.That((await InputSchemaAsync("entity.create:document", "{}", AbilitiesController.McpConsumer)).Status, Is.EqualTo(HttpStatusCode.NotFound));
+    }
+
+    [Test]
     public async Task The_consumer_named_in_a_header_decides_the_list_and_a_cache_keeps_one_per_consumer()
     {
         await SignInAsEditorAsync();

@@ -169,13 +169,52 @@ public sealed class ChangeSetPerCallFilter : IAbilityFilter
     }
 }
 
+/// <summary>
+/// Splits an ability by the argument it names (<see cref="AbilityInputFacts.SplitBy"/>): one tool per value, with the
+/// value fixed, such as "Create Document" and "Create Discount" in place of one "Create entity". For a person picking from
+/// a list. A model keeps one tool and passes the value. The values are the ability's (<see cref="IDynamicInputAbility"/>),
+/// asked for each time the list is made.
+/// </summary>
+public sealed class SplitByChoiceFilter : IAbilityFilter
+{
+    public string Alias => "split-by-choice";
+
+    public string Description => "Makes one tool per value of the argument an ability splits by, such as one Create per entity type.";
+
+    public IEnumerable<AbilityTool> Apply(AbilityTool tool, AbilityFilterContext context)
+    {
+        if (tool.Descriptor.Input.SplitBy is not { } argument || tool.Ability is not IDynamicInputAbility dynamic || tool.FixedArguments.ContainsKey(argument))
+        {
+            yield return tool;
+            yield break;
+        }
+
+        // Filters are synchronous: a list is made at once. The values are cheap to list (registered types).
+        var choices = dynamic.GetChoicesAsync(argument, [], CancellationToken.None).GetAwaiter().GetResult();
+        if (choices.Count == 0)
+        {
+            yield return tool.Drop($"It splits by {argument}, and there is no {argument} to choose.");
+            yield break;
+        }
+
+        foreach (var choice in choices)
+        {
+            yield return tool.WithFixedArgument(argument, JsonSerializer.SerializeToElement(choice.Value)).Note($"One of the tools split by {argument}: {choice.Value}.") with
+            {
+                Id = $"{tool.Id}:{choice.Value}",
+                Title = tool.Descriptor.Input.SplitTitle is { } title ? string.Format(System.Globalization.CultureInfo.InvariantCulture, title, choice.Name) : $"{tool.Title}: {choice.Name}",
+            };
+        }
+    }
+}
+
 /// <summary>The framework's filters and policies.</summary>
 public static class FrameworkFilters
 {
     /// <summary>For a consumer whose reader is a model, in a conversation: its hints, no form keywords, and a change set argument.</summary>
     public const string ForModels = "for-models";
 
-    /// <summary>For a consumer whose reader fills in a form, one call at a time: its hints, whole operations, each its own change set.</summary>
+    /// <summary>For a consumer whose reader fills in a form, one call at a time: its hints, whole operations, each its own change set, split into one tool per choice.</summary>
     public const string ForForms = "for-forms";
 
     /// <summary>
@@ -194,11 +233,11 @@ public static class FrameworkFilters
 
         IAbilityFilter strip = new StripFormKeywordsFilter(formKeywords), argument = new AddChangeSetArgumentFilter();
         IAbilityFilter blocks = new HideBuildingBlocksFilter(), explain = new HideExplainFilter(), perCall = new ChangeSetPerCallFilter();
-        IAbilityFilter hints = new ApplyHintsFilter();
-        filters.Add(hints).Add(strip).Add(argument).Add(blocks).Add(explain).Add(perCall);
+        IAbilityFilter hints = new ApplyHintsFilter(), split = new SplitByChoiceFilter();
+        filters.Add(hints).Add(strip).Add(argument).Add(blocks).Add(explain).Add(perCall).Add(split);
         policies
             .Add(ForModels, hints.Alias, strip.Alias, argument.Alias)
-            .Add(ForForms, hints.Alias, blocks.Alias, explain.Alias, perCall.Alias);
+            .Add(ForForms, hints.Alias, blocks.Alias, explain.Alias, perCall.Alias, split.Alias);
 
         return filters;
     }

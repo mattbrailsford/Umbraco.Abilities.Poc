@@ -1,7 +1,11 @@
 
+using System.Text.Json;
+using System.Text.Json.Nodes;
+
 using Json.Schema;
 
 using Umbraco.Abilities.ChangeSets;
+using Umbraco.Abilities.Consumers;
 using Umbraco.Automate.Core.Actions;
 using Umbraco.Automate.Core.Settings;
 
@@ -17,19 +21,30 @@ namespace Umbraco.Abilities.Automate;
 /// <see cref="ChangeSetMode.PerCall"/>). Publishing the automation is the person's consent to its steps; a Request
 /// Approval step before one asks again on every run.
 /// </para>
+/// <para>
+/// A tool split by a choice, such as "Create Document", has the choice fixed. One with a dependent input, such as the
+/// page type's fields, gets its form each time Automate asks, so a page type added later is offered; the fields are
+/// drawn by the fields editor (see <see cref="AutomateEditorsFilter.DependentInputEditor"/>).
+/// </para>
 /// </summary>
 public sealed class AbilityAction : IAction
 {
     private readonly AbilityTool _tool;
     private readonly AbilityStep _step;
+    private readonly AbilityToolProvider _tools;
+    private readonly AbilityActionOptions _options;
     private readonly EditableModelSchema _form;
     private readonly JsonSchema? _output;
 
-    public AbilityAction(AbilityTool tool, AbilityStep step, AbilityActionOptions options)
+    public AbilityAction(AbilityTool tool, AbilityStep step, AbilityToolProvider tools, AbilityActionOptions options)
     {
         _tool = tool;
         _step = step;
-        Alias = options.AliasPrefix + tool.Id;
+        _tools = tools;
+        _options = options;
+
+        // A split tool's id has the choice after a colon (entity.create:document); an alias keeps to dots.
+        Alias = options.AliasPrefix + tool.Id.Replace(':', '.');
         _form = AbilitySettingsForm.Build(tool.InputSchema, options.FormatEditors);
 
         // Only an object schema: Automate's action list reads every output schema as an object, and one that isn't, such
@@ -60,7 +75,12 @@ public sealed class AbilityAction : IAction
     // has a settings type. The ability's input is JSON, so the type is a holder for it.
     public Type? SettingsType => typeof(AbilitySettings);
 
-    public EditableModelSchema? GetSettingsSchema() => _form;
+    // A dynamic input is resolved each time: its choices (such as page types) are the site's now.
+    public EditableModelSchema? GetSettingsSchema()
+        => _tool.Ability is IDynamicInputAbility
+            && _tools.ResolveInputSchemaAsync(AbilityActionLoader.ConsumerAlias, _tool.Id, []).GetAwaiter().GetResult() is { } schema
+            ? AbilitySettingsForm.Build(schema, _options.FormatEditors)
+            : _form;
 
     public object? ResolveSettings(Dictionary<string, object?> settings) => new AbilitySettings { Values = AbilityStep.ToJson(settings) };
 
@@ -77,16 +97,80 @@ public sealed class AbilityAction : IAction
     // The runner makes, applies or discards the step's change set: the tool says how (its ChangeSetMode).
     public Task<ActionResult> ExecuteAsync(ActionContext context, CancellationToken cancellationToken)
     {
-        var input = _step.Resolve((context.Settings as AbilitySettings)?.Values ?? [], context, out _);
+        var settings = (context.Settings as AbilitySettings)?.Values ?? [];
+        var input = _step.Resolve(settings, context, out _);
         return _step.RunAsync(
             context,
             Name,
             writes: false,
             async session => StepCall.From(await _step.Runner.InvokeAsync(
-                _tool, input, session, AbilityConsent.Given, cancellationToken, AbilityStep.ChangeSetName(context))),
+                _tool, await FromFormAsync(settings, input, cancellationToken), session, AbilityConsent.Given, cancellationToken, AbilityStep.ChangeSetName(context))),
             output: null,
             cancellationToken);
     }
+
+    // The form's values as the ability takes them. A picker gives a key as a list of picked items, and a dropdown its
+    // choice as a list of one. The dependent input's
+    // values come from each field's editor: empty ones are left out (on an update they stay as they are), and the
+    // ability reads the rest. A value bound to an earlier step's output is a value already.
+    private async Task<JsonObject> FromFormAsync(JsonObject settings, JsonObject input, CancellationToken cancellationToken)
+    {
+        var properties = _tool.InputSchema.TryGetProperty("properties", out var list) ? list : default;
+        foreach (var (name, value) in input.ToList())
+        {
+            if (value is JsonArray or JsonObject && properties.ValueKind == JsonValueKind.Object && properties.TryGetProperty(name, out var property)
+                && property.TryGetProperty("format", out var format) && format.GetString() == "uuid")
+            {
+                input[name] = KeyOf(value);
+            }
+            else if (value is JsonArray { Count: 1 } one && one[0] is JsonValue text && text.GetValueKind() == JsonValueKind.String
+                && properties.ValueKind == JsonValueKind.Object && properties.TryGetProperty(name, out var choice) && IsText(choice))
+            {
+                input[name] = text.DeepClone();
+            }
+        }
+
+        if (_tool.Descriptor.Input.DependentInput is not { } dependent || _tool.Ability is not IDynamicInputAbility dynamic || input[dependent] is not JsonObject values)
+        {
+            return input;
+        }
+
+        var given = new JsonObject(values.Where(v => !IsEmpty(v.Value)).Select(v => KeyValuePair.Create(v.Key, v.Value?.DeepClone())));
+        var bound = (settings[dependent] as JsonObject ?? [])
+            .Where(v => v.Value?.ToJsonString().Contains("${", StringComparison.Ordinal) == true)
+            .Select(v => v.Key)
+            .ToHashSet(StringComparer.Ordinal);
+        var chosen = new JsonObject(input.Where(i => i.Key != dependent).Select(i => KeyValuePair.Create(i.Key, i.Value?.DeepClone())));
+        foreach (var (name, value) in _tool.FixedArguments)
+        {
+            chosen[name] = JsonNode.Parse(value.GetRawText());
+        }
+
+        input[dependent] = await dynamic.FromEditorValuesAsync(chosen, given, bound, cancellationToken);
+        return input;
+    }
+
+    // A picker may give a key as text, or as a list of one picked item.
+    private static JsonNode? KeyOf(JsonNode? value) => value switch
+    {
+        JsonArray { Count: > 0 } picked => KeyOf(picked[0]),
+        JsonArray => null,
+        JsonObject item => (item["unique"] ?? item["key"] ?? item["id"])?.DeepClone(),
+        _ => value?.DeepClone(),
+    };
+
+    // A property that takes text: "string", or a list of types with "string" in it.
+    private static bool IsText(JsonElement property)
+        => property.TryGetProperty("type", out var type)
+            && (type.ValueKind == JsonValueKind.String ? type.GetString() == "string" : type.EnumerateArray().Any(t => t.GetString() == "string"));
+
+    private static bool IsEmpty(JsonNode? value) => value switch
+    {
+        null => true,
+        JsonValue text when text.GetValueKind() == JsonValueKind.String => text.GetValue<string>().Length == 0,
+        JsonArray list => list.Count == 0,
+        _ => false,
+    };
 }
 
 /// <summary>How the loader makes abilities into Automate actions.</summary>
@@ -105,9 +189,4 @@ public sealed class AbilityActionOptions
         ["date-time"] = "Umb.PropertyEditorUi.DatePicker",
     };
 
-    /// <summary>
-    /// Whether every entity type that can be created gets a Create and an Update action per subtype, such as "Create
-    /// Article", with a form of that subtype's fields.
-    /// </summary>
-    public bool EntityActions { get; set; } = true;
 }

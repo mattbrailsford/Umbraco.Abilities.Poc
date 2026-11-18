@@ -90,10 +90,11 @@ The details and the lessons are in [docs/FINDINGS.md](docs/FINDINGS.md). The tes
   Management API endpoints and an MCP proxy that plays the Umbraco CMS MCP Dev server are built. MCP Dev itself isn't
   changed. Claude Code has used the proxy against the demo site, signed in as an API user; other MCP clients are
   not tried. The proxy asks the person before a call that can't be undone (MCP elicitation); only headless Claude
-  Code, which can't answer, is tried. Abilities are also Automate actions, against real Automate, and each page type
-  gets a Create and an Update action with its own fields and editors. An automation of two such steps runs and saves a
-  page. Not shown: that Umbraco's editors work inside Automate's form (never opened in a browser), or that a useful
-  page can be built without its blocks, which the forms leave out (see
+  Code, which can't answer, is tried. Abilities are also Automate actions, against real Automate, through the same
+  consumer filters as every other caller. Each entity type gets one Create and one Update action, and a person picks
+  the page type in the form. An automation of two such steps runs and saves a page. A fields editor (a workaround until
+  Automate's form can change with its values) draws the chosen page type's fields with Umbraco's editors, tried on the
+  demo site. Not shown: that a useful page can be built without its blocks, which the forms leave out (see
   [FINDINGS](docs/FINDINGS.md#can-a-person-build-steps-from-abilities)). It needs six workarounds in Automate, and each
   Write step applies its own change set, so a run is not one unit. A backoffice editor would use the same abilities, but isn't
   built here.
@@ -156,7 +157,7 @@ site such as the demo, through the MCP proxy, also set `UMBRACO_BASE_URL`, `UMBR
 | `Umbraco.Abilities.Samples` | Product packages: CMS pages with nested blocks, Commerce collections and discounts, a third-party rule type, an email package, Automate workflows | Contract only |
 | `Umbraco.Abilities.Cms` | The real entity adapter for CMS documents, on `IContentEditingService`, the adapter that stages content changes into a CMS draft set, and the `Umb-Change-Set` header middleware | Contract, Umbraco 18, the draft sets stand-in |
 | `Umbraco.Abilities.Commerce` | The real entity adapters for Commerce: discounts (rules and rewards from Commerce's own providers), and read-only stores and currencies | Contract, `Umbraco.Commerce.Core` |
-| `Umbraco.Abilities.ManagementApi` | Two Management API endpoints: list the abilities, and call one. For HTTP callers such as the Umbraco CMS MCP Dev server | Contract, `Umbraco.Cms.Api.Management` |
+| `Umbraco.Abilities.ManagementApi` | Management API endpoints: list a consumer's tools, call one, and resolve one's input once a choice is made. For HTTP callers such as the Umbraco CMS MCP Dev server | Contract, `Umbraco.Cms.Api.Management` |
 | `Umbraco.Cms.DraftSets` | A stand-in for a Draft Sets feature in CMS core: per-property content changes held apart from live, read-through, rebase and conflicts, apply in one scope | Umbraco 18 only: no Abilities |
 | `Umbraco.Abilities.Tests` | A scripted model calling the AI tools with JSON arguments | Contract, AI adapter, samples |
 | `Umbraco.Abilities.Commerce.Tests` | The Commerce discount adapter against a real Umbraco and Umbraco Commerce on SQLite | Contract, AI adapter, CMS and Commerce adapters, Umbraco test host, `Umbraco.Commerce` |

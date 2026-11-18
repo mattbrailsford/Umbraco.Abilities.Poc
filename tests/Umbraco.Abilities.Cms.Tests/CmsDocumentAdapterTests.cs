@@ -242,6 +242,23 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
     }
 
     [Test]
+    public async Task A_page_type_only_used_inside_others_cannot_be_created()
+    {
+        // A composition: neither allowed at the root nor under any type.
+        var controls = new ContentTypeBuilder().WithAlias("articleControls").WithName("Article Controls").Build();
+        await ContentTypeService.CreateAsync(controls, Constants.Security.SuperUserKey);
+
+        var subtypes = (await _agent.OkAsync("entity_getSchema", """{ "entityType": "document" }""")).GetProperty("subtypes").EnumerateArray()
+            .ToDictionary(s => s.GetProperty("alias").GetString()!, s => s.GetProperty("creatable").GetBoolean());
+        Assert.That((subtypes["articleControls"], subtypes["landingPage"]), Is.EqualTo((false, true)));
+
+        await _agent.StartChangeSetAsync("Controls");
+        var refused = await _agent.FailAsync("entity_create", """{ "entityType": "document", "subtype": "articleControls", "fields": { "name": "Controls" } }""");
+        Assert.That(refused.GetProperty("message").GetString(), Does.Contain("can't be created"));
+        Assert.That(refused.GetProperty("problems")[0].GetProperty("path").GetString(), Is.EqualTo("subtype"));
+    }
+
+    [Test]
     public async Task The_schema_comes_from_the_document_type_and_its_block_editors()
     {
         var subtypes = await _agent.OkAsync("entity_getSchema", """{ "entityType": "document" }""");

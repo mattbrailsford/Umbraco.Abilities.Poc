@@ -288,7 +288,7 @@ Two things surfaced in the proof of concept. Commerce Deploy defines `umbraco-co
 ### What the framework derives
 
 - `get_entity_schema`: the schema, fetched in two steps (outline and available item types, then the settings schema of the chosen types) to keep prompts small.
-- `create_entity`, `set_entity_value`, `add_entity_item`, `remove_entity_item`, `move_entity_item`: path-based edits (the path rule above), generalised from today's block path engine.
+- `create_entity` and `update_entity`: a whole entity, or some of its values, in one call. `set_entity_value`, `add_entity_item`, `remove_entity_item`, `move_entity_item`: path-based edits (the path rule above), generalised from today's block path engine.
 - `validate_entity` and `find_entity` (name to key).
 
 All of them are ordinary abilities, so they reach every surface the way any ability does. CMS documents, media and elements become the first entity adapters, and today's content tools sit on top of them.
@@ -323,6 +323,29 @@ Two things follow:
 
 - **One review across products.** A campaign of new landing pages, a discount and an automation is one set, reviewed together and applied product by product.
 - **Approval moves to apply.** Recording into a set is always safe. Only applying the set is a Write that needs approval. The site enforces it per call: a live call that can't be undone runs only with the person's consent, which each surface asks for its own way.
+
+## Consumers: who is offered what
+
+The three layers say what can be done. A fourth part says who is offered it, and in what shape. Built and tested; the
+full design is in [CONSUMERS.md](CONSUMERS.md).
+
+| Piece | What it is |
+| --- | --- |
+| Consumer | One way abilities are used: an AI chat, an MCP server, Automate. It states its reader (`model` or `person`), what it can do (keep a conversation, ask for consent) and the filters it applies |
+| Filter | A named step that keeps, changes, drops or splits a tool. A package adds its own, to its own consumer or to another's |
+| Policy | A named group of filters. The base policy runs for every consumer and protects against harm; `for-models` and `for-forms` tidy |
+| Tool | One ability as one consumer is offered it: a shape only. `AbilityToolRunner` runs it |
+
+What an ability states, and filters read:
+
+- Facts: its kind, whether it can be undone, whether it is a building block (`Granular`), whether it manages change
+  sets.
+- Text: a description for every reader, and hints for one audience (`[Hint]`, written as `x-hints`).
+- Input: an argument it can be split by (`SplitBy`), and an input that depends on other choices (`DependentInput`),
+  such as `entity.create`'s fields, which depend on the entity type and the page type.
+
+So a model gets one `entity_create` and reads schemas, while Automate lists "Create Document" and "Create Discount",
+with a page type picker and a form of that type's fields. No ability names a consumer; no consumer names a product.
 
 ## Applying across products
 

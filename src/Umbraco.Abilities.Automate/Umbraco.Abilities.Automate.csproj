@@ -1,9 +1,15 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk.Razor">
   <!--
     The ability loader for Umbraco Automate: every ability becomes an Automate action, with a settings form and an
     output schema made from its JSON Schema. A stand-in for code that would live in Automate itself, which would take a
     dependency on Umbraco.Abilities. Abilities name no Automate type.
+
+    The Razor SDK serves wwwroot: App_Plugins/UmbracoAbilities holds the fields editor (a FUDGE, see
+    AutomateEditorsFilter), which the backoffice finds by its umbraco-package.json.
   -->
+  <PropertyGroup>
+    <StaticWebAssetBasePath>/</StaticWebAssetBasePath>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Umbraco.Abilities/Umbraco.Abilities.csproj" />
     <PackageReference Include="Umbraco.Automate.Core" />

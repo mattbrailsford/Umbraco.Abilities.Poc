@@ -103,7 +103,12 @@ public interface IEditorValueEntityAdapter : IEntityAdapter
     Task<System.Text.Json.Nodes.JsonNode?> FromEditorValueAsync(string? subtype, string field, System.Text.Json.Nodes.JsonNode editorValue, CancellationToken cancellationToken = default);
 }
 
-public sealed record EntitySubtype(string Alias, string Name);
+/// <summary>A subtype of an entity type, such as a document type.</summary>
+/// <param name="Creatable">
+/// False for a subtype only used inside others, such as a composition document type, allowed neither at the root nor
+/// under any type. It can't be created, and isn't offered to create.
+/// </param>
+public sealed record EntitySubtype(string Alias, string Name, bool Creatable = true);
 
 public sealed class EntityAdapterRegistry
 {

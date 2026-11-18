@@ -45,8 +45,8 @@ dotnet test
 | `src/Umbraco.Abilities.Samples` | In-memory stand-ins for product packages: CMS, Commerce, Automate, email, a third-party rule |
 | `src/Umbraco.Abilities.Cms` | The real entity adapter for CMS documents, on `IContentEditingService`, plus the draft set adapter |
 | `src/Umbraco.Abilities.Commerce` | The real entity adapters for Umbraco Commerce: discounts, and read-only stores and currencies |
-| `src/Umbraco.Abilities.Automate` | Loads abilities as Umbraco Automate actions, and a Create and Update action per entity subtype, with forms from their schemas and a change set per step. Workarounds are marked `FUDGE` |
-| `src/Umbraco.Abilities.ManagementApi` | Two Management API endpoints: list the abilities, and call one. For HTTP callers such as MCP Dev |
+| `src/Umbraco.Abilities.Automate` | Loads the Automate consumer's tools as Umbraco Automate actions, with forms from their schemas, one Create and Update per entity type, and a fields editor (`wwwroot/App_Plugins`). Workarounds are marked `FUDGE` |
+| `src/Umbraco.Abilities.ManagementApi` | Management API endpoints: list a consumer's tools, call one, and resolve one's input once a choice is made. For HTTP callers such as MCP Dev |
 | `src/Umbraco.Cms.DraftSets` | A stand-in for a Draft Sets feature in CMS core |
 | `tests/Umbraco.Abilities.Tests` | A scripted model (`ScriptedAgent`) calling the AI tools with JSON |
 | `tests/Umbraco.Abilities.Cms.Tests` | The same, against a real Umbraco, and the Management API endpoints over HTTP on Umbraco's test server |

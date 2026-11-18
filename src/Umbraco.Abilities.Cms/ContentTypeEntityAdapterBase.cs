@@ -203,8 +203,16 @@ public abstract class ContentTypeEntityAdapterBase<TType>(CmsContentSchemas sche
 
     // ── Types and schema ────────────────────────────────────────────────────────────────────
 
+    // A type can be created when it is allowed at the root, or under some type. One that is neither, such as a
+    // composition ("Article Controls"), is only used inside others.
     public Task<IReadOnlyList<EntitySubtype>> GetSubtypesAsync(CancellationToken cancellationToken = default)
-        => Task.FromResult<IReadOnlyList<EntitySubtype>>(ListTypes().Select(t => new EntitySubtype(t.Alias, t.Name ?? t.Alias)).ToList());
+    {
+        var types = ListTypes().ToList();
+        var allowedUnder = types.SelectMany(t => t.AllowedContentTypes ?? []).Select(t => t.Key).ToHashSet();
+        return Task.FromResult<IReadOnlyList<EntitySubtype>>(types
+            .Select(t => new EntitySubtype(t.Alias, t.Name ?? t.Alias, Creatable: t.AllowedAsRoot || allowedUnder.Contains(t.Key)))
+            .ToList());
+    }
 
     public async Task<EntitySchema> GetSchemaAsync(string? subtype, CancellationToken cancellationToken = default)
     {

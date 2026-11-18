@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Umbraco.Abilities.Consumers;
 
@@ -74,6 +75,51 @@ public sealed class AbilityToolProvider(
     /// A result of one of the consumer's tools, shaped by the same filters that shaped the tool (a result can hold a
     /// schema), so its reader gets what the tool's schemas promised.
     /// </summary>
+    /// <summary>
+    /// A tool's input schema once some arguments are chosen, such as the page type, for a form that shows what
+    /// depends on them. The ability resolves its own input (<see cref="IDynamicInputAbility"/>); the tool's fixed arguments
+    /// count as chosen. Each property the tool offers is replaced by its resolved schema, shaped by the consumer's
+    /// result filters, so a person reads person hints. Null when the consumer doesn't offer the tool.
+    /// </summary>
+    public async Task<JsonElement?> ResolveInputSchemaAsync(string consumerAlias, string toolId, JsonObject chosen, CancellationToken cancellationToken = default)
+    {
+        if (FindTool(consumerAlias, toolId) is not { } tool)
+        {
+            return null;
+        }
+
+        if (tool.Ability is not IDynamicInputAbility dynamic)
+        {
+            return tool.InputSchema;
+        }
+
+        var all = (JsonObject)chosen.DeepClone();
+        foreach (var (name, value) in tool.FixedArguments)
+        {
+            all[name] = JsonNode.Parse(value.GetRawText());
+        }
+
+        var resolved = JsonNode.Parse((await dynamic.ResolveInputSchemaAsync(all, cancellationToken)).GetRawText())!["properties"]!.AsObject();
+        var schema = JsonNode.Parse(tool.InputSchema.GetRawText())!.AsObject();
+        if (schema["properties"] is JsonObject properties)
+        {
+            foreach (var (name, _) in properties.ToList())
+            {
+                if (resolved[name] is { } property)
+                {
+                    properties[name] = property.DeepClone();
+                }
+                else if (tool.Ability.Descriptor.Input.DependsOn.Contains(name) || name == tool.Ability.Descriptor.Input.DependentInput)
+                {
+                    // Gone once resolved: nothing to choose, such as the subtype of an entity type that has none.
+                    properties.Remove(name);
+                }
+            }
+        }
+
+        return ShapeResult(consumerAlias, tool, JsonSerializer.SerializeToElement(schema));
+    }
+
     public JsonElement ShapeResult(string consumerAlias, AbilityTool tool, JsonElement result)
     {
         var consumer = Consumer(consumerAlias);

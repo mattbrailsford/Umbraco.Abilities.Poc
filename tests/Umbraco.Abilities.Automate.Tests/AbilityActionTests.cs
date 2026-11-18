@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using NUnit.Framework;
 
 using Umbraco.Abilities.Cms;
+using Umbraco.Abilities.Consumers;
 using Umbraco.Automate.Extensions;
 using Umbraco.Automate.Core.Actions;
 using Umbraco.Automate.Core.Automations;
@@ -40,6 +41,8 @@ namespace Umbraco.Abilities.Automate.Tests;
 public sealed class AbilityActionTests : UmbracoIntegrationTest
 {
     private ActionCollection Actions => GetRequiredService<ActionCollection>();
+
+    private AbilityToolProvider Tools => GetRequiredService<AbilityToolProvider>();
 
     private IContentService ContentService => GetRequiredService<IContentService>();
 
@@ -180,57 +183,93 @@ public sealed class AbilityActionTests : UmbracoIntegrationTest
     }
 
     [Test]
-    public void Each_page_type_gets_a_Create_and_an_Update_action_grouped_under_its_entity_type()
+    public void Automate_lists_one_Create_and_one_Update_per_entity_type_and_the_page_type_is_picked_in_the_form()
     {
-        var create = Actions.GetByAlias("abilities.document.create.article");
-        var update = Actions.GetByAlias("abilities.document.update.article");
+        var create = Actions.GetByAlias("abilities.entity.create.document");
+        var update = Actions.GetByAlias("abilities.entity.update.document");
 
         Assert.That(create, Is.Not.Null, string.Join(", ", Actions.Select(a => a.Alias)));
         Assert.That(update, Is.Not.Null);
+        var form = create!.GetSettingsSchema()!.Fields.ToDictionary(f => f.Key);
         Assert.Multiple(() =>
         {
-            Assert.That(create!.Name, Is.EqualTo("Create Article"));
-            Assert.That(update!.Name, Is.EqualTo("Update Article"));
-            Assert.That(create.Group, Is.EqualTo(update.Group));
+            Assert.That((create.Name, update!.Name), Is.EqualTo(("Create Document", "Update Document")));
+            Assert.That(Actions.Select(a => a.Alias), Has.None.Contains(".article"), "no action per page type");
+            Assert.That(form.Keys, Does.Not.Contain("entityType"), "fixed by the action");
+            Assert.That(form["subtype"].EditorUiAlias, Is.EqualTo("Umb.PropertyEditorUi.Dropdown"));
+            Assert.That(form["subtype"].EditorConfig, Does.Contain("\"article\"").And.Contain("\"Article\""));
+            Assert.That(form["fields"].EditorUiAlias, Is.EqualTo(AutomateEditorsFilter.DependentInputEditor));
         });
     }
 
     [Test]
-    public void A_Create_form_is_the_page_types_own_fields_with_Umbracos_editors_and_their_configuration()
+    public async Task Choosing_a_page_type_gives_a_form_of_its_fields_with_their_editors()
     {
-        var fields = Actions.GetByAlias("abilities.document.create.article")!.GetSettingsSchema()!.Fields.ToDictionary(f => f.Key);
+        // What the fields editor asks for once a page type is picked.
+        var schema = (await Tools.ResolveInputSchemaAsync("automate", "entity.create:document", new JsonObject { ["subtype"] = "article" }))!.Value;
+        var fields = schema.GetProperty("properties").GetProperty("fields");
+        var properties = fields.GetProperty("properties");
 
-        Assert.That(fields.Keys, Is.EquivalentTo(new[] { "name", "parent", "title", "writer" }));
+        Assert.That(properties.EnumerateObject().Select(p => p.Name), Is.EquivalentTo(new[] { "name", "parent", "title", "writer" }));
         Assert.Multiple(() =>
         {
-            Assert.That(fields["name"].IsRequired && fields["title"].IsRequired, Is.True);
-            Assert.That(fields["writer"].IsRequired, Is.False);
-            Assert.That(fields["title"].Label, Is.EqualTo("Title"));
+            Assert.That(fields.GetProperty("required").EnumerateArray().Select(r => r.GetString()), Is.EquivalentTo(new[] { "name", "title" }));
 
             // Each property shows its data type's editor, configured as the data type is, as the backoffice does.
-            Assert.That(fields["title"].EditorUiAlias, Is.EqualTo("Umb.PropertyEditorUi.TextBox"));
-            Assert.That(fields["writer"].EditorUiAlias, Is.EqualTo("Umb.PropertyEditorUi.ContentPicker"));
-            Assert.That(fields["writer"].EditorConfig, Does.Contain("startNode").And.Contain("maxNumber"));
+            Assert.That(EditorOf(properties, "title"), Is.EqualTo("Umb.PropertyEditorUi.TextBox"));
+            Assert.That(EditorOf(properties, "writer"), Is.EqualTo("Umb.PropertyEditorUi.ContentPicker"));
+            Assert.That(properties.GetProperty("writer").GetProperty("x-editor").GetProperty("config").GetRawText(), Does.Contain("startNode").And.Contain("maxNumber"));
 
             // The parent isn't a property, so it gets a picker from its reference.
-            Assert.That(fields["parent"].EditorUiAlias, Is.EqualTo("Umb.PropertyEditorUi.DocumentPicker"));
+            Assert.That(EditorOf(properties, "parent"), Is.EqualTo("Umb.PropertyEditorUi.DocumentPicker"));
         });
+
+        static string? EditorOf(JsonElement properties, string field)
+            => properties.GetProperty(field).GetProperty("x-editor").GetProperty("alias").GetString();
     }
 
     [Test]
-    public void An_Update_form_picks_the_page_and_asks_for_no_value()
+    public async Task A_page_type_added_later_can_be_chosen_without_a_restart()
     {
-        var fields = Actions.GetByAlias("abilities.document.update.article")!.GetSettingsSchema()!.Fields.ToList();
+        var create = Actions.GetByAlias("abilities.entity.create.document")!;
+        Assert.That(create.GetSettingsSchema()!.Fields.Single(f => f.Key == "subtype").EditorConfig, Does.Not.Contain("\"event\""));
 
-        Assert.That(fields[0].Key, Is.EqualTo("key"));
-        Assert.That(fields[0].IsRequired, Is.True);
-        Assert.That(fields.Skip(1).Where(f => f.IsRequired), Is.Empty, "a value left empty stays as it is");
+        var added = new ContentTypeBuilder().WithAlias("event").WithName("Event").WithContentVariation(ContentVariation.Nothing).Build();
+        added.AllowedAsRoot = true;
+        await GetRequiredService<IContentTypeService>().CreateAsync(added, Constants.Security.SuperUserKey);
+
+        Assert.That(create.GetSettingsSchema()!.Fields.Single(f => f.Key == "subtype").EditorConfig, Does.Contain("\"event\""));
+    }
+
+    [Test]
+    public async Task A_composition_page_type_cannot_be_chosen_to_create()
+    {
+        var controls = new ContentTypeBuilder().WithAlias("articleControls").WithName("Article Controls").WithContentVariation(ContentVariation.Nothing).Build();
+        await GetRequiredService<IContentTypeService>().CreateAsync(controls, Constants.Security.SuperUserKey);
+
+        var pick = Actions.GetByAlias("abilities.entity.create.document")!.GetSettingsSchema()!.Fields.Single(f => f.Key == "subtype").EditorConfig;
+        Assert.That(pick, Does.Contain("\"article\"").And.Not.Contain("articleControls"));
+    }
+
+    [Test]
+    public async Task An_Update_form_picks_the_page_and_asks_for_no_value()
+    {
+        var form = Actions.GetByAlias("abilities.entity.update.document")!.GetSettingsSchema()!.Fields.ToDictionary(f => f.Key);
+        var schema = (await Tools.ResolveInputSchemaAsync("automate", "entity.update:document", new JsonObject { ["subtype"] = "article" }))!.Value;
+        var fields = schema.GetProperty("properties").GetProperty("fields");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(form["key"].EditorUiAlias, Is.EqualTo("Umb.PropertyEditorUi.DocumentPicker"));
+            Assert.That(fields.GetProperty("required").GetArrayLength(), Is.Zero, "a value left empty stays as it is");
+            Assert.That(fields.GetProperty("properties").GetProperty("title").GetProperty("description").GetString(), Does.EndWith("Leave it empty to keep it as it is."));
+        });
     }
 
     [Test]
     public void A_Create_action_returns_a_typed_summary_a_later_step_can_bind_to()
     {
-        var output = JsonSerializer.SerializeToElement(Actions.GetByAlias("abilities.document.create.article")!.GetOutputSchema());
+        var output = JsonSerializer.SerializeToElement(Actions.GetByAlias("abilities.entity.create.document")!.GetOutputSchema());
 
         var properties = output.GetProperty("properties");
         Assert.That(properties.TryGetProperty("key", out _) && properties.TryGetProperty("name", out _), Is.True, output.ToString());
@@ -258,15 +297,16 @@ public sealed class AbilityActionTests : UmbracoIntegrationTest
             ServiceAccountKey = serviceAccount.Key,
         });
 
-        // Step one creates an article. Its writer is as Umbraco's tree picker gives it, so the adapter reads it. Step
-        // two binds to the new page's key and sets only its title: the writer stays.
+        // Step one creates an article. Its page type is as Umbraco's dropdown gives it, and its writer as Umbraco's tree
+        // picker gives it, so the adapter reads it. Step two binds to the new page's key and sets only its title: the
+        // writer, left empty, stays.
         var create = new StepConfiguration
         {
             Id = Guid.NewGuid(),
             Alias = "create",
             Name = "Create the article",
-            ActionAlias = "abilities.document.create.article",
-            Settings = Settings($$"""{ "name": "From Automate", "title": "First title", "writer": [{ "type": "document", "unique": "{{_ann}}" }] }"""),
+            ActionAlias = "abilities.entity.create.document",
+            Settings = Settings($$"""{ "subtype": ["article"], "fields": { "name": "From Automate", "title": "First title", "writer": [{ "type": "document", "unique": "{{_ann}}" }] } }"""),
             MaxRetries = 0,
         };
         var retitle = new StepConfiguration
@@ -274,8 +314,8 @@ public sealed class AbilityActionTests : UmbracoIntegrationTest
             Id = Guid.NewGuid(),
             Alias = "retitle",
             Name = "Retitle it",
-            ActionAlias = "abilities.document.update.article",
-            Settings = Settings("""{ "key": "${ steps.create.key }", "title": "Set by the second step", "writer": [] }"""),
+            ActionAlias = "abilities.entity.update.document",
+            Settings = Settings("""{ "key": "${ steps.create.key }", "subtype": "article", "fields": { "title": "Set by the second step", "writer": [] } }"""),
             MaxRetries = 0,
         };
 
@@ -333,8 +373,8 @@ public sealed class AbilityActionTests : UmbracoIntegrationTest
             Id = Guid.NewGuid(),
             Alias = "create",
             Name = "Create the article",
-            ActionAlias = "abilities.document.create.article",
-            Settings = Settings("""{ "name": "No title" }"""),
+            ActionAlias = "abilities.entity.create.document",
+            Settings = Settings("""{ "subtype": "article", "fields": { "name": "No title" } }"""),
             MaxRetries = 0,
         };
         var automations = GetRequiredService<IAutomationService>();
