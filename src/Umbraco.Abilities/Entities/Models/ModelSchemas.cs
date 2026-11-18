@@ -121,7 +121,7 @@ public static class ModelSchemas
                     : throw new InvalidOperationException($"{type.Name}.{property.Name}: a value handler goes on an object property, whose fields it adds behaviour to.");
             }
 
-            field = field with { Editor = config.Editor, Meta = config.Meta };
+            field = field with { Editor = config.Editor, Meta = config.Meta, Hints = config.Hints };
             fields.Add(new FieldMember(property, field, varying, valueType, config.Rules) { ItemClasses = itemClasses });
             if (config.IsName)
             {
@@ -167,6 +167,7 @@ public static class ModelSchemas
             Editor = UiHints.EditorOf(property),
             Format = ValueFormats.OfMember(property),
             Meta = UiHints.MetaOf(property),
+            Hints = UiHints.HintsOf(property),
         };
 
         if (property.GetCustomAttribute<ItemsAttribute>() is { } items)
@@ -245,6 +246,9 @@ public static class ModelSchemas
             Editor = fluent.Editor ?? attributes.Editor,
             Format = fluent.Format ?? attributes.Format,
             Meta = Combine(attributes.Meta, fluent.Meta),
+            Hints = fluent.Hints is null ? attributes.Hints
+                : attributes.Hints is null ? fluent.Hints
+                : fluent.Hints.Aggregate(attributes.Hints, (all, hint) => UiHints.WithHint(all, hint.Key, hint.Value)),
         };
         merged.Rules.AddRange(attributes.Rules.Concat(fluent.Rules));
         return merged;

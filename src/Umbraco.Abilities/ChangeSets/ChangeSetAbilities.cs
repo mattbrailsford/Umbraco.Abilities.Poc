@@ -1,5 +1,6 @@
 using System.ComponentModel;
 
+using Umbraco.Abilities.Consumers;
 using Umbraco.Abilities.Entities;
 
 namespace Umbraco.Abilities.ChangeSets;
@@ -10,7 +11,8 @@ public sealed record CreateChangeSetInput([property: Description("A name a perso
 public sealed record ChangeSetCreated(Guid ChangeSetId, string Name);
 
 [Ability("changeSet.create", "Create change set", Kind = AbilityKind.Write, Reversible = true, UsesChangeSet = false,
-    Description = "Starts a change set: later edits are recorded in it, not saved, until a person applies it. While it is the only change set open in this conversation, calls use it without naming it. With two or more open, every call must name one with changeSetId.")]
+    Description = "Starts a change set: later edits are recorded in it, not saved, until a person applies it.")]
+[Hint(AbilityAudiences.Model, "While it is the only change set open in this conversation, calls use it without naming it. With two or more open, every call must name one with changeSetId.")]
 public sealed class CreateChangeSetAbility(ChangeSetService changeSets) : AbilityBase<CreateChangeSetInput, object>, IChangeSetLifecycleAbility
 {
     protected override Task<AbilityResult> ExecuteAsync(CreateChangeSetInput input, AbilityContext context, CancellationToken cancellationToken)
@@ -21,7 +23,8 @@ public sealed class CreateChangeSetAbility(ChangeSetService changeSets) : Abilit
 }
 
 [Ability("changeSet.validate", "Validate change set", Kind = AbilityKind.Read,
-    Description = "Checks every entity in the set. Returns problems by path; fix them with the entity edit abilities.")]
+    Description = "Checks every entity in the set.")]
+[Hint(AbilityAudiences.Model, "Returns problems by path; fix them with the entity edit abilities.")]
 public sealed class ValidateChangeSetAbility(ChangeSetService changeSets) : AbilityBase<object>, IChangeSetLifecycleAbility
 {
     protected override async Task<AbilityResult> ExecuteAsync(AbilityContext context, CancellationToken cancellationToken)
@@ -32,7 +35,8 @@ public sealed class ValidateChangeSetAbility(ChangeSetService changeSets) : Abil
 }
 
 [Ability("changeSet.summarize", "Summarize change set", Kind = AbilityKind.Read,
-    Description = "Lists what applying the set would create, update and run. Show it to the person before they apply.")]
+    Description = "Lists what applying the set would create, update and run.")]
+[Hint(AbilityAudiences.Model, "Show it to the person before they apply.")]
 public sealed class SummarizeChangeSetAbility(ChangeSetService changeSets) : AbilityBase<ChangeSetSummary>, IChangeSetLifecycleAbility
 {
     protected override async Task<AbilityResult> ExecuteAsync(AbilityContext context, CancellationToken cancellationToken)
@@ -62,13 +66,14 @@ public sealed class DiscardChangeSetAbility(ChangeSetService changeSets) : Abili
 public sealed record ResolveConflictInput(
     [property: Description("Entity type of the conflicting entity.")] string EntityType,
     [property: Description("Entity key.")] Guid Key,
-    [property: Description("The conflict's path, as listed by changeSet.validate or changeSet.summarize.")] string Path,
+    [property: Description("The conflict's path.")]
+    [property: Hint(AbilityAudiences.Model, "As listed by changeSet.validate or changeSet.summarize.")] string Path,
     [property: Description("Which value to keep: 'yours' (the change set's) or 'theirs' (saved by someone else since).")] string Keep,
     [property: Description("The conflict's variant, as changeSet.summarize shows it, e.g. { \"culture\": \"da-DK\" }.")] Dictionary<string, string>? Variant = null);
 
 [Ability("changeSet.resolveConflict", "Resolve change set conflict", Kind = AbilityKind.Write, Reversible = true,
-    Description = "When someone else changed something the change set also changed, keeps one of the two values. " +
-                  "Ask the person which to keep unless the instructions already say. Changes nothing live.")]
+    Description = "When someone else changed something the change set also changed, keeps one of the two values. Changes nothing live.")]
+[Hint(AbilityAudiences.Model, "Ask the person which to keep unless the instructions already say.")]
 public sealed class ResolveConflictAbility(ChangeSetService changeSets) : AbilityBase<ResolveConflictInput, object>, IChangeSetLifecycleAbility
 {
     protected override async Task<AbilityResult> ExecuteAsync(ResolveConflictInput input, AbilityContext context, CancellationToken cancellationToken)

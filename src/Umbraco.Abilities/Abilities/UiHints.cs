@@ -59,6 +59,22 @@ public sealed class MetaAttribute(string key, string json) : Attribute
 }
 
 /// <summary>
+/// How to use an ability, a field or an input property, for one kind of reader: <c>model</c> or <c>person</c>
+/// (<see cref="Consumers.AbilityAudiences"/>). The description says what it is, for every reader; a hint says how to use
+/// it, for one. Written to schemas as <c>x-hints</c>; the <c>apply-hints</c> filter adds the reader's hint to the
+/// description and removes the rest. A hint never names a product: every consumer with that reader gets it.
+/// </summary>
+/// <param name="audience">Who the hint is for: <c>model</c> or <c>person</c>.</param>
+/// <param name="text">The hint, as one or two sentences.</param>
+[AttributeUsage(AttributeTargets.Class | AttributeTargets.Property | AttributeTargets.Parameter, AllowMultiple = true)]
+public sealed class HintAttribute(string audience, string text) : Attribute
+{
+    public string Audience { get; } = audience;
+
+    public string Text { get; } = text;
+}
+
+/// <summary>
 /// The two schema keywords for UIs, not models: <c>x-editor</c> (which editor a field uses) and <c>x-meta</c> (an open
 /// bag of hints, each owned by whoever defines it). The framework carries both and acts on neither.
 /// <para>
@@ -75,6 +91,9 @@ public static partial class UiHints
 
     /// <summary>The keyword holding a field's metadata bag.</summary>
     public const string MetaKeyword = "x-meta";
+
+    /// <summary>The keyword holding a field's hints, by audience. The <c>apply-hints</c> filter replaces it.</summary>
+    public const string HintsKeyword = "x-hints";
 
     /// <summary>The largest a metadata value may be, as UTF-8 JSON.</summary>
     public const int MaxMetaBytes = 4096;
@@ -129,9 +148,98 @@ public static partial class UiHints
         return bag;
     }
 
-    /// <summary>Writes the editor and bag into a field's JSON Schema, when there are any.</summary>
-    public static void WriteTo(JsonObject schema, FieldEditor? editor, JsonObject? meta)
+    /// <summary>
+    /// The hints from the <see cref="HintAttribute"/>s on the given members, by audience. Two for one audience are
+    /// joined. Null when there are none.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string>? HintsOf(params ICustomAttributeProvider?[] providers)
     {
+        Dictionary<string, string>? hints = null;
+        foreach (var attribute in providers.SelectMany(p => p?.GetCustomAttributes(typeof(HintAttribute), inherit: true).OfType<HintAttribute>() ?? []))
+        {
+            hints = WithHint(hints, attribute.Audience, attribute.Text);
+        }
+
+        return hints;
+    }
+
+    /// <summary>A copy of the hints with one more for an audience, joined to any it already has.</summary>
+    public static Dictionary<string, string> WithHint(IReadOnlyDictionary<string, string>? hints, string audience, string text)
+    {
+        if (string.IsNullOrWhiteSpace(audience) || string.IsNullOrWhiteSpace(text))
+        {
+            throw new ArgumentException("A hint needs an audience and some text.", nameof(audience));
+        }
+
+        var copy = hints is null ? new Dictionary<string, string>(StringComparer.Ordinal) : new Dictionary<string, string>(hints, StringComparer.Ordinal);
+        copy[audience] = copy.TryGetValue(audience, out var first) ? $"{first} {text}" : text;
+        return copy;
+    }
+
+    /// <summary>
+    /// A description with an audience's hint added after it. The description alone when there is no hint for them.
+    /// </summary>
+    public static string Describe(string? description, IReadOnlyDictionary<string, string>? hints, string audience)
+        => hints is not null && hints.TryGetValue(audience, out var hint)
+            ? string.IsNullOrEmpty(description) ? hint : $"{description} {hint}"
+            : description ?? string.Empty;
+
+    /// <summary>
+    /// A copy of a schema or result as one audience reads it: each <c>x-hints</c> keyword, at any depth, replaced by its
+    /// hint for that audience, added to the <c>description</c> next to it. Hints for other audiences are dropped.
+    /// </summary>
+    public static JsonElement ApplyHints(JsonElement json, string audience)
+    {
+        var text = json.GetRawText();
+        if (!text.Contains($"\"{HintsKeyword}\"", StringComparison.Ordinal))
+        {
+            return json;
+        }
+
+        var node = JsonNode.Parse(text);
+        ApplyHints(node, audience);
+        return JsonSerializer.SerializeToElement(node);
+    }
+
+    private static void ApplyHints(JsonNode? node, string audience)
+    {
+        switch (node)
+        {
+            case JsonObject json:
+                if (json[HintsKeyword] is JsonObject hints)
+                {
+                    json.Remove(HintsKeyword);
+                    if (hints[audience]?.GetValue<string>() is { } hint)
+                    {
+                        var description = json["description"]?.GetValue<string>();
+                        json["description"] = string.IsNullOrEmpty(description) ? hint : $"{description} {hint}";
+                    }
+                }
+
+                foreach (var (_, child) in json)
+                {
+                    ApplyHints(child, audience);
+                }
+
+                break;
+            case JsonArray array:
+                foreach (var child in array)
+                {
+                    ApplyHints(child, audience);
+                }
+
+                break;
+        }
+    }
+
+    /// <summary>Writes the editor, bag and hints into a field's JSON Schema, when there are any.</summary>
+    public static void WriteTo(JsonObject schema, FieldEditor? editor, JsonObject? meta, IReadOnlyDictionary<string, string>? hints = null)
+    {
+        if (hints is { Count: > 0 })
+        {
+            schema[HintsKeyword] = new JsonObject(hints.Select(h => KeyValuePair.Create(h.Key, (JsonNode?)h.Value)));
+        }
+
         if (editor is not null)
         {
             schema[EditorKeyword] = editor.ToJson();

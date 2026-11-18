@@ -322,6 +322,12 @@ See [CONSUMERS.md](CONSUMERS.md).
 - An admin leaves an ability out of one consumer only, and can bring back what a filter dropped but not what the base policy dropped
   - `ConsumerTests.An_admin_can_leave_an_ability_out_of_one_consumer_only`
   - `ConsumerTests.An_admin_can_bring_back_what_a_filter_dropped_but_not_what_the_base_policy_dropped`
+- A model reads each description with model hints, and a person with person hints, on abilities and on their inputs
+  - `ConsumerTests.A_model_reads_the_description_with_model_hints_and_a_person_with_person_hints`
+- Hints follow the audience, not the consumer: two model consumers with different policies read the same text
+  - `ConsumerTests.Two_consumers_with_the_same_audience_get_the_same_hints`
+- A schema a model reads back from `entity.getSchema` has model hints only, and no `x-hints`
+  - `ConsumerTests.A_model_reading_a_schema_back_gets_model_hints_only`
 - The consumer named in the `Umb-Consumer` header decides the list (`mcp` without it), and the list answers with `Vary`
   - `AbilitiesManagementApiTests.The_consumer_named_in_a_header_decides_the_list_and_a_cache_keeps_one_per_consumer`
 - A tool a consumer doesn't offer can't be called through it over the Management API

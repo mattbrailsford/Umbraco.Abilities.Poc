@@ -546,6 +546,20 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
       unshaped, such as a building block in Automate still asking for `changeSetId`. So "keep" cancels a drop as it
       happens, and the filters after it still run.
 
+36. **A description is for every reader; a hint is for one.** Today's descriptions were written for models: "call
+    `entity.getSchema` first", "from the field's `x-item-types`". A person reading an Automate form got that too.
+    Splitting each into a description and a hint keyed by audience (`model` or `person`) fixed it. Building it showed:
+    - **Key hints by audience, never by consumer.** The AI chat and the MCP server are both read by a model, so they get
+      the same text, and no hint names a product. Shown by two model consumers with different policies reading the
+      same description.
+    - **One filter does it all.** `apply-hints` adds the reader's hint to the description and removes `x-hints`, in
+      tool schemas and in results. A schema read back from `entity.getSchema` needs the same treatment as a tool's
+      own schema, which the result filter from phase 2 already gave.
+    - **The test for a hint is simple.** If a sentence only helps one kind of reader, it is a hint. Almost every
+      split was a whole sentence, so a model reads what it read before.
+    - **`x-hints` is not a form keyword.** A form needs its person hints, so `strip-form-keywords` must leave
+      `x-hints` alone. Only `apply-hints` reads and removes it.
+
 ## Developer experience of adapters
 
 Making things easy for a model is one side. The other is what a package developer writes. Reading the samples as

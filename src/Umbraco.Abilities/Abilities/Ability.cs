@@ -23,7 +23,10 @@ public sealed class AbilityAttribute(string id, string name) : Attribute
 
     public string Name { get; } = name;
 
-    /// <summary>Written for a model as well as a person: when to use it and what to call first.</summary>
+    /// <summary>
+    /// What it does, for every reader, model or person. How to use it, for one of them, goes in a
+    /// <see cref="HintAttribute"/> on the class.
+    /// </summary>
     public string Description { get; set; } = string.Empty;
 
     public AbilityKind Kind { get; set; } = AbilityKind.Read;
@@ -76,6 +79,10 @@ public sealed class EntityKeyAttribute(params string[] entityTypes) : Attribute
 /// True for an ability that creates, applies or discards change sets itself (<see cref="ChangeSets.IChangeSetLifecycleAbility"/>).
 /// It is never recorded into a set, and only a consumer that keeps a conversation open can offer it.
 /// </param>
+/// <param name="Hints">
+/// How to use the ability, by audience (<c>model</c>, <c>person</c>), from <see cref="HintAttribute"/>s on its class.
+/// The description says what it does, for every reader; the <c>apply-hints</c> filter adds the reader's hint to it.
+/// </param>
 public sealed record AbilityDescriptor(
     string Id,
     string Name,
@@ -87,7 +94,8 @@ public sealed record AbilityDescriptor(
     bool UsesChangeSet = true,
     Type? OutputType = null,
     bool Granular = false,
-    bool ManagesChangeSets = false)
+    bool ManagesChangeSets = false,
+    IReadOnlyDictionary<string, string>? Hints = null)
 {
     public bool RequiresApproval => Kind == AbilityKind.Write && !Reversible;
 }
@@ -214,7 +222,8 @@ public abstract class AbilityBase<TInput, TOutput> : IAbility
             attribute.UsesChangeSet,
             typeof(TOutput),
             attribute.Granular,
-            ManagesChangeSets: this is ChangeSets.IChangeSetLifecycleAbility);
+            ManagesChangeSets: this is ChangeSets.IChangeSetLifecycleAbility,
+            Hints: UiHints.HintsOf(GetType()));
 
         if (!attribute.UsesChangeSet && attribute.Kind == AbilityKind.Write && !Descriptor.ManagesChangeSets)
         {

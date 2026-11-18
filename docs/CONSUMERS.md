@@ -1,6 +1,6 @@
 # Consumers: which abilities show up where, and in what shape
 
-Status: **phases 1 and 2 built** (tasks 1 to 13). Phases 3 and 4 are the plan.
+Status: **phases 1 to 3 built** (tasks 1 to 14). Phase 4 is the plan.
 
 A **consumer** is anything that offers abilities to someone: an AI chat, an MCP server, Umbraco Automate. Today each
 consumer filters and shapes the abilities list in its own code. This plan keeps that job with the consumer, but builds
@@ -289,12 +289,12 @@ audiences is open: a package can add one if it ever needs to.
 [Ability("entity.setValue", "Set a value",
     Description = "Sets one value on an entity.",
     Granular = true)]
-[Hint("model", "Paths look like title, or blocks[2].heading. Call entity.getSchema first to see them.")]
+[Hint(AbilityAudiences.Model, "Paths look like title, or blocks[2].heading. Call entity.getSchema first to see them.")]
 public sealed class SetValueAbility : ...
 
 public sealed record SetValueInput(
     [property: Description("The value's path.")]
-    [property: Hint("model", "Use the paths entity.getSchema lists; an item's path ends in its index.")]
+    [property: Hint(AbilityAudiences.Model, "Use the paths entity.getSchema lists; an item's path ends in its index.")]
     string Path, ...);
 ```
 
@@ -322,6 +322,17 @@ How it reaches a consumer:
 
 Moving the text over: today's descriptions are mostly written for models. Each is split once: the part every reader
 needs stays as the description, the model-only detail becomes a model hint. A model then reads the same text as today.
+
+Built (task 14):
+
+- `[Hint(audience, text)]` goes on an ability class, an input property or a model property. The fluent set-up has
+  `.Hint(audience, text)` on fields and items fields. Two hints for one audience are joined.
+- `FieldDefinition.Hints` is written as `x-hints`. An adapter that builds fields by hand sets it directly.
+- `apply-hints` is the first filter in both `for-models` and `for-forms`.
+- Every framework description was split. A model reads nearly the same text as before. Three inputs lost a bracket
+  or a comma to the split (the item type aliases, the item type, the conflict's path), and in
+  `changeSet.resolveConflict` "changes nothing live" now comes before the hint to ask the person.
+- The sample discount's `active` field has a person hint, so a form shows text a model never reads.
 
 ### 10. How a call runs
 
@@ -470,7 +481,7 @@ Each task keeps the full suite green. Each is one PR-sized step.
 | 11 | Done. Automate reads the `automate` consumer's tools | `AbilityActionOptions.Include` deleted |
 | 12 | Done in phase 1. `AddFilter` onto another package's consumer | A package adds a filter to a consumer it doesn't own |
 | 13 | Done. Overrides from `Umbraco:Abilities:Consumers` | An admin drops or keeps, and can't keep past the base policy |
-| 14 | Hints: `[Hint]`, `FieldDefinition.Hints`, `x-hints`, `apply-hints`; split today's descriptions | Automate shows text for people; a model reads the same text as today |
+| 14 | Done. Hints: `[Hint]`, `FieldDefinition.Hints`, `x-hints`, `apply-hints`; split today's descriptions | Automate shows text for people; a model reads the same text as today |
 | 15 | `entity.update`, `DependentInput`, `SplitBy`; `split-by-entity-type`; `ResolveInputSchemaAsync` | One Create and one Update per entity type for forms; one tool each for models |
 | 16 | Automate: page type picker and the fields editor (FUDGE) | `EntityAction` deleted |
 | 17 | `Creatable` subtypes in the CMS adapter | "Article Controls" can't be picked |
