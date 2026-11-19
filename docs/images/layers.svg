@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 398" role="img" aria-label="Every surface uses one set of tools, built on three layers" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 478" role="img" aria-label="Each surface is offered its own tools by a consumer, from one set of tools built on three layers" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13">
   <style>
     .bg { fill: #ffffff; stroke: #d1d9e0; }
     .ink { fill: #1f2328; } .quiet { fill: #59636e; }
@@ -18,9 +18,9 @@
       <path class="head" d="M0 0L10 5L0 10z"/>
     </marker>
   </defs>
-  <rect class="bg" x="0.5" y="0.5" width="759" height="397" rx="8"/>
+  <rect class="bg" x="0.5" y="0.5" width="759" height="477" rx="8"/>
 
-  <text class="ink" x="24" y="32" font-size="15" font-weight="600">Every surface uses one set of tools, built on three layers</text>
+  <text class="ink" x="24" y="32" font-size="15" font-weight="600">Each surface gets its own tools from one set, built on three layers</text>
 
   <!-- Surfaces -->
   <rect class="box" x="24" y="56" width="160" height="40" rx="8"/>
@@ -37,39 +37,45 @@
   <path class="line" d="M284 96V122" marker-end="url(#arrow)"/>
   <path class="line" d="M464 96V122" marker-end="url(#arrow)"/>
   <path class="line" d="M644 96V122" marker-end="url(#arrow)"/>
-  <path class="line" d="M134 180V210" marker-end="url(#arrow)"/>
-  <path class="line" d="M374 180V210" marker-end="url(#arrow)"/>
-  <path class="line" d="M614 180V210" marker-end="url(#arrow)"/>
-  <path class="line" d="M134 316V286" marker-end="url(#arrow)"/>
-  <path class="line" d="M374 316V286" marker-end="url(#arrow)"/>
+  <path class="line" d="M374 180V206" marker-end="url(#arrow)"/>
+  <path class="line" d="M134 264V290" marker-end="url(#arrow)"/>
+  <path class="line" d="M374 264V290" marker-end="url(#arrow)"/>
+  <path class="line" d="M614 264V290" marker-end="url(#arrow)"/>
+  <path class="line" d="M134 396V366" marker-end="url(#arrow)"/>
+  <path class="line" d="M374 396V366" marker-end="url(#arrow)"/>
+
+  <!-- Consumers -->
+  <rect class="new" x="24" y="124" width="700" height="56" rx="8"/>
+  <text class="ink" x="374" y="148" text-anchor="middle" font-weight="600">Consumers</text>
+  <text class="ink" x="374" y="166" text-anchor="middle" font-size="11.5">which tools each surface is offered, and in what shape: filters and policies</text>
 
   <!-- Tools -->
-  <rect class="box" x="24" y="124" width="700" height="56" rx="8"/>
-  <text class="ink" x="374" y="148" text-anchor="middle" font-weight="600">One set of tools</text>
-  <text class="quiet" x="374" y="166" text-anchor="middle" font-size="11.5">entity tools, change set tools, and each product's own abilities</text>
+  <rect class="box" x="24" y="208" width="700" height="56" rx="8"/>
+  <text class="ink" x="374" y="232" text-anchor="middle" font-weight="600">One set of tools</text>
+  <text class="quiet" x="374" y="250" text-anchor="middle" font-size="11.5">entity tools, change set tools, and each product's own abilities</text>
 
   <!-- Layers -->
-  <rect class="box" x="24" y="212" width="220" height="72" rx="8"/>
-  <text class="ink" x="134" y="236" text-anchor="middle" font-weight="600">Abilities</text>
-  <text class="quiet" x="134" y="254" text-anchor="middle" font-size="11.5">Operations, declared once</text>
-  <text class="quiet" x="134" y="270" text-anchor="middle" font-size="11.5">The Abilities proposal</text>
+  <rect class="box" x="24" y="292" width="220" height="72" rx="8"/>
+  <text class="ink" x="134" y="316" text-anchor="middle" font-weight="600">Abilities</text>
+  <text class="quiet" x="134" y="334" text-anchor="middle" font-size="11.5">Operations, declared once</text>
+  <text class="quiet" x="134" y="350" text-anchor="middle" font-size="11.5">The Abilities proposal</text>
 
-  <rect class="new" x="264" y="212" width="220" height="72" rx="8"/>
-  <text class="ink" x="374" y="236" text-anchor="middle" font-weight="600">Entity adapters</text>
-  <text class="ink" x="374" y="254" text-anchor="middle" font-size="11.5">What an entity looks like,</text>
-  <text class="ink" x="374" y="270" text-anchor="middle" font-size="11.5">and how to load and save it</text>
+  <rect class="new" x="264" y="292" width="220" height="72" rx="8"/>
+  <text class="ink" x="374" y="316" text-anchor="middle" font-weight="600">Entity adapters</text>
+  <text class="ink" x="374" y="334" text-anchor="middle" font-size="11.5">What an entity looks like,</text>
+  <text class="ink" x="374" y="350" text-anchor="middle" font-size="11.5">and how to load and save it</text>
 
-  <rect class="new" x="504" y="212" width="220" height="72" rx="8"/>
-  <text class="ink" x="614" y="236" text-anchor="middle" font-weight="600">Change sets</text>
-  <text class="ink" x="614" y="254" text-anchor="middle" font-size="11.5">Write calls held back for review</text>
-  <text class="ink" x="614" y="270" text-anchor="middle" font-size="11.5">Draft Sets, for any product</text>
+  <rect class="new" x="504" y="292" width="220" height="72" rx="8"/>
+  <text class="ink" x="614" y="316" text-anchor="middle" font-weight="600">Change sets</text>
+  <text class="ink" x="614" y="334" text-anchor="middle" font-size="11.5">Write calls held back for review</text>
+  <text class="ink" x="614" y="350" text-anchor="middle" font-size="11.5">Draft Sets, for any product</text>
 
   <!-- Packages -->
-  <rect class="box" x="24" y="318" width="460" height="56" rx="8"/>
-  <text class="ink" x="254" y="342" text-anchor="middle" font-weight="600">Packages: CMS, Commerce, Automate, third parties</text>
-  <text class="quiet" x="254" y="360" text-anchor="middle" font-size="11.5">declare abilities and entity adapters, nothing per surface</text>
+  <rect class="box" x="24" y="398" width="460" height="56" rx="8"/>
+  <text class="ink" x="254" y="422" text-anchor="middle" font-weight="600">Packages: CMS, Commerce, Automate, third parties</text>
+  <text class="quiet" x="254" y="440" text-anchor="middle" font-size="11.5">declare abilities and entity adapters, nothing per surface</text>
 
   <!-- Key -->
-  <rect class="new" x="504" y="334" width="16" height="16" rx="4"/>
-  <text class="quiet" x="530" y="347" font-size="11.5">New in this work</text>
+  <rect class="new" x="504" y="414" width="16" height="16" rx="4"/>
+  <text class="quiet" x="530" y="427" font-size="11.5">New in this work</text>
 </svg>

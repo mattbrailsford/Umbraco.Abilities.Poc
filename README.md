@@ -43,7 +43,12 @@ Three pieces, each owned by a contract that never names a product:
 | **Entity adapters** | What a package's entities look like (fields, lists of typed items, references) and how to load, check and save one. From this the framework gives every entity the same tools: get the schema, find, get, create, set a value, add, remove and move an item | An editing contract class, plus a mapping to and from the product's own model |
 | **Change sets** | Write calls recorded instead of run. The caller sees its own changes, the live site doesn't. A person reviews the set, then applies it, product by product. Changes saved elsewhere meanwhile are rebased onto | Nothing. A product with its own drafts (CMS content) can plug them in |
 
-![Every surface uses one set of tools, built on three layers](docs/images/layers.svg)
+On top sit **consumers**: an AI chat, an MCP server, Automate. A consumer decides which tools its surface is offered,
+and in what shape, by naming **filters** and **policies** any package can add. No ability names a consumer. An ability
+can say what it **needs** (for example a person to ask), and only consumers that state it are offered that ability. See
+[docs/CONSUMERS.md](docs/CONSUMERS.md).
+
+![Each surface gets its own tools from one set, built on three layers](docs/images/layers.svg)
 
 Every value is reached by a **path** (`rules/{key}/percent`), and every problem comes back on the same path. So any
 caller, a model or a person's editor, can fix its own work without a translation step.
@@ -67,6 +72,9 @@ This is the design's intent. Only the Umbraco.AI tools and the CMS draft set are
   and two Automate workflows, one that branches. See [docs/EXAMPLE-FLOWS.md](docs/EXAMPLE-FLOWS.md), call by call.
 - **Plugins need no code.** A third party's discount rule, written as a plain Commerce provider, is usable straight away.
 - **Problems come back on edit paths,** so a caller fixes its own mistakes.
+- **Each surface gets the same abilities in its own shape.** An AI is offered one `entity_create` tool and reads the
+  schema. Automate is offered "Create Document" and "Create Discount", with forms. Both come from the same abilities,
+  shaped by consumer filters, with no code per product.
 - **One change set spans products.** A page, a discount that links to it, and an email to send afterwards are reviewed
   together and applied product by product. A failed step can be fixed and resumed.
 - **Changes saved elsewhere are rebased onto.** Only a value both sides changed is a conflict to resolve.
@@ -136,6 +144,16 @@ It is not a test: each run calls the Claude API, costs money, and can give a dif
 site such as the demo, through the MCP proxy, also set `UMBRACO_BASE_URL`, `UMBRACO_CLIENT_ID` and
 `UMBRACO_CLIENT_SECRET`, and build the proxy first.
 
+To try it by hand, start the demo site and open Claude Code with the MCP server connected, in one step:
+
+```bash
+demo/start-demo.sh
+```
+
+Sign in to the backoffice at `https://localhost:44399/umbraco` as `admin@example.com` / `password1234` (a local-only
+demo value). The site seeds itself on first start, with a store, a Shop page and products. Its
+[README](demo/Umbraco.Abilities.Demo/README.md) has sample prompts to try in order.
+
 ## Where to go next
 
 | To | Read |
@@ -145,6 +163,8 @@ site such as the demo, through the MCP proxy, also set `UMBRACO_BASE_URL`, `UMBR
 | Review the code, in order | [REVIEWING.md](REVIEWING.md) |
 | Make a package's entities editable | [docs/WRITING-AN-ADAPTER.md](docs/WRITING-AN-ADAPTER.md) |
 | See how sets apply, rebase, check permissions and use CMS Draft Sets | [docs/CHANGE-SETS.md](docs/CHANGE-SETS.md) |
+| See how each surface gets its own tools | [docs/CONSUMERS.md](docs/CONSUMERS.md) |
+| Try it by hand through MCP | [demo/Umbraco.Abilities.Demo/README.md](demo/Umbraco.Abilities.Demo/README.md) |
 | Read what building it taught us | [docs/FINDINGS.md](docs/FINDINGS.md) |
 | Find the test behind a claim | [docs/TESTS.md](docs/TESTS.md) |
 
@@ -152,18 +172,20 @@ site such as the demo, through the MCP proxy, also set `UMBRACO_BASE_URL`, `UMBR
 
 | Project | Plays the part of | Depends on |
 | --- | --- | --- |
-| `Umbraco.Abilities` | The contract and runtime: abilities and their tool shape, entity adapters, the path editor, change sets, the invoker | `Umbraco.Cms.Core`, `Polly.Core` |
-| `Umbraco.Abilities.AI` | Umbraco.AI's adapter: every ability's tool becomes an M.E.AI `AIFunction` | Contract, `Microsoft.Extensions.AI.Abstractions` |
+| `Umbraco.Abilities` | The contract and runtime: abilities and their tool shape, entity adapters, the path editor, change sets, the invoker, and consumers with their filters and policies | `Umbraco.Cms.Core`, `Polly.Core` |
+| `Umbraco.Abilities.AI` | Umbraco.AI's adapter and its consumer (`AiChatConsumer`): every ability's tool becomes an M.E.AI `AIFunction` | Contract, `Microsoft.Extensions.AI.Abstractions` |
 | `Umbraco.Abilities.Samples` | Product packages: CMS pages with nested blocks, Commerce collections and discounts, a third-party rule type, an email package, Automate workflows | Contract only |
 | `Umbraco.Abilities.Cms` | The real entity adapter for CMS documents, on `IContentEditingService`, the adapter that stages content changes into a CMS draft set, and the `Umb-Change-Set` header middleware | Contract, Umbraco 18, the draft sets stand-in |
 | `Umbraco.Abilities.Commerce` | The real entity adapters for Commerce: discounts (rules and rewards from Commerce's own providers), and read-only stores and currencies | Contract, `Umbraco.Commerce.Core` |
-| `Umbraco.Abilities.ManagementApi` | Management API endpoints: list a consumer's tools, call one, and resolve one's input once a choice is made. For HTTP callers such as the Umbraco CMS MCP Dev server | Contract, `Umbraco.Cms.Api.Management` |
+| `Umbraco.Abilities.ManagementApi` | Management API endpoints: list a consumer's tools, call one, and resolve one's input once a choice is made. For HTTP callers such as the Umbraco CMS MCP Dev server, through `McpConsumer` |
+| `Umbraco.Abilities.Automate` | Abilities as Umbraco Automate actions, through `AutomateConsumer`: forms from their schemas, one Create and Update per entity type, and a fields editor. Its workarounds are marked `FUDGE` | Contract, `Umbraco.Automate.Core` | Contract, `Umbraco.Cms.Api.Management` |
 | `Umbraco.Cms.DraftSets` | A stand-in for a Draft Sets feature in CMS core: per-property content changes held apart from live, read-through, rebase and conflicts, apply in one scope | Umbraco 18 only: no Abilities |
 | `Umbraco.Abilities.Tests` | A scripted model calling the AI tools with JSON arguments | Contract, AI adapter, samples |
 | `Umbraco.Abilities.Commerce.Tests` | The Commerce discount adapter against a real Umbraco and Umbraco Commerce on SQLite | Contract, AI adapter, CMS and Commerce adapters, Umbraco test host, `Umbraco.Commerce` |
+| `Umbraco.Abilities.Automate.Tests` | The Automate loader against a real Umbraco and Umbraco Automate, including a real automation run | Contract, Automate loader, CMS adapter, Umbraco test host, Umbraco Automate |
 | `Umbraco.Abilities.Cms.Tests` | The same, against a real Umbraco on SQLite, and the Management API endpoints over HTTP | Contract, AI adapter, CMS adapter, Management API endpoints, MCP proxy, Umbraco test host |
 | `tools/Umbraco.Abilities.McpProxy` | The Umbraco CMS MCP Dev server: an MCP server (stdio) whose tools are the abilities a site lists, each call forwarded to the Management API | `ModelContextProtocol` only: no Abilities project |
-| `demo/Umbraco.Abilities.Demo` | A small Umbraco 18 site to try the abilities through MCP by hand: SQLite, the Clean starter kit (articles built from blocks), real Umbraco Commerce with a store and products, and an API user for the proxy. See its README | CMS and Commerce adapters, Management API endpoints, `Umbraco.Cms`, `Umbraco.Commerce` |
+| `demo/Umbraco.Abilities.Demo` | A small Umbraco 18 site to try the abilities through MCP by hand: SQLite, the Clean starter kit (articles built from blocks), real Umbraco Commerce with a store and products, and an API user for the proxy, all seeded on first start. `demo/start-demo.sh` boots it and opens Claude Code. See its README | CMS and Commerce adapters, Management API endpoints, `Umbraco.Cms`, `Umbraco.Commerce` |
 | `tools/Umbraco.Abilities.ModelRun` | A "Create with AI" surface: a real model (Claude, through M.E.AI's `IChatClient`) builds an entity in a change set from a description | Contract, AI adapter, samples, `Anthropic` |
 
 ## Words we use
@@ -178,6 +200,9 @@ site such as the demo, through the MCP proxy, also set `UMBRACO_BASE_URL`, `UMBR
 | Item | One keyed, typed object in a list: a block, a rule, a workflow step | `ItemTypeDefinition` |
 | Path | Where a value is: field names and item keys, never positions (`blocks/{key}/heading`) | `EntityValues.Find` |
 | Change set | Write calls held back from live, to review and apply together | `ChangeSet` |
+| Consumer | Anything that offers abilities to someone (an AI chat, an MCP server, Automate), and decides which tools it offers, in what shape | `IAbilityConsumer` |
+| Filter, policy | A named step that drops, changes or splits a tool; a named group of filters a consumer applies | `IAbilityFilter`, `AbilityPolicyRegistry` |
+| Capability | Something a consumer can do, by name, such as ask a person. An ability lists the ones it needs | `ConsumerCapabilities`, `AbilityAttribute.Needs` |
 | Draft set | The CMS's own version of a change set, for content only | `Umbraco.Cms.DraftSets` |
 | Side effect | A Write that changes nothing reviewable, such as sending an email. It runs after apply | `ChangeSet.AfterApply` |
 | Summary | A short view of an entity returned to the caller: type, key, name and edit link | `EntitySummary` |
