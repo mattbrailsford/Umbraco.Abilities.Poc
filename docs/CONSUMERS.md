@@ -145,13 +145,13 @@ Helpers keep filters short: `tool.Drop("a person builds a step from a form, not 
 `tool.Note("…") with { Description = … }`. A filter writes only a note's text; the provider adds the filter's alias,
 its package (the filter's assembly) and the policy that listed it.
 
-Filters are pluggable, like abilities. A package adds them to the site's registry, as it adds abilities to
-`AbilityRegistry`:
+Filters are pluggable, like abilities. On an Umbraco site a package adds its filters and consumers with Umbraco's
+collection builders, as it adds abilities (`builder.Abilities()`). The order doesn't matter: a consumer names its
+filters, in its own order.
 
 ```csharp
-filters
-    .Add(new HideBuildingBlocks())
-    .Add(new SplitByEntityType());
+builder.AbilityFilters().Add<AutomateEditorsFilter>();
+builder.AbilityConsumers().Add<AutomateConsumer>();
 ```
 
 The built-in filters:

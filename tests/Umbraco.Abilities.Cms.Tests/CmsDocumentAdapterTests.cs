@@ -220,7 +220,7 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
             GetRequiredService<IUserService>(),
             GetRequiredService<IContentPermissionService>(),
             scope,
-            () => Constants.Security.SuperUserKey);
+            new CmsActingUser(() => Constants.Security.SuperUserKey));
         _media = new CmsMediaAdapter(
             contentSchemas,
             GetRequiredService<IMediaTypeService>(),
@@ -229,7 +229,7 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
             GetRequiredService<IUserService>(),
             GetRequiredService<IMediaPermissionService>(),
             scope,
-            () => Constants.Security.SuperUserKey);
+            new CmsActingUser(() => Constants.Security.SuperUserKey));
         adapters.Add(_documents);
         adapters.Add(_media);
 

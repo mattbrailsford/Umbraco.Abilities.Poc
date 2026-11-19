@@ -71,16 +71,7 @@ public sealed class CommerceDiscountAdapterTests : UmbracoIntegrationTest
         builder.AddCommerceAbilities();
 
         // CMS documents save as the signed-in backoffice user. A test has no request, so they save as the admin.
-        builder.Services.AddSingleton(sp => new CmsDocumentAdapter(
-            sp.GetRequiredService<CmsContentSchemas>(),
-            sp.GetRequiredService<IContentTypeService>(),
-            sp.GetRequiredService<IContentEditingService>(),
-            sp.GetRequiredService<IEntityService>(),
-            sp.GetRequiredService<Umbraco.Cms.DraftSets.DraftSetService>(),
-            sp.GetRequiredService<IUserService>(),
-            sp.GetRequiredService<IContentPermissionService>(),
-            sp.GetRequiredService<CmsScopeUnitOfWorkProvider>(),
-            () => Constants.Security.SuperUserKey));
+        builder.Services.AddSingleton(new CmsActingUser(() => Constants.Security.SuperUserKey));
         builder.Services.AddSingleton<StartedSignal>();
         builder.AddNotificationHandler<UmbracoApplicationStartingNotification, StartedSignal.Handler>();
 

@@ -23,8 +23,8 @@ public sealed class CmsMediaAdapter(
     IEntityService entities,
     IUserService users,
     IMediaPermissionService permissions,
-    IUnitOfWorkProvider unitOfWork,
-    Func<Guid> actingUser)
+    CmsScopeUnitOfWorkProvider unitOfWork,
+    CmsActingUser actingUser)
     : ContentTypeEntityAdapterBase<IMediaType>(schemas)
 {
     public const string Type = Constants.UdiEntityType.Media;
@@ -66,8 +66,8 @@ public sealed class CmsMediaAdapter(
     {
         var content = await ToContentAsync(media, cancellationToken);
         var status = media.Version is null
-            ? (await editing.CreateAsync(CreateModel(content), actingUser())).Status
-            : (await editing.UpdateAsync(media.Key, UpdateModel(content), actingUser())).Status;
+            ? (await editing.CreateAsync(CreateModel(content), actingUser.Key)).Status
+            : (await editing.UpdateAsync(media.Key, UpdateModel(content), actingUser.Key)).Status;
         return status == ContentEditingOperationStatus.Success
             ? ToSummary(media)
             : throw new InvalidOperationException($"Umbraco refused the media: {status}.");

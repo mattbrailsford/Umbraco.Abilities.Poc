@@ -15,6 +15,7 @@ builder.CreateUmbracoBuilder()
     .AddAbilities()
     .AddAbilitiesManagementApi()
     .AddCommerceAbilities()
+    .AddAutomateAbilities()
     .Build();
 
 // Every ability as an Automate action, and a Create and Update action per page type. After Umbraco's builder has
