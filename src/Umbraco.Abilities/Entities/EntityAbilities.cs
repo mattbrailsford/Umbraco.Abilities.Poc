@@ -39,10 +39,10 @@ public abstract class EntityEditAbilityBase<TInput, TOutput> : AbilityBase<TInpu
         var typed = Read(input);
         if (string.IsNullOrWhiteSpace(typed.EntityType))
         {
-            throw new AbilityInputException("entityType is required.", [new Problem("entityType", "Required.")]);
+            throw new AbilityInputException("entityType is required.", [new Problem(EntityJson.EntityType, "Required.")]);
         }
 
-        var key = typed.Key ?? throw new AbilityInputException("key is required.", [new Problem("key", "Required.")]);
+        var key = typed.Key ?? throw new AbilityInputException("key is required.", [new Problem(EntityJson.Key, "Required.")]);
         return new EntityEditTarget(typed.EntityType, key, Creates, (typed as CreateEntityInput)?.Subtype);
     }
 
@@ -60,7 +60,7 @@ public abstract class EntityEditAbilityBase<TInput, TOutput> : AbilityBase<TInpu
         => Task.FromResult(AbilityResult.Fail(
             AbilityOperationStatus.InvalidInput,
             "Entity edits are recorded in a change set, and none is open. Create one with changeSet_create, or name one with changeSetId.",
-            [new Problem("changeSetId", "No change set is open.")]));
+            [new Problem(AbilityTool.ChangeSetIdArgument, "No change set is open.")]));
 
     private static TInput Read(JsonObject input)
         => input.Deserialize<TInput>(AbilityJson.Options) ?? throw new AbilityInputException("Input is required.");
@@ -101,7 +101,7 @@ public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemT
         {
             return Success(new JsonObject
             {
-                ["entityType"] = input.EntityType,
+                [EntityJson.EntityType] = input.EntityType,
                 ["subtypes"] = new JsonArray(subtypes.Select(s => (JsonNode?)new JsonObject { ["alias"] = s.Alias, ["name"] = s.Name, ["creatable"] = s.Creatable }).ToArray()),
                 ["next"] = "Call again with a subtype to get its fields.",
             });
@@ -111,7 +111,7 @@ public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemT
         var itemTypes = await registry.ResolveAsync(schema.Root, context.UserKey, cancellationToken);
         var output = new JsonObject
         {
-            ["entityType"] = schema.EntityType,
+            [EntityJson.EntityType] = schema.EntityType,
             ["name"] = schema.Name,
             ["description"] = schema.Description,
             ["dimensions"] = new JsonArray(schema.Dimensions.Select(d => (JsonNode?)new JsonObject
@@ -120,7 +120,7 @@ public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemT
                 ["description"] = d.Description,
                 ["values"] = d.Values is { } values ? new JsonArray(values.Select(v => (JsonNode?)v).ToArray()) : null,
             }).ToArray()),
-            ["fields"] = SchemaWriter.Fields(schema.Root, itemTypes, context.UserKey),
+            [EntityJson.Fields] = SchemaWriter.Fields(schema.Root, itemTypes, context.UserKey),
             ["capabilities"] = new JsonArray(Capabilities(adapter).Select(c => (JsonNode?)c).ToArray()),
         };
 
@@ -134,7 +134,7 @@ public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemT
                 details[alias] = new JsonObject
                 {
                     ["name"] = itemType.Name,
-                    ["fields"] = SchemaWriter.Fields(itemType.Schema, itemTypes, context.UserKey),
+                    [EntityJson.Fields] = SchemaWriter.Fields(itemType.Schema, itemTypes, context.UserKey),
                 };
             }
 
@@ -240,13 +240,13 @@ public sealed class GetEntityAbility(EntityAdapterRegistry adapters, ChangeSetSe
         if (!inSet
             && await EntityAccess.CheckAsync(adapter, new EntityAccessRequest(context.UserKey, EntityPermission.Read, input.Key, null, new HashSet<VariantId>()), cancellationToken) is { } denied)
         {
-            return EntityAccess.Denied(denied, "key");
+            return EntityAccess.Denied(denied, EntityJson.Key);
         }
 
         var entity = await changeSets.ReadAsync(adapter, input.Key, cancellationToken);
 
         return entity is null
-            ? AbilityResult.Fail(AbilityOperationStatus.InvalidInput, $"No {input.EntityType} with key {input.Key}.", [new Problem("key", "Not found.")])
+            ? AbilityResult.Fail(AbilityOperationStatus.InvalidInput, $"No {input.EntityType} with key {input.Key}.", [new Problem(EntityJson.Key, "Not found.")])
             : Success(entity.ToJson());
     }
 }
@@ -263,13 +263,13 @@ public sealed record CreateEntityInput(
 
 [Ability("entity.create", "Create entity", Kind = AbilityKind.Write, Reversible = true,
     Description = "Creates an entity in the active change set. Nothing goes live until the set is applied. Returns the new key.",
-    SplitBy = "entityType", SplitTitle = "Create {0}", DependentInput = "fields", DependsOn = ["entityType", "subtype"])]
+    SplitBy = EntityJson.EntityType, SplitTitle = "Create {0}", DependentInput = EntityJson.Fields, DependsOn = [EntityJson.EntityType, EntityJson.Subtype])]
 [Hint(AbilityAudiences.Model, "Add items to items fields afterwards with entity.addItem.")]
 public sealed class CreateEntityAbility(EntityAdapterRegistry adapters) : EntityEditAbilityBase<CreateEntityInput, EntitySummary>, IDynamicInputAbility
 {
     protected override bool Creates => true;
 
-    protected override void FillKeys(JsonObject input) => EnsureKey(input, "key");
+    protected override void FillKeys(JsonObject input) => EnsureKey(input, EntityJson.Key);
 
     protected override object? Apply(Entity entity, CreateEntityInput input, EntityEditContext context)
     {
@@ -299,7 +299,7 @@ public sealed record UpdateEntityInput(
 
 [Ability("entity.update", "Update entity", Kind = AbilityKind.Write, Reversible = true,
     Description = "Changes some of an entity's values at once, in the active change set. Values left out stay as they are.",
-    SplitBy = "entityType", SplitTitle = "Update {0}", DependentInput = "fields", DependsOn = ["entityType", "subtype"])]
+    SplitBy = EntityJson.EntityType, SplitTitle = "Update {0}", DependentInput = EntityJson.Fields, DependsOn = [EntityJson.EntityType, EntityJson.Subtype])]
 [Hint(AbilityAudiences.Model, "Takes top-level fields only. Use entity.setValue for a value inside items, and entity.addItem to add items.")]
 public sealed class UpdateEntityAbility(EntityAdapterRegistry adapters) : EntityEditAbilityBase<UpdateEntityInput, EntitySummary>, IDynamicInputAbility
 {
@@ -309,7 +309,7 @@ public sealed class UpdateEntityAbility(EntityAdapterRegistry adapters) : Entity
         {
             throw new AbilityInputException(
                 $"{context.Adapter.DisplayName} {entity.Key} is a {entity.Subtype}, not a {subtype}.",
-                [new Problem("subtype", $"Is {entity.Subtype}.")]);
+                [new Problem(EntityJson.Subtype, $"Is {entity.Subtype}.")]);
         }
 
         var target = Target(entity, input, context);
@@ -344,9 +344,9 @@ internal static class EntityInputs
     {
         switch (argument)
         {
-            case "entityType":
+            case EntityJson.EntityType:
                 return adapters.All.Where(a => a.CanCreate).Select(a => new AbilityChoice(a.EntityType, a.DisplayName)).ToList();
-            case "subtype" when Text(chosen, "entityType") is { } entityType && adapters.Find(entityType) is { } adapter:
+            case EntityJson.Subtype when Text(chosen, EntityJson.EntityType) is { } entityType && adapters.Find(entityType) is { } adapter:
                 var subtypes = await adapter.GetSubtypesAsync(cancellationToken);
                 return subtypes.Where(s => s.Creatable || !creating).Select(s => new AbilityChoice(s.Alias, s.Name)).ToList();
             default:
@@ -359,33 +359,33 @@ internal static class EntityInputs
     {
         var schema = JsonNode.Parse(AbilitySchemas.InputSchema(inputType).GetRawText())!.AsObject();
         var properties = schema["properties"]!.AsObject();
-        OneOf(properties, "entityType", await ChoicesAsync(adapters, "entityType", chosen, creating, cancellationToken));
+        OneOf(properties, EntityJson.EntityType, await ChoicesAsync(adapters, EntityJson.EntityType, chosen, creating, cancellationToken));
 
-        if (Text(chosen, "entityType") is not { } entityType || adapters.Find(entityType) is not { } adapter)
+        if (Text(chosen, EntityJson.EntityType) is not { } entityType || adapters.Find(entityType) is not { } adapter)
         {
             return JsonSerializer.SerializeToElement(schema);
         }
 
-        if (!creating && properties["key"] is JsonObject key)
+        if (!creating && properties[EntityJson.Key] is JsonObject key)
         {
             // The entity to update, picked from that type's entities.
-            key["x-references"] = entityType;
+            key[SchemaKeywords.References] = entityType;
             if (schema["required"] is not JsonArray required)
             {
                 schema["required"] = required = [];
             }
 
-            if (!required.Any(r => r?.GetValue<string>() == "key"))
+            if (!required.Any(r => r?.GetValue<string>() == EntityJson.Key))
             {
-                required.Add("key");
+                required.Add(EntityJson.Key);
             }
         }
 
-        var subtypes = await ChoicesAsync(adapters, "subtype", chosen, creating, cancellationToken);
-        var subtype = Text(chosen, "subtype");
+        var subtypes = await ChoicesAsync(adapters, EntityJson.Subtype, chosen, creating, cancellationToken);
+        var subtype = Text(chosen, EntityJson.Subtype);
         if (subtypes.Count > 0)
         {
-            OneOf(properties, "subtype", subtypes);
+            OneOf(properties, EntityJson.Subtype, subtypes);
             if (subtype is null)
             {
                 return JsonSerializer.SerializeToElement(schema);
@@ -393,12 +393,12 @@ internal static class EntityInputs
         }
         else
         {
-            properties.Remove("subtype");
+            properties.Remove(EntityJson.Subtype);
         }
 
         var entity = await adapter.GetSchemaAsync(subtype, cancellationToken);
         var fields = SchemaWriter.Fields(entity.Root);
-        fields["description"] = properties["fields"]?["description"]?.DeepClone();
+        fields["description"] = properties[EntityJson.Fields]?["description"]?.DeepClone();
         if (!creating)
         {
             // An update changes only what is given: nothing is required, and a person is told an empty value stays.
@@ -410,7 +410,7 @@ internal static class EntityInputs
             }
         }
 
-        properties["fields"] = fields;
+        properties[EntityJson.Fields] = fields;
 
         // The variant, as one choice per dimension a field varies by.
         var used = entity.Root.Fields.SelectMany(f => f.VariesBy).ToHashSet(StringComparer.Ordinal);
@@ -446,12 +446,12 @@ internal static class EntityInputs
     public static async Task<JsonObject> FromEditorValuesAsync(
         EntityAdapterRegistry adapters, JsonObject chosen, JsonObject values, ISet<string> bound, CancellationToken cancellationToken)
     {
-        if (Text(chosen, "entityType") is not { } entityType || adapters.Find(entityType) is not IEditorValueEntityAdapter editors)
+        if (Text(chosen, EntityJson.EntityType) is not { } entityType || adapters.Find(entityType) is not IEditorValueEntityAdapter editors)
         {
             return values;
         }
 
-        var subtype = Text(chosen, "subtype");
+        var subtype = Text(chosen, EntityJson.Subtype);
         var schema = await editors.GetSchemaAsync(subtype, cancellationToken);
         var read = new JsonObject();
         var problems = new List<Problem>();
@@ -593,7 +593,7 @@ public sealed class DeleteEntityAbility : EntityEditAbilityBase<DeleteEntityInpu
         {
             throw new AbilityInputException(
                 $"{context.Adapter.DisplayName} can't be deleted here. entity.getSchema lists what an entity type supports under capabilities.",
-                [new Problem("entityType", "Can't be deleted.")]);
+                [new Problem(EntityJson.EntityType, "Can't be deleted.")]);
         }
 
         // Marked, not deleted: the change set reads it as gone, and deletes it when the set is applied.
@@ -618,7 +618,7 @@ public sealed class MoveEntityAbility : EntityEditAbilityBase<MoveEntityInput>
         {
             throw new AbilityInputException(
                 $"{context.Adapter.DisplayName} can't be moved. entity.getSchema lists what an entity type supports under capabilities.",
-                [new Problem("entityType", "Can't be moved.")]);
+                [new Problem(EntityJson.EntityType, "Can't be moved.")]);
         }
 
         if (input.Parent == entity.Key)

@@ -267,7 +267,7 @@ public static class FieldChecker
 
         if (field.ReferencesAnyOf is { Count: > 0 })
         {
-            return new JsonObject { ["entityType"] = udi.EntityType, ["key"] = udi.Guid.ToString() };
+            return new JsonObject { [EntityJson.EntityType] = udi.EntityType, [EntityJson.Key] = udi.Guid.ToString() };
         }
 
         // A UDI of another type stays as it is, so the check says which type was expected.
@@ -331,9 +331,9 @@ public static class FieldChecker
         if (field.Type == FieldType.EntityReference && field.ReferencesAnyOf is { Count: > 0 } types)
         {
             return value is JsonObject reference
-                && reference["entityType"]?.GetValueKind() == JsonValueKind.String
-                && types.Contains(reference["entityType"]!.GetValue<string>())
-                && Guid.TryParse(reference["key"]?.ToString(), out _)
+                && reference[EntityJson.EntityType]?.GetValueKind() == JsonValueKind.String
+                && types.Contains(reference[EntityJson.EntityType]!.GetValue<string>())
+                && Guid.TryParse(reference[EntityJson.Key]?.ToString(), out _)
                     ? null
                     : new Problem(path, $"Expected {{ \"entityType\": one of {string.Join(", ", types)}, \"key\": a GUID }}.");
         }
@@ -377,7 +377,7 @@ public static class FieldChecker
         {
             if (single is JsonObject reference)
             {
-                yield return (reference["entityType"]!.GetValue<string>(), Guid.Parse(reference["key"]!.ToString()));
+                yield return (reference[EntityJson.EntityType]!.GetValue<string>(), Guid.Parse(reference[EntityJson.Key]!.ToString()));
             }
             else if (field.ReferencesEntityType is { } type)
             {

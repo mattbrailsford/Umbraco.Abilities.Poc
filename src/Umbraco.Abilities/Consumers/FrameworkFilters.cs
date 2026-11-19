@@ -8,14 +8,13 @@ namespace Umbraco.Abilities.Consumers;
 /// </summary>
 public sealed class ConsentFilter : IAbilityFilter
 {
-    public string Alias => "consent";
+    public string Alias => FrameworkFilters.Consent;
 
     public string Description => "Leaves out what can't be undone where nobody can agree to it first.";
 
     public IEnumerable<AbilityTool> Apply(AbilityTool tool, AbilityFilterContext context)
     {
-        var canAgree = context.Consumer.Capabilities.HasFlag(ConsumerCapabilities.AsksConsent)
-            || context.Consumer.Capabilities.HasFlag(ConsumerCapabilities.StandingConsent);
+        var canAgree = context.Consumer.Can(ConsumerCapabilities.AsksConsent) || context.Consumer.Can(ConsumerCapabilities.StandingConsent);
         yield return tool.Descriptor.RequiresApproval && !canAgree
             ? tool.Drop($"It can't be undone, and {context.Consumer.Name} can't ask a person to agree to it, nor did one agree ahead of time.")
             : tool;
@@ -28,14 +27,33 @@ public sealed class ConsentFilter : IAbilityFilter
 /// </summary>
 public sealed class ChangeSetLifecycleFilter : IAbilityFilter
 {
-    public string Alias => "change-set-lifecycle";
+    public string Alias => FrameworkFilters.ChangeSetLifecycle;
 
     public string Description => "Leaves out the change set tools where no conversation keeps a set open.";
 
     public IEnumerable<AbilityTool> Apply(AbilityTool tool, AbilityFilterContext context)
     {
-        yield return tool.Descriptor.ManagesChangeSets && !context.Consumer.Capabilities.HasFlag(ConsumerCapabilities.Conversation)
+        yield return tool.Descriptor.ManagesChangeSets && !context.Consumer.Can(ConsumerCapabilities.Conversation)
             ? tool.Drop($"It manages change sets, and {context.Consumer.Name} keeps no conversation to hold one open in.")
+            : tool;
+    }
+}
+
+/// <summary>
+/// Drops an ability that needs something the consumer can't do (<see cref="AbilityDescriptor.Needs"/>), such as sending
+/// a file. Offered there, every call would fail. In the base policy.
+/// </summary>
+public sealed class NeedsFilter : IAbilityFilter
+{
+    public string Alias => FrameworkFilters.Needs;
+
+    public string Description => "Leaves out abilities that need something the consumer can't do.";
+
+    public IEnumerable<AbilityTool> Apply(AbilityTool tool, AbilityFilterContext context)
+    {
+        var missing = tool.Descriptor.Needs.Where(need => !context.Consumer.Can(need)).ToList();
+        yield return missing.Count > 0
+            ? tool.Drop($"It needs {string.Join(", ", missing)}, and {context.Consumer.Name} can't do that.")
             : tool;
     }
 }
@@ -46,7 +64,7 @@ public sealed class ChangeSetLifecycleFilter : IAbilityFilter
 /// </summary>
 public sealed class HideBuildingBlocksFilter : IAbilityFilter
 {
-    public string Alias => "hide-building-blocks";
+    public string Alias => FrameworkFilters.HideBuildingBlocks;
 
     public string Description => "Leaves out building blocks a model chains, such as setting one value by its path.";
 
@@ -61,7 +79,7 @@ public sealed class HideBuildingBlocksFilter : IAbilityFilter
 /// <summary>Drops Explain abilities, which answer a reader in a conversation. Nobody reads their answer in a form's step.</summary>
 public sealed class HideExplainFilter : IAbilityFilter
 {
-    public string Alias => "hide-explain";
+    public string Alias => FrameworkFilters.HideExplain;
 
     public string Description => "Leaves out abilities that explain, for a reader in a conversation.";
 
@@ -81,7 +99,7 @@ public sealed class StripFormKeywordsFilter(IEnumerable<string>? more = null) : 
 {
     private readonly IReadOnlyCollection<string> _keywords = [.. UiHints.FormKeywords, .. more ?? []];
 
-    public string Alias => "strip-form-keywords";
+    public string Alias => FrameworkFilters.StripFormKeywords;
 
     public string Description => $"Removes keywords meant for forms ({string.Join(", ", _keywords)}) from schemas and results.";
 
@@ -104,7 +122,7 @@ public sealed class StripFormKeywordsFilter(IEnumerable<string>? more = null) : 
 /// </summary>
 public sealed class ApplyHintsFilter : IAbilityFilter, IAbilityResultFilter
 {
-    public string Alias => "apply-hints";
+    public string Alias => FrameworkFilters.ApplyHints;
 
     public string Description => "Adds the hints for the consumer's reader to descriptions, and drops the others.";
 
@@ -129,7 +147,7 @@ public sealed class ApplyHintsFilter : IAbilityFilter, IAbilityResultFilter
 /// </summary>
 public sealed class AddChangeSetArgumentFilter : IAbilityFilter
 {
-    public string Alias => "add-change-set-argument";
+    public string Alias => FrameworkFilters.AddChangeSetArgument;
 
     public string Description => "Adds changeSetId to tools whose caller chooses the change set.";
 
@@ -148,7 +166,7 @@ public sealed class AddChangeSetArgumentFilter : IAbilityFilter
 /// </summary>
 public sealed class ChangeSetPerCallFilter : IAbilityFilter
 {
-    public string Alias => "change-set-per-call";
+    public string Alias => FrameworkFilters.ChangeSetPerCall;
 
     public string Description => "Makes each Write call its own change set, applied at once.";
 
@@ -177,7 +195,7 @@ public sealed class ChangeSetPerCallFilter : IAbilityFilter
 /// </summary>
 public sealed class SplitByChoiceFilter : IAbilityFilter
 {
-    public string Alias => "split-by-choice";
+    public string Alias => FrameworkFilters.SplitByChoice;
 
     public string Description => "Makes one tool per value of the argument an ability splits by, such as one Create per entity type.";
 
@@ -217,6 +235,36 @@ public static class FrameworkFilters
     /// <summary>For a consumer whose reader fills in a form, one call at a time: its hints, whole operations, each its own change set, split into one tool per choice.</summary>
     public const string ForForms = "for-forms";
 
+    /// <summary>The base policy's filter for what can't be undone: <see cref="ConsentFilter"/>.</summary>
+    public const string Consent = "consent";
+
+    /// <summary>The base policy's filter for the change set tools: <see cref="ChangeSetLifecycleFilter"/>.</summary>
+    public const string ChangeSetLifecycle = "change-set-lifecycle";
+
+    /// <summary>The base policy's filter for what an ability needs: <see cref="NeedsFilter"/>.</summary>
+    public const string Needs = "needs";
+
+    /// <summary><see cref="ApplyHintsFilter"/>.</summary>
+    public const string ApplyHints = "apply-hints";
+
+    /// <summary><see cref="StripFormKeywordsFilter"/>.</summary>
+    public const string StripFormKeywords = "strip-form-keywords";
+
+    /// <summary><see cref="AddChangeSetArgumentFilter"/>.</summary>
+    public const string AddChangeSetArgument = "add-change-set-argument";
+
+    /// <summary><see cref="HideBuildingBlocksFilter"/>.</summary>
+    public const string HideBuildingBlocks = "hide-building-blocks";
+
+    /// <summary><see cref="HideExplainFilter"/>.</summary>
+    public const string HideExplain = "hide-explain";
+
+    /// <summary><see cref="ChangeSetPerCallFilter"/>.</summary>
+    public const string ChangeSetPerCall = "change-set-per-call";
+
+    /// <summary><see cref="SplitByChoiceFilter"/>.</summary>
+    public const string SplitByChoice = "split-by-choice";
+
     /// <summary>
     /// Adds the framework's filters; puts the ones that protect against harm in the base policy, and groups the rest
     /// into the <see cref="ForModels"/> and <see cref="ForForms"/> policies. <paramref name="formKeywords"/> are a
@@ -224,7 +272,7 @@ public static class FrameworkFilters
     /// </summary>
     public static AbilityFilterRegistry AddFrameworkFilters(this AbilityFilterRegistry filters, AbilityPolicyRegistry policies, IEnumerable<string>? formKeywords = null)
     {
-        IAbilityFilter[] basePolicy = [new ConsentFilter(), new ChangeSetLifecycleFilter()];
+        IAbilityFilter[] basePolicy = [new ConsentFilter(), new ChangeSetLifecycleFilter(), new NeedsFilter()];
         foreach (var filter in basePolicy)
         {
             filters.Add(filter);

@@ -208,7 +208,7 @@ public static class AbilitiesManagementApiBuilderExtensions
         "MCP server",
         "A model through an MCP server, such as Umbraco CMS MCP Dev. Its session keeps a change set open, and its client asks the person before anything that can't be undone.",
         AbilityAudiences.Model,
-        ConsumerCapabilities.Conversation | ConsumerCapabilities.AsksConsent,
+        [ConsumerCapabilities.Conversation, ConsumerCapabilities.AsksConsent],
         [FrameworkFilters.ForModels]);
 
     /// <summary>Adds the MCP server's consumer, so the abilities endpoints can serve it. Call with <c>AddAbilities()</c>.</summary>

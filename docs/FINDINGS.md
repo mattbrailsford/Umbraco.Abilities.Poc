@@ -577,6 +577,22 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
     - **`x-hints` is not a form keyword.** A form needs its person hints, so `strip-form-keywords` must leave
       `x-hints` alone. Only `apply-hints` reads and removes it.
 
+37. **What a consumer can do has to be an open list.** Consumer capabilities were a closed set of three flags
+    (conversation, asks consent, standing consent). They cover what the framework protects against, but not what a
+    package needs: an ability that takes a file only works where the surface can send one, and a long job only where
+    it can wait. With a closed list, the only way to hide such an ability was a filter that names the consumer, which
+    breaks "no ability names a consumer". Now both sides use names, as audiences do. Building it showed:
+    - **An ability says what it needs; a consumer says what it can do.** `[Ability(Needs = ["acme.file-upload"])]` on
+      one side, the same name in the consumer's capabilities on the other. One base policy filter, `needs`, drops
+      the tool where a name is missing, and its note says which.
+    - **The framework's three became names, with nothing else changed.** `conversation`, `asks-consent` and
+      `standing-consent` are constants on `ConsumerCapabilities`. The consent and change set filters read them as before.
+    - **A package names its own as `owner.name`,** as metadata keys are, so two packages don't clash.
+    - **It belongs in the base policy.** An ability offered where it can't work fails on every call, so no consumer
+      should be able to leave the check out.
+    - **Not shown yet:** a real ability that needs one. The MCP gaps (upload, long jobs) are where it would be used
+      first.
+
 ## Developer experience of adapters
 
 Making things easy for a model is one side. The other is what a package developer writes. Reading the samples as

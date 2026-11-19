@@ -31,7 +31,7 @@ public abstract class AbilitiesApiTestBase : ManagementApiTest<AbilitiesControll
     /// <summary>A consumer that builds forms for a person in the backoffice, such as a change set screen.</summary>
     protected static readonly IAbilityConsumer FormConsumer = new AbilityConsumer(
         "test-forms", "Test forms", "Forms a person fills in, in the backoffice.", AbilityAudiences.Person,
-        ConsumerCapabilities.Conversation | ConsumerCapabilities.AsksConsent, [FrameworkFilters.ForForms]);
+        [ConsumerCapabilities.Conversation, ConsumerCapabilities.AsksConsent], [FrameworkFilters.ForForms]);
 
     protected override void CustomTestSetup(IUmbracoBuilder builder)
     {

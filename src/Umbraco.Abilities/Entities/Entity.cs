@@ -42,11 +42,11 @@ public sealed class Entity
     /// <summary>The form tools show.</summary>
     public JsonObject ToJson() => new()
     {
-        ["entityType"] = EntityType,
-        ["key"] = Key.ToString(),
-        ["subtype"] = Subtype,
-        ["version"] = Version,
-        ["fields"] = Fields.DeepClone(),
+        [EntityJson.EntityType] = EntityType,
+        [EntityJson.Key] = Key.ToString(),
+        [EntityJson.Subtype] = Subtype,
+        [EntityJson.Version] = Version,
+        [EntityJson.Fields] = Fields.DeepClone(),
     };
 }
 

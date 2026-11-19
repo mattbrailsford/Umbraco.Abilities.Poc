@@ -81,6 +81,7 @@ Abilities keep stating facts, never consumers. Filters read them. Most exist tod
 | Input depends on a choice | No | New: `DependentInput`. Part of the input's shape depends on a value in it, such as the fields of the chosen page type |
 | An argument with few, stable values | No | New: `SplitBy`. Names an argument a filter may split on, such as `entityType` |
 | Description and hints | One description, mostly written for models | Split: a description for every reader, and hints for one audience (section 9) |
+| What it needs from a consumer | No | New: `Needs`. Capability names, such as `acme.file-upload`. The base policy drops it where one is missing |
 
 ### 2. Tools
 
@@ -189,7 +190,7 @@ policies
 
 ### 5. The base policy
 
-Two filters protect against harm, not clutter. They are the **base policy**: they run first, for every consumer, and no
+Three filters protect against harm, not clutter. They are the **base policy**: they run first, for every consumer, and no
 consumer or admin can switch them off. They read the consumer's capabilities, so a consumer can't skip them by leaving
 them out of its list.
 
@@ -197,9 +198,10 @@ them out of its list.
 | --- | --- | --- |
 | `consent` | The ability needs approval, and the consumer can't ask and has no standing consent | Nothing today. A gap |
 | `change-set-lifecycle` | The ability manages change sets, and the consumer has no conversation to keep one open in | Automate's `IChangeSetLifecycleAbility` check |
+| `needs` | The ability needs a capability the consumer doesn't state | Nothing. Before, only a filter naming the consumer could do it |
 
 A package can add a filter to the base policy (`policies.AddToBasePolicy(...)`), to protect against a harm of its own.
-It can't remove one. The framework's two are added with `filters.AddFrameworkFilters(policies)`.
+It can't remove one. The framework's three are added with `filters.AddFrameworkFilters(policies)`.
 
 ### 6. Consumers
 
@@ -212,21 +214,20 @@ public interface IAbilityConsumer
     string Name { get; }           // "Umbraco Automate"
     string Description { get; }    // For the admin screen.
     string Audience { get; }       // Who reads its text: "model" or "person". Picks the hints (section 9).
-    ConsumerCapabilities Capabilities { get; }  // Read by the base policy.
-    IReadOnlyList<string> Filters { get; }      // Policy or filter aliases, applied in this order.
+    IReadOnlyCollection<string> Capabilities { get; }  // Names. Read by the base policy.
+    IReadOnlyList<string> Filters { get; }             // Policy or filter aliases, applied in this order.
 }
 
-[Flags]
-public enum ConsumerCapabilities
+// The framework's names. The list is open: a package adds its own as "owner.name", such as "acme.file-upload".
+public static class ConsumerCapabilities
 {
-    None = 0,
-    Conversation = 1,     // Holds a session across calls, so a change set can stay open between them.
-    AsksConsent = 2,      // Can stop and ask a person before one call (AI chat approval, MCP elicitation).
-    StandingConsent = 4,  // A person agreed ahead of time (publishing an automation).
+    public const string Conversation = "conversation";        // Holds a session across calls, so a change set can stay open.
+    public const string AsksConsent = "asks-consent";         // Can stop and ask a person before one call.
+    public const string StandingConsent = "standing-consent"; // A person agreed ahead of time (publishing an automation).
 }
 
 consumers.Add(new AbilityConsumer("automate", "Umbraco Automate", "…", AbilityAudiences.Person,
-    ConsumerCapabilities.StandingConsent, ["for-forms"]));
+    [ConsumerCapabilities.StandingConsent], [FrameworkFilters.ForForms]));
 ```
 
 The PoC's consumers:
@@ -507,6 +508,7 @@ Each task keeps the full suite green. Each is one PR-sized step.
 | 16 | Done. Automate: page type picker and the fields editor (FUDGE) | `EntityAction` deleted |
 | 17 | Done. `Creatable` subtypes in the CMS adapter | "Article Controls" can't be picked |
 | 18 | Done. Docs: ARCHITECTURE (a consumers layer), FINDINGS, TESTS, README, REVIEWING | |
+| 19 | Done. Capabilities as open names; `Needs` on abilities; the `needs` filter in the base policy | A package names a capability of its own, with no framework change |
 
 ## Test plan
 
@@ -549,6 +551,7 @@ What they check stays the same; if that has to change, it is a finding.
 | Does a saved step store the page type's alias or key? | Key: it survives a rename. The picker shows the name |
 | What happens to filled-in values if the page type changes? | Keep values whose field exists in both types, drop the rest, and say so |
 | Do we need more audiences than model and person? | Not yet. The list is open if one shows up |
+| Can a package name a capability of its own, such as sending a file? | Yes. Capabilities are names, as audiences are. An ability lists what it `Needs`, and the base policy matches them |
 | Should Umbraco's own property descriptions (set by the site's developers) be the description, a person hint, or both? | The description. They are written for editors, and models read them well enough |
 | Blocks and other items fields in forms | Parked, as before |
 
