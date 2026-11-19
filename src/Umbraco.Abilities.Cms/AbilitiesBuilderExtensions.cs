@@ -9,7 +9,6 @@ using Umbraco.Cms.Core.DependencyInjection;
 using Umbraco.Cms.Core.Events;
 using Umbraco.Cms.Core.HostedServices;
 using Umbraco.Cms.Core.Security;
-using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.DraftSets;
 
 namespace Umbraco.Abilities.Cms;
@@ -20,9 +19,10 @@ public static class AbilitiesBuilderExtensions
     /// <summary>
     /// Registers the framework as singletons: the ability, adapter and item type registries, the change set service
     /// (change sets kept in memory), the invoker, the tool runner, the filter, policy and consumer registries with the
-    /// tool provider, and the document and media adapters. Saves run as the signed-in backoffice user. A product adds
-    /// its own adapters and abilities to <see cref="EntityAdapterRegistry"/> and <see cref="AbilityRegistry"/>, and its
-    /// own filters, policies and consumers to theirs.
+    /// tool provider, and the document and media adapters. Saves run as the signed-in backoffice user
+    /// (<see cref="CmsActingUser"/>). A package adds its own adapters with <c>builder.EntityAdapters()</c> and its own
+    /// abilities with <c>builder.Abilities()</c>, its filters with <c>builder.AbilityFilters()</c> and its consumers with
+    /// <c>builder.AbilityConsumers()</c>, in any order.
     /// </summary>
     public static IUmbracoBuilder AddAbilities(this IUmbracoBuilder builder)
     {
@@ -37,28 +37,25 @@ public static class AbilitiesBuilderExtensions
         services.AddSingleton<DraftSetService>();
         services.AddSingleton<CmsScopeUnitOfWorkProvider>();
         services.AddSingleton<CmsContentSchemas>();
-        services.AddSingleton(sp => new CmsDocumentAdapter(
-            sp.GetRequiredService<CmsContentSchemas>(),
-            sp.GetRequiredService<IContentTypeService>(),
-            sp.GetRequiredService<IContentEditingService>(),
-            sp.GetRequiredService<IEntityService>(),
-            sp.GetRequiredService<DraftSetService>(),
-            sp.GetRequiredService<IUserService>(),
-            sp.GetRequiredService<IContentPermissionService>(),
-            sp.GetRequiredService<CmsScopeUnitOfWorkProvider>(),
-            ActingUser(sp)));
-        services.AddSingleton(sp => new CmsMediaAdapter(
-            sp.GetRequiredService<CmsContentSchemas>(),
-            sp.GetRequiredService<IMediaTypeService>(),
-            sp.GetRequiredService<IMediaEditingService>(),
-            sp.GetRequiredService<IEntityService>(),
-            sp.GetRequiredService<IUserService>(),
-            sp.GetRequiredService<IMediaPermissionService>(),
-            sp.GetRequiredService<CmsScopeUnitOfWorkProvider>(),
-            ActingUser(sp)));
-        services.AddSingleton(sp => new EntityAdapterRegistry()
-            .Add(sp.GetRequiredService<CmsDocumentAdapter>())
-            .Add(sp.GetRequiredService<CmsMediaAdapter>()));
+        services.AddSingleton(sp => new CmsActingUser(sp.GetRequiredService<IBackOfficeSecurityAccessor>()));
+
+        // The entity adapters: CMS documents and media here, and those packages add with builder.EntityAdapters().
+        builder.EntityAdapters()
+            .Add<CmsDocumentAdapter>()
+            .Add<CmsMediaAdapter>();
+        services.AddSingleton(sp =>
+        {
+            var adapters = new EntityAdapterRegistry();
+            foreach (var adapter in sp.GetRequiredService<EntityAdapterCollection>())
+            {
+                adapters.Add(adapter);
+            }
+
+            return adapters;
+        });
+
+        // The abilities packages add with builder.Abilities(), beside the framework's own.
+        builder.Abilities();
 
         // The change set service needs the abilities, to replay them, and the change set abilities need the service.
         // So the three are made together.
@@ -76,19 +73,24 @@ public static class AbilitiesBuilderExtensions
                 sp.GetRequiredService<IEventAggregator>(),
                 sp.GetRequiredService<IBackgroundTaskQueue>());
             abilities.AddFrameworkAbilities(adapters, itemTypes, changeSets);
+
+            // A package's ability may need the change set service, so it is made once the service is there.
+            abilities.AddLater(() => sp.GetRequiredService<AbilityCollection>());
             return new AbilityInvoker(abilities, changeSets);
         });
         services.AddSingleton(sp => sp.GetRequiredService<AbilityInvoker>().ChangeSets);
         services.AddSingleton(sp => sp.GetRequiredService<AbilityInvoker>().Abilities);
 
         // Which tools each consumer offers: the framework's filters and policies, the filters and consumers packages
-        // register (as IAbilityFilter and IAbilityConsumer services), and the site's overrides from configuration.
+        // add (with builder.AbilityFilters() and builder.AbilityConsumers()), and the site's overrides from configuration.
+        builder.AbilityFilters();
+        builder.AbilityConsumers();
         var overrides = builder.Config.GetSection("Umbraco:Abilities:Consumers").Get<AbilityOverrides>() ?? new AbilityOverrides();
         services.AddSingleton<AbilityPolicyRegistry>();
         services.AddSingleton(sp =>
         {
             var filters = new AbilityFilterRegistry().AddFrameworkFilters(sp.GetRequiredService<AbilityPolicyRegistry>());
-            foreach (var filter in sp.GetServices<IAbilityFilter>())
+            foreach (var filter in sp.GetRequiredService<AbilityFilterCollection>())
             {
                 filters.Add(filter);
             }
@@ -98,7 +100,7 @@ public static class AbilitiesBuilderExtensions
         services.AddSingleton(sp =>
         {
             var consumers = new AbilityConsumerRegistry();
-            foreach (var consumer in sp.GetServices<IAbilityConsumer>())
+            foreach (var consumer in sp.GetRequiredService<AbilityConsumerCollection>())
             {
                 consumers.Add(consumer);
             }
@@ -122,13 +124,5 @@ public static class AbilitiesBuilderExtensions
         services.AddSingleton<AbilityToolRunner>();
 
         return builder;
-    }
-
-    // Umbraco saves as a user. Here that is the backoffice user signed in to the request that applies the set.
-    private static Func<Guid> ActingUser(IServiceProvider services)
-    {
-        var security = services.GetRequiredService<IBackOfficeSecurityAccessor>();
-        return () => security.BackOfficeSecurity?.CurrentUser?.Key
-            ?? throw new InvalidOperationException("No backoffice user is signed in to save as.");
     }
 }

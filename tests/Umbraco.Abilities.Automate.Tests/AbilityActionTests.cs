@@ -51,6 +51,7 @@ public sealed class AbilityActionTests : UmbracoIntegrationTest
     {
         builder.AddUmbracoAutomate();
         builder.AddAbilities();
+        builder.AddAutomateAbilities();
         builder.Services.AddSingleton<StartedSignal>();
         builder.AddNotificationHandler<UmbracoApplicationStartedNotification, StartedSignal.Handler>();
     }

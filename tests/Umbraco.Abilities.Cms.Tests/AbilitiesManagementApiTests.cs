@@ -54,6 +54,26 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
     }
 
     [Test]
+    public async Task A_package_adds_an_ability_with_the_abilities_collection_builder_and_a_caller_can_use_it()
+    {
+        await SignInAsEditorAsync();
+
+        // Added with builder.Abilities() (see AbilitiesApiTestBase), it is listed and runs beside the framework's own.
+        var response = await Client.GetAsync(Url);
+        var ids = (await response.Content.ReadFromJsonAsync<JsonElement>()).EnumerateArray().Select(a => a.GetProperty("id").GetString()).ToList();
+        Assert.That(ids, Does.Contain("test.catalogue").And.Contain("entity.create"));
+
+        var catalogue = await OkAsync("test.catalogue", "{}");
+        var types = catalogue.GetProperty("entityTypes").EnumerateArray().Select(t => t.GetString()).ToList();
+        var abilities = catalogue.GetProperty("abilities").EnumerateArray().Select(t => t.GetString()).ToList();
+        Assert.Multiple(() =>
+        {
+            Assert.That(types, Does.Contain("document").And.Contain("media"), "the adapters added with builder.EntityAdapters()");
+            Assert.That(abilities, Does.Contain("test.catalogue").And.Contain("changeSet.apply"), "the registry it asked for holds it and the framework's own");
+        });
+    }
+
+    [Test]
     public async Task A_consumer_that_builds_forms_gets_each_fields_editor_and_the_MCP_server_does_not()
     {
         await SignInAsEditorAsync();
@@ -61,7 +81,7 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
         // A UI, such as a change set screen, reads x-editor and x-meta: its consumer keeps them. MCP's strips them, in
         // results too.
         const string article = """{ "entityType": "document", "subtype": "article" }""";
-        var title = (await OkAsync("entity.getSchema", article, consumer: FormConsumer.Alias)).GetProperty("fields").GetProperty("properties").GetProperty("title");
+        var title = (await OkAsync("entity.getSchema", article, consumer: FormConsumer.ConsumerAlias)).GetProperty("fields").GetProperty("properties").GetProperty("title");
         Assert.That(title.GetProperty("x-editor").GetProperty("alias").GetString(), Is.Not.Empty);
         Assert.That(title.GetProperty("x-meta").TryGetProperty("umbraco.cms.data-type", out _), Is.True);
 
@@ -79,7 +99,7 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
         string? ParentOf(JsonElement schema) => schema.GetProperty("fields").GetProperty("properties").GetProperty("parent").GetProperty("description").GetString();
 
         Assert.That(ParentOf(await OkAsync("entity.getSchema", article)), Does.Contain("entity.move"));
-        Assert.That(ParentOf(await OkAsync("entity.getSchema", article, consumer: FormConsumer.Alias)), Does.Not.Contain("entity.move"));
+        Assert.That(ParentOf(await OkAsync("entity.getSchema", article, consumer: FormConsumer.ConsumerAlias)), Does.Not.Contain("entity.move"));
     }
 
     [Test]
@@ -99,7 +119,7 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
         }
 
         // A form consumer has one Create per entity type: the page type is chosen, and the fields follow it.
-        var (status, body) = await InputSchemaAsync("entity.create:document", """{ "subtype": "article" }""", FormConsumer.Alias);
+        var (status, body) = await InputSchemaAsync("entity.create:document", """{ "subtype": "article" }""", FormConsumer.ConsumerAlias);
         Assert.That(status, Is.EqualTo(HttpStatusCode.OK), body);
         var fields = JsonDocument.Parse(body).RootElement.GetProperty("properties").GetProperty("fields");
         Assert.That(fields.GetProperty("properties").TryGetProperty("title", out _), Is.True, body);
@@ -129,7 +149,7 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
         }
 
         var mcp = await ListAsync(null);
-        var forms = await ListAsync(FormConsumer.Alias);
+        var forms = await ListAsync(FormConsumer.ConsumerAlias);
         Assert.Multiple(() =>
         {
             Assert.That(mcp.Ids, Does.Contain("entity.setValue"), "no header is the MCP server's consumer");
@@ -144,7 +164,7 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
         await SignInAsEditorAsync();
 
         // The form consumer leaves out building blocks such as setValue.
-        var (status, _) = await InvokeAsync("entity.setValue", "{}", consumer: FormConsumer.Alias);
+        var (status, _) = await InvokeAsync("entity.setValue", "{}", consumer: FormConsumer.ConsumerAlias);
         Assert.That(status, Is.EqualTo(HttpStatusCode.NotFound));
     }
 

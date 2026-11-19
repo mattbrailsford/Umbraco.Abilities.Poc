@@ -8,7 +8,9 @@ decide which abilities it offers and in what shape. One action class serves ever
 1. `Consumer/AutomateConsumer.cs`: who Automate is, as a consumer. Its audience, what it can do, its filters.
 2. `Actions/AbilityActionLoader.cs`: one action per tool the consumer offers.
 3. `Actions/AbilityAction.cs`: an ability as an Automate action: its form, and running it.
-4. `AbilityActionServiceCollectionExtensions.cs`: the one call a site makes.
+4. `AutomateAbilitiesBuilderExtensions.cs` and `AbilityActionServiceCollectionExtensions.cs`: the two calls a site
+   makes. The first adds the consumer and its filter to Umbraco's builder. The second adds the actions once it has
+   built.
 
 ## Folders
 

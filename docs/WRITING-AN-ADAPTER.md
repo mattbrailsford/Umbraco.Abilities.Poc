@@ -119,6 +119,13 @@ public sealed class DiscountAdapter(DiscountService discounts, ...) : EntityAdap
 }
 ```
 
+On an Umbraco site, add the adapter with Umbraco's collection builder, from the package's composer or builder
+extension. It is made once, by dependency injection, so its constructor can ask for the product's services:
+
+```csharp
+builder.EntityAdapters().Add<CommerceDiscountAdapter>();
+```
+
 The access check is required. Registering an adapter without one fails at start-up, as an ability without an access
 rule does. Finding by name works from `ListModels`; override `FindModelsAsync` when the product can search itself.
 When the save must see what changed, such as a new parent to move under, override `SaveModelAsync(before, model)`

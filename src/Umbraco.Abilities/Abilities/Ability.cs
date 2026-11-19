@@ -368,9 +368,13 @@ public abstract class AbilityBase<TOutput> : AbilityBase<NoInput, TOutput>
     protected abstract Task<AbilityResult> ExecuteAsync(AbilityContext context, CancellationToken cancellationToken);
 }
 
+/// <summary>Every ability a caller can be offered, by id.</summary>
 public sealed class AbilityRegistry
 {
     private readonly Dictionary<string, IAbility> _abilities = new(StringComparer.Ordinal);
+    private readonly List<Func<IEnumerable<IAbility>>> _later = [];
+    private volatile bool _laterAdded;
+    private bool _addingLater;
 
     public AbilityRegistry Add(IAbility ability)
     {
@@ -378,7 +382,65 @@ public sealed class AbilityRegistry
         return this;
     }
 
-    public IAbility? Find(string id) => _abilities.GetValueOrDefault(id);
+    /// <summary>
+    /// Adds abilities the first time the registry is read, not now. For abilities that need a service which needs this
+    /// registry, such as the change set service: they can't be made before it.
+    /// </summary>
+    public AbilityRegistry AddLater(Func<IEnumerable<IAbility>> abilities)
+    {
+        if (_laterAdded)
+        {
+            throw new InvalidOperationException("The registry has been read, so it can't take more abilities later.");
+        }
 
-    public IReadOnlyCollection<IAbility> All => _abilities.Values;
+        _later.Add(abilities);
+        return this;
+    }
+
+    public IAbility? Find(string id)
+    {
+        AddLaterAbilities();
+        return _abilities.GetValueOrDefault(id);
+    }
+
+    public IReadOnlyCollection<IAbility> All
+    {
+        get
+        {
+            AddLaterAbilities();
+            return _abilities.Values;
+        }
+    }
+
+    private void AddLaterAbilities()
+    {
+        if (_laterAdded || _later.Count == 0)
+        {
+            return;
+        }
+
+        lock (_later)
+        {
+            // An ability being made may read the registry. It sees the abilities added so far.
+            if (_laterAdded || _addingLater)
+            {
+                return;
+            }
+
+            _addingLater = true;
+            try
+            {
+                foreach (var ability in _later.SelectMany(abilities => abilities()))
+                {
+                    Add(ability);
+                }
+
+                _laterAdded = true;
+            }
+            finally
+            {
+                _addingLater = false;
+            }
+        }
+    }
 }

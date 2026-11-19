@@ -253,6 +253,19 @@ There are two limits:
 - **The mapping can't invent ids the domain lacks.** Commerce's rules have none, so keys are derived from the discount, position and provider. They are stable across loads, but a new rule's key changes once saved, and a moved rule reads as removed and added when rebasing. Stable ids on Commerce's rule nodes would fix this.
 - **Schema that is data, not code, has no contract class.** A CMS document type is defined in the backoffice, and a workflow's step types are other packages' abilities. These implement `IEntityAdapter` over a typed `Entity`. There is still no JSON digging, and the CMS adapter builds Umbraco's own `BlockListValue` and `BlockGridValue`.
 
+On an Umbraco site, a package registers what it ships with Umbraco's collection builders, as it registers property
+editors or health checks. One builder per kind, each item made once by dependency injection, in any order:
+
+```csharp
+builder.EntityAdapters().Add<CommerceDiscountAdapter>();
+builder.Abilities().Add<ActivateDiscountAbility>();
+builder.AbilityFilters().Add<AutomateEditorsFilter>();
+builder.AbilityConsumers().Add<AutomateConsumer>();
+```
+
+The site's registries are filled from these collections. Package abilities join the registry the first time it is
+read, because an ability may need the change set service, and that service needs the registry.
+
 ### Item types for plugin seams
 
 Discount rules and rewards, and Automate triggers and actions, are plugin seams: products and third parties register them, and no one controls them all. Nobody writes an item type per plugin. Each product describes its **registry** once, with an item type source per seam, and the item types follow from whatever is registered when they're needed. A plugin installed later just shows up, and plugins write no Abilities code.

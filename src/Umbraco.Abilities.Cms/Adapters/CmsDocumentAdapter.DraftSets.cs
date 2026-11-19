@@ -91,7 +91,7 @@ public sealed partial class CmsDocumentAdapter
             variant.Segment,
             keep == ConflictSide.Yours ? DraftKeep.Draft : DraftKeep.Live);
 
-    public Task ApplyDraftAsync(Guid draftId, CancellationToken cancellationToken = default) => _draftSets.ApplyAsync(draftId, _actingUser());
+    public Task ApplyDraftAsync(Guid draftId, CancellationToken cancellationToken = default) => _draftSets.ApplyAsync(draftId, _actingUser.Key);
 
     public Task DiscardDraftAsync(Guid draftId, CancellationToken cancellationToken = default)
     {

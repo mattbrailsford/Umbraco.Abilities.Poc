@@ -194,6 +194,10 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
 
 Called over HTTP on Umbraco's test server, as the Umbraco CMS MCP Dev server would call them.
 
+- A package adds an ability, a consumer and adapters with Umbraco's collection builders, and callers use them. The
+  ability asks for the registries, including the one it joins
+  - `AbilitiesManagementApiTests.A_package_adds_an_ability_with_the_abilities_collection_builder_and_a_caller_can_use_it`
+
 - The framework's tool schemas, from .NET's own exporter, are the ones M.E.AI would make, for every sample ability
   - `AbilityToolSchemaTests.Every_abilitys_input_schema_is_the_one_MEAI_would_make`
 - A call that can't be undone runs only with the approval made for it, decided per call: recorded in a change set it needs no consent

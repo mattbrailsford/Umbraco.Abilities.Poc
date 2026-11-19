@@ -19,4 +19,4 @@ permissions and Draft Sets. This is what CMS core would ship.
 | `Adapters/` | The document and media adapters, and the base for any entity whose types are content types |
 | `Content/` | Shared plumbing: a content type as a schema, stored values in and out, and Umbraco's errors as entity paths |
 | `PropertyEditors/` | One handler per property editor: describe, read and write its value. Packages add their own |
-| `Infrastructure/` | The CMS's transaction for a change set, and the middleware that reads the `Umb-Change-Set` header |
+| `Infrastructure/` | The CMS's transaction for a change set, the user documents save as (`CmsActingUser`), and the middleware that reads the `Umb-Change-Set` header |

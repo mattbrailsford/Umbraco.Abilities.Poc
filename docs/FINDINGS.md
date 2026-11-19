@@ -593,6 +593,25 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
     - **Not shown yet:** a real ability that needs one. The MCP gaps (upload, long jobs) are where it would be used
       first.
 
+38. **A package registers what it ships with Umbraco's collection builders.** Adapters, abilities, filters and
+    consumers each have one: `builder.EntityAdapters()`, `builder.Abilities()`, `builder.AbilityFilters()` and
+    `builder.AbilityConsumers()`. Before, each was added its own way: CMS adapters in `AddAbilities`, Commerce's from a
+    start-up handler, filters and consumers as plain services, and a package's own abilities not at all on a real site.
+    Building it showed:
+    - **The order of calls stops mattering.** Commerce had to call after `AddAbilities`, and add its adapters while the
+      site started. Now it adds three types, in any order, and the start-up handler is gone.
+    - **An ability can need the service that needs it.** A product's ability reads through the change set service,
+      which needs the ability registry. So package abilities join the registry the first time it is read
+      (`AbilityRegistry.AddLater`), once the service is there.
+    - **Items are types, made by dependency injection.** The CMS adapters took a function for the user to save as,
+      which DI can't supply. That became a service, `CmsActingUser`, which a test replaces in one line.
+    - **Automate needs two calls.** Its consumer and filter go on Umbraco's builder; its actions can only be added
+      after the builder has built (see [What the loader fudges](#what-the-loader-fudges)).
+    - **Kept explicit, on purpose.** Umbraco's type loader could add every adapter, ability, filter or consumer in a
+      package with no registration, as property editor handlers already are. It would also pick up test and sample
+      classes, which would then need excluding. One `.Add<...>()` line per item is cheap and easy to read, so the
+      type loader stays an option for later.
+
 ## Developer experience of adapters
 
 Making things easy for a model is one side. The other is what a package developer writes. Reading the samples as

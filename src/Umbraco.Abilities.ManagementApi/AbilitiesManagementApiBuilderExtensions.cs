@@ -1,5 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
-
 using Umbraco.Abilities.Consumers;
 using Umbraco.Cms.Core.DependencyInjection;
 
@@ -11,7 +9,7 @@ public static class AbilitiesManagementApiBuilderExtensions
     /// <summary>Adds the MCP server's consumer, so the abilities endpoints can serve it. Call with <c>AddAbilities()</c>.</summary>
     public static IUmbracoBuilder AddAbilitiesManagementApi(this IUmbracoBuilder builder)
     {
-        builder.Services.AddSingleton<IAbilityConsumer, McpConsumer>();
+        builder.AbilityConsumers().Add<McpConsumer>();
         return builder;
     }
 }

@@ -30,8 +30,8 @@ public sealed partial class CmsDocumentAdapter(
     DraftSetService draftSets,
     IUserService users,
     IContentPermissionService permissions,
-    IUnitOfWorkProvider unitOfWork,
-    Func<Guid> actingUser)
+    CmsScopeUnitOfWorkProvider unitOfWork,
+    CmsActingUser actingUser)
     : ContentTypeEntityAdapterBase<IContentType>(schemas), IDraftingEntityAdapter, IDeletableEntityAdapter, ITreeEntityAdapter
 {
     public const string Type = Constants.UdiEntityType.Document;
@@ -39,7 +39,7 @@ public sealed partial class CmsDocumentAdapter(
     private readonly DraftSetService _draftSets = draftSets;
     private readonly IUserService _users = users;
     private readonly IContentPermissionService _permissions = permissions;
-    private readonly Func<Guid> _actingUser = actingUser;
+    private readonly CmsActingUser _actingUser = actingUser;
 
     public override string EntityType => Type;
 
@@ -74,11 +74,11 @@ public sealed partial class CmsDocumentAdapter(
         var attempt = document.Version is null
             ? await editing.ValidateCreateAsync(
                 new ContentCreateModel { Key = content.Key, ContentTypeKey = content.TypeKey, ParentKey = content.ParentKey, Variants = content.Variants, Properties = content.Properties },
-                _actingUser())
+                _actingUser.Key)
             : await editing.ValidateUpdateAsync(
                 document.Key,
                 new ValidateContentUpdateModel { Variants = content.Variants, Properties = content.Properties, Cultures = content.Cultures },
-                _actingUser());
+                _actingUser.Key);
 
         var problems = attempt.Result.ValidationErrors.Select(content.ToProblem).ToList();
         if (!attempt.Success && attempt.Status != ContentEditingOperationStatus.PropertyValidationError)

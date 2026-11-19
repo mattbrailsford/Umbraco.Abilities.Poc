@@ -1,6 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
 
-using Umbraco.Abilities.Consumers;
 using Umbraco.Automate.Core.Actions;
 
 namespace Umbraco.Abilities.Automate;
@@ -10,7 +9,8 @@ public static class AbilityActionServiceCollectionExtensions
 {
     /// <summary>
     /// Adds every ability to Automate's actions. Call it after Umbraco's builder has built (in Program.cs, after
-    /// <c>.Build()</c>), because only then has Automate registered its action collection.
+    /// <c>.Build()</c>), because only then has Automate registered its action collection. The Automate consumer is
+    /// added before that, with <see cref="AutomateAbilitiesBuilderExtensions.AddAutomateAbilities"/>.
     /// <para>
     /// FUDGE (registration): Automate's action collection is built from types, one instance per type, found by an
     /// attribute scan. Abilities are instances made at run time, so this replaces the collection with one that holds
@@ -27,8 +27,6 @@ public static class AbilityActionServiceCollectionExtensions
         var options = new AbilityActionOptions();
         configure?.Invoke(options);
         services.AddSingleton(options);
-        services.AddSingleton<IAbilityConsumer, AutomateConsumer>();
-        services.AddSingleton<IAbilityFilter>(new AutomateEditorsFilter(options));
         services.AddSingleton<AbilityStep>();
         services.AddSingleton<AbilityActionLoader>();
         services.AddSingleton(sp =>
