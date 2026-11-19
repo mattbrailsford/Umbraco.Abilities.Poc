@@ -183,9 +183,9 @@ public class ConsumerTests
     [Fact]
     public void An_AI_chat_offers_every_ability_as_before_with_changeSetId_where_the_caller_chooses_the_set()
     {
-        _site.Consumers.Add(AI.AbilityAITools.Consumer);
+        _site.Consumers.Add(new AI.AiChatConsumer());
 
-        var tools = _site.Tools.GetTools(AI.AbilityAITools.ConsumerAlias);
+        var tools = _site.Tools.GetTools(AI.AiChatConsumer.ConsumerAlias);
         Assert.Equal(_site.Abilities.All.Count, tools.Count);
         Assert.All(tools, tool => Assert.Equal(
             tool.Descriptor.UsesChangeSet,

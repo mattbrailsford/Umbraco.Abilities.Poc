@@ -6,7 +6,6 @@ using System.Text.RegularExpressions;
 using Umbraco.Abilities.ChangeSets;
 using Umbraco.Automate.Core.Actions;
 using Umbraco.Automate.Core.Bindings;
-using Umbraco.Automate.Core.Settings;
 
 namespace Umbraco.Abilities.Automate;
 

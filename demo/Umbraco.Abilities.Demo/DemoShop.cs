@@ -1,9 +1,7 @@
 using System.Text.Json;
 
 using Umbraco.Cms.Core;
-using Umbraco.Cms.Core.Events;
 using Umbraco.Cms.Core.Models;
-using Umbraco.Cms.Core.Notifications;
 using Umbraco.Cms.Core.PropertyEditors;
 using Umbraco.Cms.Core.Serialization;
 using Umbraco.Cms.Core.Services;
@@ -19,7 +17,6 @@ namespace Umbraco.Abilities.Demo;
 /// prices. Each part is made only if missing, so it is safe on every start.
 /// </summary>
 public sealed class DemoShop(
-    IRuntimeState runtime,
     IUmbracoCommerceApi commerce,
     IDataTypeService dataTypes,
     IContentTypeService contentTypes,
@@ -29,7 +26,6 @@ public sealed class DemoShop(
     IShortStringHelper shortStrings,
     IUserGroupService userGroups,
     ILogger<DemoShop> logger)
-    : INotificationAsyncHandler<UmbracoApplicationStartedNotification>
 {
     /// <summary>The demo store's alias.</summary>
     public const string StoreAlias = "demo";
@@ -41,13 +37,9 @@ public sealed class DemoShop(
         ("Sunglasses", "SUNGLASSES", 60m),
     ];
 
-    public async Task HandleAsync(UmbracoApplicationStartedNotification notification, CancellationToken cancellationToken)
+    /// <summary>Makes what is missing. Run by <see cref="DemoSeeder"/> once Umbraco is up.</summary>
+    public async Task SeedAsync(CancellationToken cancellationToken)
     {
-        if (runtime.Level != RuntimeLevel.Run)
-        {
-            return;
-        }
-
         var store = await EnsureStoreAsync(cancellationToken);
         await EnsureEditorsCanUseStoreAsync(store, cancellationToken);
         var storePicker = await EnsureDataTypeAsync("Umbraco Commerce: Store Picker", "Umbraco.Commerce.StorePicker", "Uc.PropertyEditorUi.StorePicker", ValueStorageType.Nvarchar);

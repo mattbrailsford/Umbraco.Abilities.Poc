@@ -20,9 +20,9 @@ public sealed class ScriptedAgent
     {
         _site = site;
         // The AI package's consumer, on the site, as its composer would add it.
-        if (site.Consumers.Find(AbilityAITools.ConsumerAlias) is null)
+        if (site.Consumers.Find(AiChatConsumer.ConsumerAlias) is null)
         {
-            site.Consumers.Add(AbilityAITools.Consumer);
+            site.Consumers.Add(new AiChatConsumer());
         }
 
         Tools = AbilityAITools

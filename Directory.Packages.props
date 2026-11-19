@@ -28,6 +28,13 @@
       start, so the site fails without them.
     -->
     <PackageVersion Include="Azure.Identity" Version="1.13.1" />
+    <!--
+      Only for the demo. Umbraco 18.3 asks for SQLite's native library 2.1.13, whose SQLite rejects text in double quotes
+      (SQLITE_DQS off; 2.1.12 does too). One of Commerce 18.1.11's SQLite migrations (20240516090000) writes
+      "$.fraction" that way, so it fails on every start, Umbraco never finishes starting, and the demo isn't seeded.
+      2.1.11 (SQLite 3.49.1) still accepts it. Local demo only: remove once Commerce's migration is fixed (umbraco/Umbraco.Commerce.Issues#923).
+    -->
+    <PackageVersion Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.11" />
     <!-- Umbraco Automate for Umbraco 18, for the ability loader that registers abilities as Automate actions. -->
     <PackageVersion Include="Umbraco.Automate" Version="18.6.0" />
     <PackageVersion Include="Umbraco.Automate.Core" Version="18.6.0" />

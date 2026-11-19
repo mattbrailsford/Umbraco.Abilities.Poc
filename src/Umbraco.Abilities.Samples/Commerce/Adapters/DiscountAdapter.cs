@@ -1,76 +1,11 @@
-using System.ComponentModel;
-using System.ComponentModel.DataAnnotations;
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 
-using Umbraco.Abilities.ChangeSets;
-using Umbraco.Abilities.Consumers;
 using Umbraco.Abilities.Entities;
 using Umbraco.Abilities.Entities.Models;
 using Umbraco.Abilities.Samples.Commerce.Domain;
 
 namespace Umbraco.Abilities.Samples.Commerce;
-
-// ── The editing contracts: plain C# classes, separate from Commerce's domain model (Domain.cs). Everything the
-// AI and change sets need is derived from them; the adapter maps them to and from the domain. ─────────────
-
-[Entity("umbraco-commerce-collection", "Collection", Description = "A product collection.")]
-public sealed class Collection : EntityModel
-{
-    [EntityName, Required, Description("Collection name.")]
-    public string? Name { get; set; }
-}
-
-[Entity("umbraco-commerce-discount", "Discount", Description = "A discount applied when all its rules match.")]
-public sealed class DiscountEditModel : EntityModel
-{
-    [EntityName, Required, Description("Name shown to editors.")]
-    public string? Name { get; set; }
-
-    [Description("Optional coupon code. Unique.")]
-    public string? Code { get; set; }
-
-    [Description("First day the discount applies.")]
-    public DateOnly? StartDate { get; set; }
-
-    [Description("Last day the discount applies.")]
-    public DateOnly? EndDate { get; set; }
-
-    [EntityKey("document"), Description("Optional page that promotes the discount.")]
-    public Guid? LandingPage { get; set; }
-
-    [Description("Whether the discount is live."), DefaultValue(false)]
-    [Hint(AbilityAudiences.Model, "Use commerce.activateDiscount to switch it on.")]
-    [Hint(AbilityAudiences.Person, "Leave it off to check the discount before customers get it.")]
-    public bool? Active { get; set; }
-
-    [Items(DiscountAdapter.RuleGroup, Min = 1), Description("All rules must match for the discount to apply.")]
-    public List<DynamicItem> Rules { get; set; } = [];
-
-    [Items(DiscountAdapter.RewardGroup, Min = 1, Max = 3), Description("What the customer gets.")]
-    public List<DynamicItem> Rewards { get; set; } = [];
-}
-
-// Rules and rewards are a plugin seam: Commerce and other packages register providers (Providers.cs), so their item
-// types come from the provider collections at run time (a PluginItemTypeSource per seam, below), not from classes here.
-
-// ── The adapters: load, save, and the rules attributes can't express. ─────────────────────────────────
-
-public sealed class CollectionAdapter(InMemoryDatabase database, ItemTypeRegistry itemTypes)
-    : InMemoryModelAdapter<Collection>(database, itemTypes, "/umbraco/section/commerce/collection")
-{
-    public override bool CanCreate => false;
-
-    public Guid Seed(string name)
-    {
-        var collection = new Collection { Key = Guid.NewGuid(), Name = name };
-        SaveModelAsync(collection).GetAwaiter().GetResult();
-        return collection.Key;
-    }
-}
 
 /// <summary>
 /// Maps Commerce's own discount model to and from its editing contract. This mapping is the part a package writes by
@@ -205,40 +140,4 @@ public sealed class DiscountAdapter(
     /// </summary>
     internal static Guid DerivedKey(Guid parent, int index, string alias)
         => new(MD5.HashData(Encoding.UTF8.GetBytes($"{parent:N}/{index}/{alias}")));
-}
-
-// ── A product Read ability. Commerce queries what's live; reading through the change set adds the current set's
-// changes, so a model building in a set sees what it built. ──────────────────────────────────────────────────
-
-public sealed record ListDiscountsInput([property: Description("Only discounts that are switched on.")] bool ActiveOnly = false);
-
-public sealed record DiscountListing(Guid Key, string Name, bool Active, DateOnly? StartDate, DateOnly? EndDate);
-
-[Ability("commerce.listDiscounts", "List discounts", Kind = AbilityKind.Read,
-    Description = "Lists discounts with their dates and whether they're switched on. Inside a change set it shows the set's changes.")]
-public sealed class ListDiscountsAbility(DiscountService discounts, DiscountAdapter adapter, ChangeSetService changeSets)
-    : AbilityBase<ListDiscountsInput, IReadOnlyList<DiscountListing>>
-{
-    protected override async Task<AbilityResult> ExecuteAsync(ListDiscountsInput input, AbilityContext context, CancellationToken cancellationToken)
-    {
-        var models = await changeSets.ReadModelsAsync(adapter, discounts.GetDiscounts().Select(d => d.Id), cancellationToken);
-        return Success(models
-            .Where(d => !input.ActiveOnly || d.Active == true)
-            .OrderBy(d => d.Name)
-            .Select(d => new DiscountListing(d.Key, d.Name ?? string.Empty, d.Active == true, d.StartDate, d.EndDate))
-            .ToList());
-    }
-}
-
-// ── A product ability that changes a discount, written against the model. ───────────────────────────────
-
-public sealed record ActivateDiscountInput(
-    [property: Description("The discount to switch on."), EntityKey("umbraco-commerce-discount")] Guid Discount);
-
-/// <summary>Run directly it saves the discount; inside a change set it is recorded as a change to the discount.</summary>
-[Ability("commerce.activateDiscount", "Activate discount", Kind = AbilityKind.Write,
-    Description = "Switches a discount on so customers get it.")]
-public sealed class ActivateDiscountAbility(DiscountAdapter discounts) : ModelEditAbilityBase<ActivateDiscountInput, DiscountEditModel>(discounts)
-{
-    protected override void Edit(DiscountEditModel discount, ActivateDiscountInput input) => discount.Active = true;
 }

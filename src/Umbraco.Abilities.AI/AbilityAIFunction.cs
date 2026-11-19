@@ -3,7 +3,6 @@ using System.Text.Json.Nodes;
 
 using Microsoft.Extensions.AI;
 
-using Umbraco.Abilities.ChangeSets;
 using Umbraco.Abilities.Consumers;
 
 namespace Umbraco.Abilities.AI;
@@ -67,42 +66,4 @@ public sealed class AbilityAIFunction : AIFunction
         var result = await _runner.InvokeAsync(_tool, input, _session, AbilityConsent.Given, cancellationToken);
         return _tools.ShapeResult(_consumer, _tool, result.ToJson());
     }
-}
-
-public static class AbilityAITools
-{
-    /// <summary>The AI chat consumer's alias.</summary>
-    public const string ConsumerAlias = "ai-chat";
-
-    /// <summary>
-    /// A chat with a model, such as Umbraco.AI's: it keeps a conversation, so a change set stays open between calls, and
-    /// pauses to ask the person before what can't be undone. Its reader is a model.
-    /// </summary>
-    public static IAbilityConsumer Consumer { get; } = new AbilityConsumer(
-        ConsumerAlias,
-        "AI chat",
-        "A chat with a model. It keeps a conversation, and asks the person before anything that can't be undone.",
-        AbilityAudiences.Model,
-        [ConsumerCapabilities.Conversation, ConsumerCapabilities.AsksConsent],
-        [FrameworkFilters.ForModels]);
-
-    /// <summary>
-    /// The consumer's tools as M.E.AI tools, for one conversation. Abilities that need approval are wrapped so a chat
-    /// client pauses for a person, the same mechanism Umbraco.AI's HITL approval uses.
-    /// </summary>
-    public static IReadOnlyList<AIFunction> Create(AbilityToolProvider tools, AbilityToolRunner runner, AbilityToolSession session, string consumer = ConsumerAlias)
-        => tools.GetTools(consumer).Select(tool =>
-        {
-            AIFunction function = new AbilityAIFunction(tool, tools, consumer, runner, session);
-#pragma warning disable MEAI001 // Approval support in M.E.AI is experimental.
-            return tool.Descriptor.RequiresApproval ? new ApprovalRequiredAIFunction(function) : function;
-#pragma warning restore MEAI001
-        }).ToList();
-
-    /// <summary>
-    /// The tools for a host that isn't a site with its own filters and consumers, such as a test or a console run: the
-    /// AI chat consumer, with the framework's filters only.
-    /// </summary>
-    public static IReadOnlyList<AIFunction> Create(AbilityRegistry abilities, AbilityInvoker invoker, AbilityToolSession session)
-        => Create(AbilityToolProvider.CreateDefault(abilities, Consumer), new AbilityToolRunner(invoker), session);
 }

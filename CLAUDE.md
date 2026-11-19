@@ -53,7 +53,7 @@ dotnet test
 | `tests/Umbraco.Abilities.Commerce.Tests` | The Commerce adapter against a real Umbraco and Umbraco Commerce |
 | `tests/Umbraco.Abilities.Automate.Tests` | The Automate loader against a real Umbraco and Umbraco Automate, including a real automation run |
 | `tools/Umbraco.Abilities.McpProxy` | Plays the Umbraco CMS MCP Dev server: an MCP server whose tools are the abilities a site lists over the Management API |
-| `demo/Umbraco.Abilities.Demo` | A small Umbraco 18 site with the Clean starter kit and real Umbraco Commerce (a seeded store, Shop page and products), to try the MCP proxy against by hand. Secrets come from environment variables, never files |
+| `demo/Umbraco.Abilities.Demo` | A small Umbraco 18 site with the Clean starter kit and real Umbraco Commerce (a seeded store, Shop page and products), to try the MCP proxy against by hand. `demo/start-demo.sh` boots it and opens Claude Code with the MCP proxy. The admin password (`password1234`) is a local-only demo value in `appsettings.Development.json`; the MCP secret is made per database and never committed |
 | `tools/Umbraco.Abilities.ModelRun` | Runs a real model (Claude) against the samples. Not a test: it costs money and needs `ANTHROPIC_API_KEY` |
 
 ## Dependency rules
@@ -69,6 +69,11 @@ These boundaries are part of what the PoC proves. Do not cross them.
 
 - Nullable on, implicit usings on, latest C#.
 - File-scoped namespaces. Related small types share one file (for example `Ability.cs`, `ChangeSet.cs`).
+- Integration projects (Cms, Commerce, Automate, AI, ManagementApi, Samples) are laid out by role, for people reading
+  them in a demo: `Models/` (editing contracts), `Adapters/`, `Abilities/`, `Infrastructure/` (transactions, access),
+  and one `<Name>Consumer` class implementing `IAbilityConsumer`. A sample product's own model (`Domain/`, `Plugins/`)
+  stays apart from its integration. Folders don't change namespaces. Each project's README gives a reading order: keep
+  it current.
 - Public types and members get a short `<summary>`. Write it for a person and a model: what it is, and when to use it.
 - Test names are full sentences with underscores, describing the behaviour:
   `A_value_changed_in_both_the_set_and_the_backoffice_is_a_conflict_to_resolve`.
