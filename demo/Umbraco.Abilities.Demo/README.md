@@ -21,8 +21,10 @@ It has:
 demo/start-demo.sh
 ```
 
-It builds the site and the MCP server, starts the site, waits until it answers, then opens Claude Code with the
-`umbraco-abilities` MCP server connected. When you quit Claude, the site stops.
+It builds the site and the MCP server, starts the site, waits until it answers, then opens Claude Code in a new
+terminal window with the `umbraco-abilities` MCP server connected. The site keeps running in the first terminal until
+you press Ctrl+C there. On macOS the new window opens in Terminal, or iTerm if you ran the script from iTerm. On other
+systems Claude runs in the same terminal, and the site stops when you quit Claude.
 
 - Sign in to the backoffice at `https://localhost:44399/umbraco` as `admin@example.com` / `password1234`. This
   password is for local demos only: it is in `appsettings.Development.json`, so the site only uses it in Development.

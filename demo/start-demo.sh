@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Boots the demo site, then opens Claude Code with the abilities MCP server connected.
-# When Claude exits, the site stops.
+# Boots the demo site, then opens Claude Code in a new terminal window with the abilities MCP server connected.
+# The site runs in this terminal until you press Ctrl+C. On macOS, Claude opens in Terminal or iTerm (whichever this
+# runs in); elsewhere it runs in this terminal, and the site stops when Claude exits.
 #
 #   demo/start-demo.sh             start the site and Claude
 #   demo/start-demo.sh --reset     delete the demo database first, so the site installs itself again
@@ -149,7 +150,30 @@ JSON
 # repo's code and instructions. Only this MCP server is loaded, not the user's others.
 WORKDIR="${TMPDIR:-/tmp}/umbraco-abilities-demo"
 mkdir -p "$WORKDIR"
+CLAUDE_CMD=(claude --strict-mcp-config --mcp-config "$MCP_CONFIG" "${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}")
 
-say "Starting Claude with the umbraco-abilities MCP server. The site stops when Claude exits."
-cd "$WORKDIR"
-claude --strict-mcp-config --mcp-config "$MCP_CONFIG" "${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}"
+if [[ "$(uname)" != "Darwin" ]]; then
+  say "Starting Claude with the umbraco-abilities MCP server. The site stops when Claude exits."
+  cd "$WORKDIR"
+  "${CLAUDE_CMD[@]}"
+  exit 0
+fi
+
+# On macOS, Claude gets its own window, so this terminal keeps the site. A .command file opens in a new terminal
+# window and runs there.
+LAUNCHER="$WORKDIR/start-claude.command"
+(umask 077 && {
+  echo '#!/usr/bin/env bash'
+  printf 'cd %q\n' "$WORKDIR"
+  printf 'exec'; printf ' %q' "${CLAUDE_CMD[@]}"; echo
+} > "$LAUNCHER")
+chmod +x "$LAUNCHER"
+
+case "${TERM_PROGRAM:-}" in
+  iTerm.app) open -a iTerm "$LAUNCHER" ;;
+  *) open -a Terminal "$LAUNCHER" ;;
+esac
+
+say "Claude is open in a new window, with the umbraco-abilities MCP server."
+say "The site keeps running here. Press Ctrl+C to stop it."
+wait "$SITE_PID"
