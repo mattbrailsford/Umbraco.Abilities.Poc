@@ -22,7 +22,7 @@ There are two ways to describe a contract, and fluent configuration wins where b
 everything; fluent configuration covers what request models have needed so far (key, version, name, ignore, fields with
 descriptions, required and rules, items fields), and gets an option when a model needs one.
 
-**Attributes**, for a class the package writes for the purpose (`Samples/Commerce/Commerce.cs`):
+**Attributes**, for a class the package writes for the purpose (`Samples/Commerce/Models/DiscountEditModel.cs`):
 
 ```csharp
 [Entity("umbraco-commerce-discount", "Discount")]   // the entity type, and what a person calls it
@@ -34,7 +34,7 @@ public sealed class DiscountEditModel : EntityModel   // the key and version; or
     [Items(RuleGroup, Min = 1)] public List<DynamicItem> Rules { get; set; } = [];  // a plugin seam: see below
 }
 
-[ItemType("hero", "Hero")]          // an item type the package owns can be a class too (Samples/Cms/CmsPage.cs)
+[ItemType("hero", "Hero")]          // an item type the package owns can be a class too (Samples/Cms/Models/PageBlocks.cs)
 public sealed class Hero : PageBlock
 {
     [Required] public Varying<string> Heading { get; set; } = [];
@@ -77,7 +77,7 @@ is asked for one at a time, so it can read that group's configuration when a cal
 
 **Fluent configuration**, for a class the package doesn't own or won't annotate, such as a Management API request
 model in another assembly. It needs no base class either: items name their own key property
-(`Samples/Cms/CmsPage.cs`). It goes in the adapter, like EF Core's `OnModelCreating`, not in global state.
+(`Samples/Cms/Adapters/CmsMediaAdapter.cs`). It goes in the adapter, like EF Core's `OnModelCreating`, not in global state.
 
 ```csharp
 protected override void Configure(ModelConfigurator<MediaRequestModel> models) => models
@@ -150,7 +150,7 @@ wrong string key at run time.
 
 ## What the mapping costs
 
-The Commerce sample now has a domain shaped like the real one (`Samples/Commerce/Domain.cs`). Its read-only entity
+The Commerce sample now has a domain shaped like the real one (`Samples/Commerce/Domain/Discount.cs`). Its read-only entity
 has internal constructors and is changed through `AsWritable()`. Dates are UTC `DateTime`s, and rules and rewards
 are a provider alias plus string settings, with no ids.
 
@@ -337,7 +337,7 @@ plugin installed later just shows up, and plugins write no Abilities code.
 Both registries already carry what an item type needs. The PoC's stand-ins are shaped like the real ones
 (Umbraco.Commerce.Core's providers, Umbraco.Commerce.Automate's triggers and actions):
 
-| Item type needs | Commerce rule and reward providers (`Samples/Commerce/Providers.cs`) | Automate triggers and actions (`Samples/Automate/Plugins.cs`) |
+| Item type needs | Commerce rule and reward providers (`Samples/Commerce/Domain/Providers.cs`) | Automate triggers and actions (`Samples/Automate/Plugins/Plugins.cs`) |
 | --- | --- | --- |
 | Alias, name, description | `[DiscountRuleProvider(alias)]`, with Label and Description | `[Trigger]` / `[Action]`, with name and Description |
 | Fields and their types | Setting definitions discovered from the provider's settings class, keeping each CLR type | The settings class's `[Field]` properties |

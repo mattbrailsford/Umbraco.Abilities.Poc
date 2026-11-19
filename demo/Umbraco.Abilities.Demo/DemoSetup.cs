@@ -1,8 +1,6 @@
 using Umbraco.Cms.Core;
-using Umbraco.Cms.Core.Events;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Models.Membership;
-using Umbraco.Cms.Core.Notifications;
 using Umbraco.Cms.Core.Security;
 using Umbraco.Cms.Core.Services;
 
@@ -14,23 +12,17 @@ namespace Umbraco.Abilities.Demo;
 /// The document types and content come from the Clean starter kit.
 /// </summary>
 public sealed class DemoSetup(
-    IRuntimeState runtime,
     IUserService users,
     IUserGroupService userGroups,
     IBackOfficeUserClientCredentialsManager clientCredentials,
     IConfiguration configuration,
     ILogger<DemoSetup> logger)
-    : INotificationAsyncHandler<UmbracoApplicationStartedNotification>
 {
     private const string McpUserEmail = "mcp@example.com";
 
-    public async Task HandleAsync(UmbracoApplicationStartedNotification notification, CancellationToken cancellationToken)
+    /// <summary>Makes what is missing. Run by <see cref="DemoSeeder"/> once Umbraco is up.</summary>
+    public async Task SeedAsync(CancellationToken cancellationToken)
     {
-        if (runtime.Level != RuntimeLevel.Run)
-        {
-            return;
-        }
-
         await EnsureMcpUserAsync();
     }
 

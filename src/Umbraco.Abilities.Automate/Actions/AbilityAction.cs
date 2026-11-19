@@ -1,10 +1,7 @@
-
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
 using Json.Schema;
-
-using Umbraco.Abilities.ChangeSets;
 using Umbraco.Abilities.Consumers;
 using Umbraco.Automate.Core.Actions;
 using Umbraco.Automate.Core.Settings;
@@ -15,7 +12,7 @@ namespace Umbraco.Abilities.Automate;
 /// One of the Automate consumer's tools as an Automate action. Everything Automate shows and runs comes from the tool:
 /// its id, name and description, a settings form from its input schema, and an output schema from its output, so later
 /// steps can bind to its result. Which tools there are, and their shape, are the consumer's filters'
-/// (<see cref="AbilityActionLoader.Consumer"/>). One class serves every ability; nothing here is per product.
+/// (<see cref="AutomateConsumer"/>). One class serves every ability; nothing here is per product.
 /// <para>
 /// A step runs as the workspace's service account. A Write is a change set of its own, applied at once (the tool's
 /// <see cref="ChangeSetMode.PerCall"/>). Publishing the automation is the person's consent to its steps; a Request
@@ -78,7 +75,7 @@ public sealed class AbilityAction : IAction
     // A dynamic input is resolved each time: its choices (such as page types) are the site's now.
     public EditableModelSchema? GetSettingsSchema()
         => _tool.Ability is IDynamicInputAbility
-            && _tools.ResolveInputSchemaAsync(AbilityActionLoader.ConsumerAlias, _tool.Id, []).GetAwaiter().GetResult() is { } schema
+            && _tools.ResolveInputSchemaAsync(AutomateConsumer.ConsumerAlias, _tool.Id, []).GetAwaiter().GetResult() is { } schema
             ? AbilitySettingsForm.Build(schema, _options.FormatEditors)
             : _form;
 

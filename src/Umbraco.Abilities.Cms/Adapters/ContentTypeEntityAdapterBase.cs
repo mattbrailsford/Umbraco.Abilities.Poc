@@ -1,155 +1,14 @@
-using System.Text.Json;
 using System.Text.Json.Nodes;
 
 using Umbraco.Abilities.ChangeSets;
 using Umbraco.Abilities.Consumers;
 using Umbraco.Abilities.Cms.PropertyEditors;
 using Umbraco.Abilities.Entities;
-using Umbraco.Cms.Core.DynamicRoot;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Models.ContentEditing;
-using Umbraco.Cms.Core.Models.ContentEditing.Validation;
-using Umbraco.Cms.Core.PropertyEditors;
-using Umbraco.Cms.Core.Serialization;
-using Umbraco.Cms.Core.Services;
-using Umbraco.Cms.Infrastructure.Serialization;
 using Umbraco.Extensions;
 
 namespace Umbraco.Abilities.Cms;
-
-/// <summary>The fields every content-type entity has besides its properties.</summary>
-public static class ContentFields
-{
-    /// <summary>The name, per culture when the type varies by culture.</summary>
-    public const string Name = "name";
-
-    /// <summary>The parent. For an adapter that is an <see cref="ITreeEntityAdapter"/>, changing it moves the item; otherwise it is only used when creating.</summary>
-    public const string Parent = "parent";
-}
-
-/// <summary>
-/// What every content-type adapter shares: the property editor handlers, the schema they build, and the item types
-/// of the groups they name. Make one and give it to each adapter (documents, media, members), so each group's item
-/// types are served once.
-/// </summary>
-public sealed class CmsContentSchemas
-{
-    public CmsContentSchemas(
-        IContentTypeService contentTypes,
-        IDataTypeService dataTypes,
-        ILanguageService languages,
-        IJsonSerializer json,
-        PropertyEditorCollection editors,
-        ItemTypeRegistry itemTypes,
-        IPropertyEditorSchemaService? schemas = null,
-        IEnumerable<IPropertyEditorEntityHandler>? editorHandlers = null,
-        IEntityService? entities = null,
-        IMediaTypeService? mediaTypes = null,
-        IDynamicRootService? dynamicRoots = null)
-    {
-        Languages = languages;
-        Json = json;
-        Editors = editors;
-        ItemTypes = itemTypes;
-
-        // Packages' handlers first, so a package can map a core editor its own way; then the core editors'; then
-        // every other editor as a whole JSON value.
-        var asJson = new JsonValueEditorHandler(schemas);
-        var handlers = new PropertyEditorHandlerCollection(
-            [
-                .. editorHandlers ?? [],
-                .. ValueEditorHandler.Core,
-                new BlockEditorHandler(contentTypes, dataTypes, json),
-                new MultiNodeTreePickerHandler(entities, contentTypes, mediaTypes, dynamicRoots, asJson),
-            ],
-            asJson);
-        Mapper = new CmsSchemaMapper(contentTypes, dataTypes, handlers);
-        itemTypes.AddSource(new PropertyEditorItemTypeSource(handlers, Mapper));
-    }
-
-    public ItemTypeRegistry ItemTypes { get; }
-
-    internal ILanguageService Languages { get; }
-
-    internal IJsonSerializer Json { get; }
-
-    internal PropertyEditorCollection Editors { get; }
-
-    internal CmsSchemaMapper Mapper { get; }
-}
-
-/// <summary>A content item as stored, in editor (Management API) format: what a content-type adapter loads.</summary>
-/// <param name="Key">The item's key.</param>
-/// <param name="TypeKey">Its content type's key.</param>
-/// <param name="Names">Its name by culture, with <c>""</c> for an invariant name.</param>
-/// <param name="Values">Its property values, one per property, culture and segment.</param>
-/// <param name="Version">Its version, to tell an existing item from a new one.</param>
-/// <param name="ParentKey">
-/// Its parent: for a new item not saved yet (a draft), so the parent survives being read back and edited again, and for
-/// a saved item whose adapter can move it. Null at the root, and for a saved item that can't be moved.
-/// </param>
-public sealed record StoredContent(Guid Key, Guid TypeKey, IReadOnlyDictionary<string, string> Names, IReadOnlyList<StoredValue> Values, long? Version, Guid? ParentKey = null);
-
-/// <summary>One stored property value, in editor format.</summary>
-public sealed record StoredValue(string Alias, string? Culture, string? Segment, JsonNode? Value);
-
-/// <summary>
-/// An entity as the CMS's editing services take it: names as variants, property values in editor format, and how to
-/// turn the CMS's validation errors back into entity paths.
-/// </summary>
-public sealed class ContentValues
-{
-    internal ContentValues(Guid key, Guid typeKey, Guid? parentKey, List<VariantModel> variants, List<StoredValue> values, PropertyErrorLocators errors)
-    {
-        Key = key;
-        TypeKey = typeKey;
-        ParentKey = parentKey;
-        Variants = variants;
-        Values = values;
-        Errors = errors;
-    }
-
-    private static readonly JsonSerializerOptions ModelValueOptions = new() { Converters = { new JsonObjectConverter() } };
-
-    public Guid Key { get; }
-
-    public Guid TypeKey { get; }
-
-    public Guid? ParentKey { get; }
-
-    /// <summary>The names, one variant per culture and segment that has values.</summary>
-    public List<VariantModel> Variants { get; }
-
-    /// <summary>The property values in editor format.</summary>
-    public List<StoredValue> Values { get; }
-
-    /// <summary>The property values as the editing services take them.</summary>
-    public List<PropertyValueModel> Properties
-        => Values.Select(v => new PropertyValueModel { Alias = v.Alias, Value = ToModelValue(v.Value), Culture = v.Culture, Segment = v.Segment }).ToList();
-
-    /// <summary>The cultures the item has, to validate only those: validating others fails values that don't exist there.</summary>
-    public ISet<string>? Cultures => Variants.Any(v => v.Culture is not null) ? Variants.Select(v => v.Culture).OfType<string>().ToHashSet() : null;
-
-    internal PropertyErrorLocators Errors { get; }
-
-    /// <summary>A CMS validation error as a problem on the entity path the value came from.</summary>
-    public Problem ToProblem(PropertyValidationError error)
-    {
-        // Same fields as Umbraco's error; only the alias and JSON path become one entity path.
-        var located = new Problem(error.Alias, error.ErrorMessages.ToList()).In(CmsVariants.Of(error.Culture, error.Segment));
-        if (string.IsNullOrEmpty(error.JsonPath) || error.JsonPath == "$")
-        {
-            return located;
-        }
-
-        return Errors.Locate(error.Alias, error.Culture, error.Segment, error.JsonPath) is { } at
-            ? located with { Path = at.Path, Variant = CmsVariants.Of(at.Culture, at.Segment).ToJson() }
-            : located with { Path = $"{error.Alias} {error.JsonPath}" };
-    }
-
-    internal static object? ToModelValue(JsonNode? node)
-        => node is null ? null : JsonSerializer.Deserialize<object?>(node.ToJsonString(), ModelValueOptions);
-}
 
 /// <summary>
 /// The base for an entity whose types are data: defined by editors at run time, with properties whose values are
@@ -202,7 +61,6 @@ public abstract class ContentTypeEntityAdapterBase<TType>(CmsContentSchemas sche
 
     public abstract Task<string?> AuthorizeAsync(EntityAccessRequest request, CancellationToken cancellationToken = default);
 
-    // ── Types and schema ────────────────────────────────────────────────────────────────────
 
     // A type can be created when it is allowed at the root, or under some type. One that is neither, such as a
     // composition ("Article Controls"), is only used inside others.
@@ -285,7 +143,6 @@ public abstract class ContentTypeEntityAdapterBase<TType>(CmsContentSchemas sche
         return await property.Handler.ReadAsync(editorValue, reader, cancellationToken);
     }
 
-    // ── Reading stored values ───────────────────────────────────────────────────────────────
 
     /// <summary>An item as stored, in editor format, as the backoffice loads it: each value through its editor's <c>ToEditor</c>.</summary>
     protected StoredContent ReadStored(IContentBase content)
@@ -378,7 +235,6 @@ public abstract class ContentTypeEntityAdapterBase<TType>(CmsContentSchemas sche
         _ => JsonNode.Parse(Schemas.Json.Serialize(value)),
     };
 
-    // ── Writing an entity as the editing services take it ───────────────────────────────────
 
     /// <summary>An entity as the editing services take it: its names as variants, each value written by its editor's handler.</summary>
     protected async Task<ContentValues> ToContentAsync(Entity entity, CancellationToken cancellationToken = default)

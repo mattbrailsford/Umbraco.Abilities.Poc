@@ -1,17 +1,14 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-using Asp.Versioning;
-
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.DependencyInjection;
 
+using Asp.Versioning;
 using Umbraco.Abilities.ChangeSets;
 using Umbraco.Abilities.Consumers;
 using Umbraco.Cms.Api.Management.Controllers;
 using Umbraco.Cms.Api.Management.Routing;
-using Umbraco.Cms.Core.DependencyInjection;
 using Umbraco.Cms.Core.Security;
 
 namespace Umbraco.Abilities.ManagementApi;
@@ -45,9 +42,6 @@ public sealed class AbilitiesController(
     AbilityToolRunner runner,
     IBackOfficeSecurityAccessor security) : ManagementApiControllerBase
 {
-    /// <summary>The MCP server's consumer: the one an HTTP caller is when it doesn't say.</summary>
-    public const string McpConsumer = "mcp";
-
     /// <summary>The header a caller sends with an approval's id, once the person agreed to the call it was made for.</summary>
     public const string ApprovalHeader = "Umb-Approval";
 
@@ -146,7 +140,7 @@ public sealed class AbilitiesController(
     private string Consumer
         => Request.Headers.TryGetValue(ConsumerHeader, out var named) && !string.IsNullOrWhiteSpace(named)
             ? named.ToString()
-            : McpConsumer;
+            : McpConsumer.ConsumerAlias;
 
     private NotFoundObjectResult UnknownConsumer(string consumer)
         => NotFound(new ProblemDetails { Title = "Unknown consumer", Detail = $"No consumer '{consumer}'.", Status = StatusCodes.Status404NotFound });
@@ -163,58 +157,4 @@ public sealed class AbilitiesController(
             // It ran and failed, for example Umbraco refused the save. Sending the same input again won't help.
             _ => StatusCodes.Status422UnprocessableEntity,
         };
-}
-
-/// <summary>One tool, as a caller needs it to offer it.</summary>
-/// <param name="Id">The tool's id, used in the invoke URL, e.g. <c>entity.create</c>.</param>
-/// <param name="ToolName">The id as a tool name (letters, digits, _ and -), e.g. <c>entity_create</c>.</param>
-/// <param name="Name">A short name for a person.</param>
-/// <param name="Description">What it does and when to use it, for the consumer's reader.</param>
-/// <param name="Kind"><c>Read</c> or <c>Write</c>.</param>
-/// <param name="RequiresApproval">True when a person should approve each call: it changes something and can't be undone.</param>
-/// <param name="UsesChangeSet">True when the caller chooses its change set: then it takes a <c>changeSetId</c>, or the <c>Umb-Change-Set</c> header.</param>
-/// <param name="InputSchema">The JSON schema of the input, as the consumer's filters shaped it.</param>
-public sealed record AbilityResponseModel(
-    string Id,
-    string ToolName,
-    string Name,
-    string Description,
-    string Kind,
-    bool RequiresApproval,
-    bool UsesChangeSet,
-    JsonElement InputSchema)
-{
-    internal static AbilityResponseModel From(AbilityTool tool)
-        => new(
-            tool.Id,
-            tool.Name,
-            tool.Title,
-            tool.Description,
-            tool.Descriptor.Kind.ToString(),
-            tool.Descriptor.RequiresApproval,
-            tool.ChangeSetMode == ChangeSetMode.Caller,
-            tool.InputSchema);
-}
-
-/// <summary>Adds the consumer HTTP tool callers are.</summary>
-public static class AbilitiesManagementApiBuilderExtensions
-{
-    /// <summary>
-    /// The MCP server's consumer (<see cref="AbilitiesController.McpConsumer"/>): a model, in a session that keeps a
-    /// change set open, whose client can ask the person before what can't be undone.
-    /// </summary>
-    public static IAbilityConsumer McpConsumer { get; } = new AbilityConsumer(
-        AbilitiesController.McpConsumer,
-        "MCP server",
-        "A model through an MCP server, such as Umbraco CMS MCP Dev. Its session keeps a change set open, and its client asks the person before anything that can't be undone.",
-        AbilityAudiences.Model,
-        [ConsumerCapabilities.Conversation, ConsumerCapabilities.AsksConsent],
-        [FrameworkFilters.ForModels]);
-
-    /// <summary>Adds the MCP server's consumer, so the abilities endpoints can serve it. Call with <c>AddAbilities()</c>.</summary>
-    public static IUmbracoBuilder AddAbilitiesManagementApi(this IUmbracoBuilder builder)
-    {
-        builder.Services.AddSingleton(McpConsumer);
-        return builder;
-    }
 }

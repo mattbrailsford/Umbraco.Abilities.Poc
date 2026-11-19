@@ -5,32 +5,7 @@ using Umbraco.Automate.Core.Actions;
 
 namespace Umbraco.Abilities.Automate;
 
-/// <summary>
-/// Makes the site's Automate actions, at the time it's asked: an action per tool the Automate consumer offers. The
-/// consumer's filters decide them: whole operations only, each Write a change set of its own, and a Create and an Update
-/// per entity type, in which a person picks the page type.
-/// </summary>
-public sealed class AbilityActionLoader(AbilityStep step, AbilityToolProvider tools, AbilityActionOptions options)
-{
-    /// <summary>The Automate consumer's alias.</summary>
-    public const string ConsumerAlias = "automate";
-
-    /// <summary>
-    /// Umbraco Automate: a person builds a step from a form, and publishing the automation is their consent to it. Each
-    /// step stands alone, with no conversation to keep a change set open in. Its own filter names each field's editor.
-    /// </summary>
-    public static IAbilityConsumer Consumer { get; } = new AbilityConsumer(
-        ConsumerAlias,
-        "Umbraco Automate",
-        "Automation steps a person builds from forms. Publishing an automation is the person's consent to its steps.",
-        AbilityAudiences.Person,
-        [ConsumerCapabilities.StandingConsent],
-        [FrameworkFilters.ForForms, AutomateEditorsFilter.FilterAlias]);
-
-    public IEnumerable<IAction> CreateActions()
-        => tools.GetTools(ConsumerAlias).Select(tool => (IAction)new AbilityAction(tool, step, tools, options));
-}
-
+/// <summary>Adds every ability the Automate consumer offers to Automate's actions.</summary>
 public static class AbilityActionServiceCollectionExtensions
 {
     /// <summary>
@@ -52,7 +27,7 @@ public static class AbilityActionServiceCollectionExtensions
         var options = new AbilityActionOptions();
         configure?.Invoke(options);
         services.AddSingleton(options);
-        services.AddSingleton(AbilityActionLoader.Consumer);
+        services.AddSingleton<IAbilityConsumer, AutomateConsumer>();
         services.AddSingleton<IAbilityFilter>(new AutomateEditorsFilter(options));
         services.AddSingleton<AbilityStep>();
         services.AddSingleton<AbilityActionLoader>();

@@ -4,7 +4,6 @@ using Umbraco.Abilities.Cms.PropertyEditors;
 using Umbraco.Abilities.Entities;
 using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Services;
-using Umbraco.Extensions;
 
 namespace Umbraco.Abilities.Cms;
 

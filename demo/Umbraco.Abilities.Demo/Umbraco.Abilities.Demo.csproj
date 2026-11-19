@@ -28,5 +28,10 @@
     <PackageReference Include="Umbraco.Automate" />
     <PackageReference Include="Azure.Identity" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
+    <!--
+      An older SQLite, so Commerce's SQLite migrations run: see Directory.Packages.props. It is lower than Umbraco 18.3
+      asks for, so NuGet's downgrade check (NU1605) is switched off for it here.
+    -->
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" NoWarn="NU1605" />
   </ItemGroup>
 </Project>

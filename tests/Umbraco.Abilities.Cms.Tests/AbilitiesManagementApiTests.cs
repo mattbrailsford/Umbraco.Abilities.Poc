@@ -1,23 +1,16 @@
-using System.Linq.Expressions;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 
-using Microsoft.Extensions.DependencyInjection;
-
 using NUnit.Framework;
-
 using Umbraco.Abilities.ChangeSets;
 using Umbraco.Abilities.ManagementApi;
 using Umbraco.Cms.Core;
-using Umbraco.Cms.Core.DependencyInjection;
-using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Services;
 using Umbraco.Cms.Tests.Common.Builders;
 using Umbraco.Cms.Tests.Common.Builders.Extensions;
 using Umbraco.Cms.Tests.Common.Testing;
-using Umbraco.Cms.Tests.Integration.ManagementApi;
 
 namespace Umbraco.Abilities.Cms.Tests;
 
@@ -113,7 +106,7 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
         Assert.That(fields.GetProperty("required").EnumerateArray().Select(r => r.GetString()), Does.Contain("title"));
 
         // A model has one entity.create for every type, so the MCP server has no such tool.
-        Assert.That((await InputSchemaAsync("entity.create:document", "{}", AbilitiesController.McpConsumer)).Status, Is.EqualTo(HttpStatusCode.NotFound));
+        Assert.That((await InputSchemaAsync("entity.create:document", "{}", McpConsumer.ConsumerAlias)).Status, Is.EqualTo(HttpStatusCode.NotFound));
     }
 
     [Test]
@@ -274,14 +267,14 @@ public sealed class AbilitiesManagementApiTests : AbilitiesApiTestBase
         await OkAsync("changeSet.apply", "{}", set, approval: body.GetProperty("approval").GetProperty("id").GetGuid());
     }
 
-    private async Task<JsonElement> OkAsync(string ability, string json, Guid? changeSet = null, Guid? approval = null, string consumer = AbilitiesController.McpConsumer)
+    private async Task<JsonElement> OkAsync(string ability, string json, Guid? changeSet = null, Guid? approval = null, string consumer = McpConsumer.ConsumerAlias)
     {
         var (status, body) = await InvokeAsync(ability, json, changeSet, approval, consumer);
         Assert.That(status, Is.EqualTo(HttpStatusCode.OK), $"{ability} failed: {body}");
         return body.GetProperty("result");
     }
 
-    private async Task<(HttpStatusCode Status, JsonElement Body)> InvokeAsync(string ability, string json, Guid? changeSet = null, Guid? approval = null, string consumer = AbilitiesController.McpConsumer)
+    private async Task<(HttpStatusCode Status, JsonElement Body)> InvokeAsync(string ability, string json, Guid? changeSet = null, Guid? approval = null, string consumer = McpConsumer.ConsumerAlias)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, GetManagementApiUrl<AbilitiesController>(x => x.Invoke(ability, null, CancellationToken.None)))
         {
