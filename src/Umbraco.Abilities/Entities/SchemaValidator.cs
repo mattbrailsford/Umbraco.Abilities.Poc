@@ -237,12 +237,12 @@ public static class SchemaWriter
             fieldJson["description"] = field.Description;
             if (field.Handler is { } handler)
             {
-                fieldJson["x-edit"] = handler.Usage;
+                fieldJson[SchemaKeywords.Edit] = handler.Usage;
             }
 
             if (field.AcceptsBindings)
             {
-                fieldJson["x-bindings"] = true;
+                fieldJson[SchemaKeywords.Bindings] = true;
             }
 
             if (field.Default is { } preset)
@@ -252,7 +252,7 @@ public static class SchemaWriter
 
             if (field.Varies)
             {
-                fieldJson["x-variations"] = new JsonArray(field.VariesBy.Select(d => (JsonNode?)d).ToArray());
+                fieldJson[SchemaKeywords.Variations] = new JsonArray(field.VariesBy.Select(d => (JsonNode?)d).ToArray());
             }
 
             UiHints.WriteTo(fieldJson, field.Editor, field.Meta, field.Hints);
@@ -273,8 +273,8 @@ public static class SchemaWriter
         {
             ["type"] = "array",
             ["description"] = field.Description,
-            ["x-edit"] = "Items: each has a key and a type. Add, remove and move them with entity.addItem, removeItem and moveItem at this field's path; set their fields at '<this path>/{key}/<field>'.",
-            ["x-item-types"] = new JsonArray((itemTypes?.InGroup(field.ItemTypeGroup!) ?? [])
+            [SchemaKeywords.Edit] = "Items: each has a key and a type. Add, remove and move them with entity.addItem, removeItem and moveItem at this field's path; set their fields at '<this path>/{key}/<field>'.",
+            [SchemaKeywords.ItemTypes] = new JsonArray((itemTypes?.InGroup(field.ItemTypeGroup!) ?? [])
                 .Where(t => userKey is null || itemTypes!.IsAvailable(t))
                 .Select(t => (JsonNode?)new JsonObject { ["alias"] = t.Alias, ["group"] = t.Group, ["name"] = t.Name, ["description"] = t.Description })
                 .ToArray()),
@@ -292,7 +292,7 @@ public static class SchemaWriter
 
         if (field.Varies)
         {
-            schema["x-variations"] = new JsonArray(field.VariesBy.Select(d => (JsonNode?)d).ToArray());
+            schema[SchemaKeywords.Variations] = new JsonArray(field.VariesBy.Select(d => (JsonNode?)d).ToArray());
         }
 
         UiHints.WriteTo(schema, field.Editor, field.Meta, field.Hints);
@@ -313,11 +313,11 @@ public static class SchemaWriter
                 ["type"] = "object",
                 ["properties"] = new JsonObject
                 {
-                    ["entityType"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(types.Select(t => (JsonNode?)t).ToArray()) },
-                    ["key"] = new JsonObject { ["type"] = "string", ["format"] = "uuid" },
+                    [EntityJson.EntityType] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray(types.Select(t => (JsonNode?)t).ToArray()) },
+                    [EntityJson.Key] = new JsonObject { ["type"] = "string", ["format"] = "uuid" },
                 },
-                ["required"] = new JsonArray("entityType", "key"),
-                ["x-references"] = new JsonArray(types.Select(t => (JsonNode?)t).ToArray()),
+                ["required"] = new JsonArray(EntityJson.EntityType, EntityJson.Key),
+                [SchemaKeywords.References] = new JsonArray(types.Select(t => (JsonNode?)t).ToArray()),
             };
         }
 
@@ -344,11 +344,11 @@ public static class SchemaWriter
                 break;
             case FieldType.EntityReference:
                 schema["format"] = "uuid";
-                schema["x-references"] = field.ReferencesEntityType;
+                schema[SchemaKeywords.References] = field.ReferencesEntityType;
                 break;
             case FieldType.ItemReference:
                 schema["format"] = "uuid";
-                schema["x-references-item-in"] = field.ReferencesItemIn;
+                schema[SchemaKeywords.ReferencesItemIn] = field.ReferencesItemIn;
                 break;
         }
 

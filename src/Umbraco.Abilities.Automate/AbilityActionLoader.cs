@@ -24,7 +24,7 @@ public sealed class AbilityActionLoader(AbilityStep step, AbilityToolProvider to
         "Umbraco Automate",
         "Automation steps a person builds from forms. Publishing an automation is the person's consent to its steps.",
         AbilityAudiences.Person,
-        ConsumerCapabilities.StandingConsent,
+        [ConsumerCapabilities.StandingConsent],
         [FrameworkFilters.ForForms, AutomateEditorsFilter.FilterAlias]);
 
     public IEnumerable<IAction> CreateActions()

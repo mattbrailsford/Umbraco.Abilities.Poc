@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
+using Umbraco.Abilities.Entities;
 using Umbraco.Automate.Core.Settings;
 
 namespace Umbraco.Abilities.Automate;
@@ -74,7 +75,7 @@ public static class AbilitySettingsForm
 
         // 1. The field names its editor. Whether that editor is installed is the browser's to know; Automate's form
         // falls back as it does for any editor alias.
-        if (schema.TryGetProperty("x-editor", out var named) && named.TryGetProperty("alias", out var alias))
+        if (schema.TryGetProperty(UiHints.EditorKeyword, out var named) && named.TryGetProperty("alias", out var alias))
         {
             var config = named.TryGetProperty("config", out var settings) && settings.ValueKind == JsonValueKind.Object
                 ? JsonNode.Parse(settings.GetRawText())!.AsObject()
@@ -111,10 +112,10 @@ public static class AbilitySettingsForm
             return ("Umb.PropertyEditorUi.Dropdown", new JsonObject { ["items"] = items });
         }
 
-        if (schema.TryGetProperty("x-references", out var references))
+        if (schema.TryGetProperty(SchemaKeywords.References, out var references))
         {
             var first = references.ValueKind == JsonValueKind.Array ? references[0].GetString() : references.GetString();
-            return (first == "media" ? "Umb.PropertyEditorUi.MediaEntityPicker" : "Umb.PropertyEditorUi.DocumentPicker", null);
+            return (first == Umbraco.Cms.Core.Constants.UdiEntityType.Media ? "Umb.PropertyEditorUi.MediaEntityPicker" : "Umb.PropertyEditorUi.DocumentPicker", null);
         }
 
         return TypeOf(schema) switch

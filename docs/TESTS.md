@@ -307,6 +307,9 @@ See [CONSUMERS.md](CONSUMERS.md).
   it, and the change set tools where no conversation keeps a set open
   - `ConsumerTests.An_ability_that_needs_approval_is_dropped_where_nobody_can_agree_to_it_whatever_the_consumer_applies`
   - `ConsumerTests.The_change_set_tools_are_dropped_where_no_conversation_keeps_a_set_open`
+- An ability that needs something a package names, such as sending a file, is offered only where the consumer says it can
+  do it
+  - `ConsumerTests.An_ability_that_needs_a_capability_a_package_names_is_offered_only_where_the_consumer_states_it`
 - Every dropped tool stays listed with why; only kept tools are offered
   - `ConsumerTests.Every_dropped_tool_stays_listed_with_why_and_only_kept_tools_are_offered`
 - A filter can put several tools in place of one, each calling its ability with a fixed argument the caller doesn't send

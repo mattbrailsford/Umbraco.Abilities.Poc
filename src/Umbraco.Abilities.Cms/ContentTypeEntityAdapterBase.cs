@@ -243,7 +243,7 @@ public abstract class ContentTypeEntityAdapterBase<TType>(CmsContentSchemas sche
     /// <summary>A type by alias, or a problem on the subtype.</summary>
     protected TType RequireType(string? alias)
         => FindType(alias ?? string.Empty)
-            ?? throw new AbilityInputException($"No {EntityType} type '{alias}'.", [new Problem("subtype", $"Not a {EntityType} type.")]);
+            ?? throw new AbilityInputException($"No {EntityType} type '{alias}'.", [new Problem(EntityJson.Subtype, $"Not a {EntityType} type.")]);
 
     private Task<SchemaMap> MapAsync(TType type, CancellationToken cancellationToken)
     {

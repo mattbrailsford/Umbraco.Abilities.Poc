@@ -19,8 +19,11 @@ public interface IAbilityConsumer
     /// <summary>Who reads its tools' text: <see cref="AbilityAudiences.Model"/> or <see cref="AbilityAudiences.Person"/>.</summary>
     string Audience { get; }
 
-    /// <summary>What it can do. The base policy reads these, so a consumer can't skip it by leaving it out of its list.</summary>
-    ConsumerCapabilities Capabilities { get; }
+    /// <summary>
+    /// What it can do, by name: the framework's (<see cref="ConsumerCapabilities"/>) and any a package names. The base
+    /// policy reads these, so a consumer can't skip it by leaving it out of its list.
+    /// </summary>
+    IReadOnlyCollection<string> Capabilities { get; }
 
     /// <summary>The policies and filters it applies, by alias, in this order, after the base policy.</summary>
     IReadOnlyList<string> Filters { get; }
@@ -32,7 +35,7 @@ public sealed record AbilityConsumer(
     string Name,
     string Description,
     string Audience,
-    ConsumerCapabilities Capabilities,
+    IReadOnlyCollection<string> Capabilities,
     IReadOnlyList<string> Filters) : IAbilityConsumer;
 
 /// <summary>
@@ -48,20 +51,24 @@ public static class AbilityAudiences
     public const string Person = "person";
 }
 
-/// <summary>What a consumer can do, as the base policy needs to know it.</summary>
-[Flags]
-public enum ConsumerCapabilities
+/// <summary>
+/// What a consumer can do, by name. An ability names the ones it needs (<see cref="AbilityAttribute.Needs"/>), and the
+/// base policy leaves it out of a consumer that lacks one. The list is open, as audiences are: a package names its own as
+/// <c>owner.name</c>, such as <c>acme.file-upload</c>, and the consumers that can do it list that name.
+/// </summary>
+public static class ConsumerCapabilities
 {
-    None = 0,
-
     /// <summary>Holds a conversation across calls, so a change set can stay open between them.</summary>
-    Conversation = 1,
+    public const string Conversation = "conversation";
 
     /// <summary>Can stop and ask a person before one call, such as an AI chat's approval or an MCP client's question.</summary>
-    AsksConsent = 2,
+    public const string AsksConsent = "asks-consent";
 
     /// <summary>A person agreed ahead of time, such as by publishing an automation.</summary>
-    StandingConsent = 4,
+    public const string StandingConsent = "standing-consent";
+
+    /// <summary>Whether the consumer states the capability.</summary>
+    public static bool Can(this IAbilityConsumer consumer, string capability) => consumer.Capabilities.Contains(capability);
 }
 
 /// <summary>Every consumer on the site, by alias, and the filters packages added to consumers they don't own.</summary>

@@ -133,7 +133,7 @@ public sealed class EntityAdapterRegistry
     public IEntityAdapter Get(string entityType)
         => Find(entityType) ?? throw new AbilityInputException(
             $"Unknown entity type '{entityType}'.",
-            [new Problem("entityType", $"Known types: {string.Join(", ", _definitions.Keys)}.")]);
+            [new Problem(EntityJson.EntityType, $"Known types: {string.Join(", ", _definitions.Keys)}.")]);
 
     public IReadOnlyCollection<IEntityAdapter> All => _definitions.Values;
 }

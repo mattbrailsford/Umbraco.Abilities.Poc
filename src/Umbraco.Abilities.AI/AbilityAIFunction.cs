@@ -83,7 +83,7 @@ public static class AbilityAITools
         "AI chat",
         "A chat with a model. It keeps a conversation, and asks the person before anything that can't be undone.",
         AbilityAudiences.Model,
-        ConsumerCapabilities.Conversation | ConsumerCapabilities.AsksConsent,
+        [ConsumerCapabilities.Conversation, ConsumerCapabilities.AsksConsent],
         [FrameworkFilters.ForModels]);
 
     /// <summary>

@@ -59,6 +59,12 @@ public sealed class AbilityAttribute(string id, string name) : Attribute
     public bool Granular { get; set; }
 
     /// <summary>
+    /// What a consumer must be able to do to offer it, by name (<see cref="Consumers.ConsumerCapabilities"/>), such as
+    /// <c>acme.file-upload</c> for an ability that takes a file. The base policy leaves it out where one is missing.
+    /// </summary>
+    public string[] Needs { get; set; } = [];
+
+    /// <summary>
     /// An argument a consumer may split the ability by: one tool per value, with the value fixed, such as one "Create"
     /// per entity type. The ability lists the values (<see cref="IDynamicInputAbility"/>). A consumer that splits
     /// applies the <c>split-by-choice</c> filter; one that doesn't sees one tool, as before.
@@ -103,6 +109,7 @@ public sealed class EntityKeyAttribute(params string[] entityTypes) : Attribute
 /// The description says what it does, for every reader; the <c>apply-hints</c> filter adds the reader's hint to it.
 /// </param>
 /// <param name="Input">How the input can change with what is chosen: see <see cref="AbilityInputFacts"/>.</param>
+/// <param name="Needs">What a consumer must be able to do to offer it, by name. See <see cref="AbilityAttribute.Needs"/>.</param>
 public sealed record AbilityDescriptor(
     string Id,
     string Name,
@@ -116,8 +123,12 @@ public sealed record AbilityDescriptor(
     bool Granular = false,
     bool ManagesChangeSets = false,
     IReadOnlyDictionary<string, string>? Hints = null,
-    AbilityInputFacts? Input = null)
+    AbilityInputFacts? Input = null,
+    IReadOnlyList<string>? Needs = null)
 {
+    /// <summary>What a consumer must be able to do to offer it. Never null: an ability that states nothing needs nothing.</summary>
+    public IReadOnlyList<string> Needs { get; init; } = Needs ?? [];
+
     /// <summary>How the input can change with what is chosen. Never null: an ability that states nothing has no facts.</summary>
     public AbilityInputFacts Input { get; init; } = Input ?? AbilityInputFacts.None;
 
@@ -288,7 +299,8 @@ public abstract class AbilityBase<TInput, TOutput> : IAbility
             attribute.Granular,
             ManagesChangeSets: this is ChangeSets.IChangeSetLifecycleAbility,
             Hints: UiHints.HintsOf(GetType()),
-            Input: new AbilityInputFacts(attribute.SplitBy, attribute.SplitTitle, attribute.DependentInput, attribute.DependsOn));
+            Input: new AbilityInputFacts(attribute.SplitBy, attribute.SplitTitle, attribute.DependentInput, attribute.DependsOn),
+            Needs: attribute.Needs);
 
         if ((attribute.SplitBy is not null || attribute.DependentInput is not null) && this is not IDynamicInputAbility)
         {

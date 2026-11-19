@@ -326,7 +326,7 @@ public abstract class ModelEditAbilityBase<TInput, TModel>(EntityAdapterBase<TMo
     {
         var key = KeyOf(input);
         var model = await adapter.LoadModelAsync(key, cancellationToken)
-            ?? throw new AbilityInputException($"No {adapter.EntityType} with key {key}.", [new Problem("key", "Not found.")]);
+            ?? throw new AbilityInputException($"No {adapter.EntityType} with key {key}.", [new Problem(EntityJson.Key, "Not found.")]);
         var before = adapter.ToEntity(model);
         await EditAsync(model, input, cancellationToken);
 

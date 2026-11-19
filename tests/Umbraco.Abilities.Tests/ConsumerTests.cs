@@ -16,7 +16,7 @@ public class ConsumerTests
 {
     private readonly SampleSite _site = SampleSite.Create();
 
-    private const ConsumerCapabilities Chat = ConsumerCapabilities.Conversation | ConsumerCapabilities.AsksConsent;
+    private static readonly string[] Chat = [ConsumerCapabilities.Conversation, ConsumerCapabilities.AsksConsent];
 
     [Fact]
     public void A_consumer_that_can_ask_and_keeps_a_conversation_offers_every_ability()
@@ -44,7 +44,7 @@ public class ConsumerTests
             .Add(new DropWhere("acme-hide-explain", t => t.Descriptor.Kind == AbilityKind.Explain, "Nobody reads the explanation."))
             .Add(new DropWhere("acme-hide-blocks", t => t.Descriptor.Granular, "A person builds from a form, not from paths."));
         _site.Policies.Add("acme-tidy", "acme-hide-explain", "acme-hide-blocks");
-        AddConsumer("workflows", ConsumerCapabilities.StandingConsent, "acme-tidy");
+        AddConsumer("workflows", [ConsumerCapabilities.StandingConsent], "acme-tidy");
 
         var tools = _site.Tools.GetTools("workflows");
         Assert.DoesNotContain(tools, t => t.Descriptor.Granular || t.Descriptor.Kind == AbilityKind.Explain);
@@ -98,7 +98,7 @@ public class ConsumerTests
     public void A_package_adds_a_filter_to_another_packages_consumer_and_its_note_names_the_package()
     {
         _site.Filters.Add(new NoteEach("owners-own")).Add(new DropWhere("hide-email", t => t.Id == "email.send", "Email is sent by our own step."));
-        AddConsumer("workflows", ConsumerCapabilities.StandingConsent, "owners-own");
+        AddConsumer("workflows", [ConsumerCapabilities.StandingConsent], "owners-own");
 
         // Another package, which doesn't own the consumer.
         _site.Consumers.AddFilter("workflows", "hide-email");
@@ -110,18 +110,18 @@ public class ConsumerTests
     }
 
     [Theory]
-    [InlineData(ConsumerCapabilities.None, false)]
+    [InlineData(null, false)]
     [InlineData(ConsumerCapabilities.AsksConsent, true)]
     [InlineData(ConsumerCapabilities.StandingConsent, true)]
-    public void An_ability_that_needs_approval_is_dropped_where_nobody_can_agree_to_it_whatever_the_consumer_applies(ConsumerCapabilities capabilities, bool kept)
+    public void An_ability_that_needs_approval_is_dropped_where_nobody_can_agree_to_it_whatever_the_consumer_applies(string? capability, bool kept)
     {
         // The consumer lists no filters: the base policy runs anyway.
-        AddConsumer("consumer", capabilities);
+        AddConsumer("consumer", capability is null ? [] : [capability]);
 
         var send = Tool("consumer", "email.send", kept);
         if (!kept)
         {
-            Assert.Equal(("consent", "Umbraco.Abilities", AbilityPolicyRegistry.Base), (send.Dropped!.Filter, send.Dropped.Package, send.Dropped.Policy));
+            Assert.Equal((FrameworkFilters.Consent, "Umbraco.Abilities", AbilityPolicyRegistry.Base), (send.Dropped!.Filter, send.Dropped.Package, send.Dropped.Policy));
             Assert.Contains("can't be undone", send.Dropped.Text);
         }
     }
@@ -129,18 +129,32 @@ public class ConsumerTests
     [Fact]
     public void The_change_set_tools_are_dropped_where_no_conversation_keeps_a_set_open()
     {
-        AddConsumer("workflows", ConsumerCapabilities.StandingConsent);
+        AddConsumer("workflows", [ConsumerCapabilities.StandingConsent]);
         AddConsumer("chat", Chat);
 
-        Assert.Equal("change-set-lifecycle", Tool("workflows", "changeSet.create", kept: false).Dropped!.Filter);
+        Assert.Equal(FrameworkFilters.ChangeSetLifecycle, Tool("workflows", "changeSet.create", kept: false).Dropped!.Filter);
         Tool("workflows", "entity.setValue");
         Tool("chat", "changeSet.create");
     }
 
     [Fact]
+    public void An_ability_that_needs_a_capability_a_package_names_is_offered_only_where_the_consumer_states_it()
+    {
+        // Both names are the package's own: the framework knows neither.
+        _site.Abilities.Add(new ImportImageAbility());
+        AddConsumer("chat", Chat);
+        AddConsumer("uploads", [.. Chat, "acme.file-upload"]);
+
+        var dropped = Tool("chat", "acme.importImage", kept: false).Dropped!;
+        Assert.Equal((FrameworkFilters.Needs, AbilityPolicyRegistry.Base), (dropped.Filter, dropped.Policy));
+        Assert.Contains("acme.file-upload", dropped.Text);
+        Tool("uploads", "acme.importImage");
+    }
+
+    [Fact]
     public void Every_dropped_tool_stays_listed_with_why_and_only_kept_tools_are_offered()
     {
-        AddConsumer("workflows", ConsumerCapabilities.None);
+        AddConsumer("workflows", []);
 
         var explained = _site.Tools.Explain("workflows");
         Assert.Equal(_site.Abilities.All.Count, explained.Count);
@@ -181,20 +195,20 @@ public class ConsumerTests
     [Fact]
     public void A_form_consumer_gets_whole_operations_and_no_building_blocks_change_set_or_explain_abilities()
     {
-        AddConsumer("workflows", ConsumerCapabilities.StandingConsent, FrameworkFilters.ForForms);
+        AddConsumer("workflows", [ConsumerCapabilities.StandingConsent], FrameworkFilters.ForForms);
 
         var explained = _site.Tools.Explain("workflows");
         var kept = explained.Where(t => !t.IsDropped).ToList();
         Assert.DoesNotContain(kept, t => t.Descriptor.Granular || t.Descriptor.ManagesChangeSets || t.Descriptor.Kind == AbilityKind.Explain);
         Assert.Contains(kept, t => t.Id == "email.send");
-        Assert.Equal("hide-building-blocks", Tool("workflows", "entity.setValue", kept: false).Dropped!.Filter);
-        Assert.Equal(("change-set-lifecycle", AbilityPolicyRegistry.Base), (Tool("workflows", "changeSet.apply", kept: false).Dropped!.Filter, Tool("workflows", "changeSet.apply", kept: false).Dropped!.Policy));
+        Assert.Equal(FrameworkFilters.HideBuildingBlocks, Tool("workflows", "entity.setValue", kept: false).Dropped!.Filter);
+        Assert.Equal((FrameworkFilters.ChangeSetLifecycle, AbilityPolicyRegistry.Base), (Tool("workflows", "changeSet.apply", kept: false).Dropped!.Filter, Tool("workflows", "changeSet.apply", kept: false).Dropped!.Policy));
     }
 
     [Fact]
     public void A_form_consumer_gets_no_changeSetId_and_its_writes_are_each_a_change_set_of_their_own()
     {
-        AddConsumer("workflows", ConsumerCapabilities.StandingConsent, FrameworkFilters.ForForms);
+        AddConsumer("workflows", [ConsumerCapabilities.StandingConsent], FrameworkFilters.ForForms);
 
         var send = Tool("workflows", "email.send");
         Assert.Equal(ChangeSetMode.PerCall, send.ChangeSetMode);
@@ -205,7 +219,7 @@ public class ConsumerTests
     [Fact]
     public async Task A_call_in_its_own_change_set_is_applied_at_once_and_one_that_fails_leaves_nothing_behind()
     {
-        AddConsumer("workflows", ConsumerCapabilities.StandingConsent, "change-set-per-call");
+        AddConsumer("workflows", [ConsumerCapabilities.StandingConsent], FrameworkFilters.ChangeSetPerCall);
         var create = Tool("workflows", "entity.create");
         var session = new AbilityToolSession(SampleAccess.Editor);
 
@@ -225,7 +239,7 @@ public class ConsumerTests
     public void A_form_consumer_gets_a_Create_and_an_Update_per_entity_type_and_a_model_one_of_each()
     {
         AddConsumer("chat", AbilityAudiences.Model, Chat, FrameworkFilters.ForModels);
-        AddConsumer("workflows", AbilityAudiences.Person, ConsumerCapabilities.StandingConsent, FrameworkFilters.ForForms);
+        AddConsumer("workflows", AbilityAudiences.Person, [ConsumerCapabilities.StandingConsent], FrameworkFilters.ForForms);
 
         var forms = _site.Tools.GetTools("workflows");
         var create = Assert.Single(forms, t => t.Id == "entity.create:document");
@@ -243,7 +257,7 @@ public class ConsumerTests
     [Fact]
     public async Task An_update_changes_only_the_values_given_in_one_change_set()
     {
-        AddConsumer("workflows", AbilityAudiences.Person, ConsumerCapabilities.StandingConsent, FrameworkFilters.ForForms);
+        AddConsumer("workflows", AbilityAudiences.Person, [ConsumerCapabilities.StandingConsent], FrameworkFilters.ForForms);
         var session = new AbilityToolSession(SampleAccess.Editor);
         var made = await _site.Runner.InvokeAsync(
             Tool("workflows", "entity.create:document"),
@@ -269,7 +283,7 @@ public class ConsumerTests
     [Fact]
     public async Task A_form_resolves_the_fields_input_to_the_entity_types_fields_with_person_hints()
     {
-        AddConsumer("workflows", AbilityAudiences.Person, ConsumerCapabilities.StandingConsent, FrameworkFilters.ForForms);
+        AddConsumer("workflows", AbilityAudiences.Person, [ConsumerCapabilities.StandingConsent], FrameworkFilters.ForForms);
 
         var create = (await _site.Tools.ResolveInputSchemaAsync("workflows", "entity.create:umbraco-commerce-discount", []))!.Value;
         var update = (await _site.Tools.ResolveInputSchemaAsync("workflows", "entity.update:umbraco-commerce-discount", []))!.Value;
@@ -290,7 +304,7 @@ public class ConsumerTests
     public void A_model_consumers_tools_have_no_keywords_meant_for_forms()
     {
         AddConsumer("chat", Chat, FrameworkFilters.ForModels);
-        AddConsumer("workflows", ConsumerCapabilities.StandingConsent, FrameworkFilters.ForForms);
+        AddConsumer("workflows", [ConsumerCapabilities.StandingConsent], FrameworkFilters.ForForms);
 
         Assert.Contains("x-editor", Tool("workflows", "email.send").InputSchema.GetRawText());
         Assert.All(_site.Tools.GetTools("chat"), t => Assert.DoesNotContain("\"x-editor\"", t.InputSchema.GetRawText()));
@@ -311,7 +325,7 @@ public class ConsumerTests
     [Fact]
     public void An_admin_can_bring_back_what_a_filter_dropped_but_not_what_the_base_policy_dropped()
     {
-        AddConsumer("workflows", ConsumerCapabilities.StandingConsent, FrameworkFilters.ForForms);
+        AddConsumer("workflows", [ConsumerCapabilities.StandingConsent], FrameworkFilters.ForForms);
         var tools = WithOverrides(new() { ["workflows"] = new ConsumerOverride { Include = ["entity.setValue", "changeSet.apply"] } });
 
         // Kept, and still shaped by the filters after the one that would have dropped it.
@@ -327,7 +341,7 @@ public class ConsumerTests
     {
         _site.Abilities.Add(new PublishPageAbility());
         AddConsumer("chat", AbilityAudiences.Model, Chat, FrameworkFilters.ForModels);
-        AddConsumer("workflows", AbilityAudiences.Person, ConsumerCapabilities.StandingConsent, FrameworkFilters.ForForms);
+        AddConsumer("workflows", AbilityAudiences.Person, [ConsumerCapabilities.StandingConsent], FrameworkFilters.ForForms);
 
         var model = Tool("chat", "acme.publishPage");
         var person = Tool("workflows", "acme.publishPage");
@@ -347,7 +361,7 @@ public class ConsumerTests
     {
         _site.Abilities.Add(new PublishPageAbility());
         AddConsumer("chat", AbilityAudiences.Model, Chat, FrameworkFilters.ForModels);
-        AddConsumer("model-forms", AbilityAudiences.Model, ConsumerCapabilities.StandingConsent, FrameworkFilters.ForForms);
+        AddConsumer("model-forms", AbilityAudiences.Model, [ConsumerCapabilities.StandingConsent], FrameworkFilters.ForForms);
 
         Assert.Equal(Tool("chat", "acme.publishPage").Description, Tool("model-forms", "acme.publishPage").Description);
         Assert.Equal(Tool("chat", "entity.getSchema").Description, Tool("model-forms", "entity.getSchema").Description);
@@ -372,10 +386,10 @@ public class ConsumerTests
 
     private static JsonObject Json(string json) => JsonNode.Parse(json)!.AsObject();
 
-    private void AddConsumer(string alias, ConsumerCapabilities capabilities, params string[] filters)
+    private void AddConsumer(string alias, IReadOnlyCollection<string> capabilities, params string[] filters)
         => AddConsumer(alias, AbilityAudiences.Model, capabilities, filters);
 
-    private void AddConsumer(string alias, string audience, ConsumerCapabilities capabilities, params string[] filters)
+    private void AddConsumer(string alias, string audience, IReadOnlyCollection<string> capabilities, params string[] filters)
         => _site.Consumers.Add(new AbilityConsumer(alias, alias, $"The {alias} consumer.", audience, capabilities, filters));
 
     // The tool for an ability in a consumer's list, kept or dropped as expected.
@@ -445,6 +459,14 @@ public class ConsumerTests
         [property: Hint(AbilityAudiences.Model, "Use entity.find to turn its name into a key.")]
         [property: Hint(AbilityAudiences.Person, "Pick it from the tree.")]
         Guid Page);
+
+    // A package's ability that takes a file, so only a consumer that can send one offers it.
+    [Ability("acme.importImage", "Import image", Description = "Adds an image to the media library.", Kind = AbilityKind.Write, Reversible = true, Needs = ["acme.file-upload"])]
+    private sealed class ImportImageAbility : AbilityBase<PublishPageInput, object>
+    {
+        protected override Task<AbilityResult> ExecuteAsync(PublishPageInput input, AbilityContext context, CancellationToken cancellationToken)
+            => Task.FromResult(AbilityResult.Ok(null));
+    }
 
     // A package's ability with a hint for each reader, on itself and on its input.
     [Ability("acme.publishPage", "Publish page", Description = "Puts a page live.")]

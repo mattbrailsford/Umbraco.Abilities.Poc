@@ -331,7 +331,7 @@ full design is in [CONSUMERS.md](CONSUMERS.md).
 
 | Piece | What it is |
 | --- | --- |
-| Consumer | One way abilities are used: an AI chat, an MCP server, Automate. It states its reader (`model` or `person`), what it can do (keep a conversation, ask for consent) and the filters it applies |
+| Consumer | One way abilities are used: an AI chat, an MCP server, Automate. It states its reader (`model` or `person`), what it can do (keep a conversation, ask for consent, or a name a package adds) and the filters it applies |
 | Filter | A named step that keeps, changes, drops or splits a tool. A package adds its own, to its own consumer or to another's |
 | Policy | A named group of filters. The base policy runs for every consumer and protects against harm; `for-models` and `for-forms` tidy |
 | Tool | One ability as one consumer is offered it: a shape only. `AbilityToolRunner` runs it |
@@ -340,6 +340,8 @@ What an ability states, and filters read:
 
 - Facts: its kind, whether it can be undone, whether it is a building block (`Granular`), whether it manages change
   sets.
+- Needs: what a consumer must be able to do to offer it (`Needs`), by name, such as `acme.file-upload`. The base
+  policy leaves it out where the consumer doesn't state the name.
 - Text: a description for every reader, and hints for one audience (`[Hint]`, written as `x-hints`).
 - Input: an argument it can be split by (`SplitBy`), and an input that depends on other choices (`DependentInput`),
   such as `entity.create`'s fields, which depend on the entity type and the page type.

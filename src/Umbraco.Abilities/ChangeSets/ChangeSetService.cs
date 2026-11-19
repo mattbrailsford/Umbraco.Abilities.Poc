@@ -39,7 +39,7 @@ public sealed class ChangeSetService(
     }
 
     public ChangeSet Get(Guid id)
-        => store.Get(id) ?? throw new AbilityInputException($"No change set {id}.", [new Problem("changeSetId", "Not found.")]);
+        => store.Get(id) ?? throw new AbilityInputException($"No change set {id}.", [new Problem(AbilityTool.ChangeSetIdArgument, "Not found.")]);
 
     /// <summary>The change set, or null if there is none with that id (never created, applied or discarded).</summary>
     public ChangeSet? Find(Guid id) => store.Get(id);
@@ -51,7 +51,7 @@ public sealed class ChangeSetService(
     public ChangeSet GetCurrent()
         => CurrentId is { } id ? Get(id) : throw new AbilityInputException(
             "No change set is open. Create one with changeSet_create, or name one with changeSetId.",
-            [new Problem("changeSetId", "No change set is open.")]);
+            [new Problem(AbilityTool.ChangeSetIdArgument, "No change set is open.")]);
 
     /// <summary>Makes a change set (or none) current for the calls made until the scope is disposed.</summary>
     public IDisposable Use(Guid? changeSetId) => accessor.Use(changeSetId);
@@ -134,7 +134,7 @@ public sealed class ChangeSetService(
             {
                 throw new AbilityInputException(
                     $"{adapter.UnitOfWork.Name} changes in this set are already applied. Start a new change set to change them again.",
-                    [new Problem("entityType", "Already applied.")]);
+                    [new Problem(EntityJson.EntityType, "Already applied.")]);
             }
 
             var working = await GetWorkingStateAsync(set, target.EntityType, target.EntityKey, cancellationToken);
@@ -144,12 +144,12 @@ public sealed class ChangeSetService(
             {
                 if (!adapter.CanCreate)
                 {
-                    throw new AbilityInputException($"{target.EntityType} cannot be created here.", [new Problem("entityType", "Not creatable.")]);
+                    throw new AbilityInputException($"{target.EntityType} cannot be created here.", [new Problem(EntityJson.EntityType, "Not creatable.")]);
                 }
 
                 if (working is not null)
                 {
-                    throw new AbilityInputException($"{target.EntityType} {target.EntityKey} already exists.", [new Problem("key", "Already exists.")]);
+                    throw new AbilityInputException($"{target.EntityType} {target.EntityKey} already exists.", [new Problem(EntityJson.Key, "Already exists.")]);
                 }
 
                 var subtypes = await adapter.GetSubtypesAsync(cancellationToken);
@@ -157,21 +157,21 @@ public sealed class ChangeSetService(
                 {
                     throw new AbilityInputException(
                         $"{target.EntityType} needs a subtype. Subtypes: {string.Join(", ", subtypes.Select(s => s.Alias))}.",
-                        [new Problem("subtype", "Required, and must be one of the listed subtypes.")]);
+                        [new Problem(EntityJson.Subtype, "Required, and must be one of the listed subtypes.")]);
                 }
 
                 if (subtypes.FirstOrDefault(s => s.Alias == target.Subtype) is { Creatable: false } part)
                 {
                     throw new AbilityInputException(
                         $"{part.Name} is only used inside other types, so it can't be created. Subtypes that can: {string.Join(", ", subtypes.Where(s => s.Creatable).Select(s => s.Alias))}.",
-                        [new Problem("subtype", "Not creatable.")]);
+                        [new Problem(EntityJson.Subtype, "Not creatable.")]);
                 }
 
                 working = await adapter.NewAsync(target.EntityKey, target.Subtype, cancellationToken);
             }
             else if (working is null)
             {
-                throw new AbilityInputException($"No {target.EntityType} with key {target.EntityKey}.", [new Problem("key", "Not found.")]);
+                throw new AbilityInputException($"No {target.EntityType} with key {target.EntityKey}.", [new Problem(EntityJson.Key, "Not found.")]);
             }
 
             // Remember the version the set starts editing from, to rebase onto newer live versions later.
@@ -194,7 +194,7 @@ public sealed class ChangeSetService(
             var output = await edit.ApplyAsync(working, recorded, new EntityEditContext(adapter, schema, itemTypes), cancellationToken);
             if (working.Deleted && adapter is not IDeletableEntityAdapter)
             {
-                throw new AbilityInputException($"{adapter.DisplayName} can't be deleted here.", [new Problem("entityType", "Can't be deleted.")]);
+                throw new AbilityInputException($"{adapter.DisplayName} can't be deleted here.", [new Problem(EntityJson.EntityType, "Can't be deleted.")]);
             }
 
             // What the edit leaves: nothing, when it deletes the entity.
