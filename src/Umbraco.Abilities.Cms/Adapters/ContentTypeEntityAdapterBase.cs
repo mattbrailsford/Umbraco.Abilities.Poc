@@ -169,6 +169,13 @@ public abstract class ContentTypeEntityAdapterBase<TType>(CmsContentSchemas sche
         return new StoredContent(content.Key, content.ContentType.Key, names, values, content.UpdateDate.Ticks);
     }
 
+    /// <summary>
+    /// A new item with <paramref name="key"/> that starts as a copy of <paramref name="source"/>: its type, names and
+    /// values, read as a stored item's are. For a template, such as a document blueprint. It has no parent and no version.
+    /// </summary>
+    protected Task<Entity> NewFromAsync(Guid key, IContentBase source, CancellationToken cancellationToken = default)
+        => ToEntityAsync(ReadStored(source) with { Key = key, Version = null, ParentKey = null }, cancellationToken);
+
     /// <summary>A stored item as an entity: its names, then each property's value read by its editor's handler.</summary>
     protected async Task<Entity> ToEntityAsync(StoredContent content, CancellationToken cancellationToken = default)
     {

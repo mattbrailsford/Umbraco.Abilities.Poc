@@ -11,13 +11,15 @@ namespace Umbraco.Abilities.ChangeSets;
 /// </summary>
 /// <param name="EntityType">Set for a change to an entity; null for a side effect that runs after the set is applied.</param>
 /// <param name="Creates">The call creates the entity, so its working state starts from <see cref="IEntityAdapter.New"/>.</param>
+/// <param name="Template">For a create, the template the entity starts from (<see cref="ITemplatedEntityAdapter"/>).</param>
 public sealed record RecordedCall(
     string AbilityId,
     JsonObject Input,
     string? EntityType = null,
     Guid? EntityKey = null,
     bool Creates = false,
-    string? Subtype = null);
+    string? Subtype = null,
+    Guid? Template = null);
 
 public sealed class ChangeSet
 {
@@ -153,7 +155,8 @@ public interface IEntityEditAbility : IAbility
     Task<object?> ApplyAsync(Entity entity, JsonObject input, EntityEditContext context, CancellationToken cancellationToken = default);
 }
 
-public sealed record EntityEditTarget(string EntityType, Guid EntityKey, bool Creates, string? Subtype = null);
+/// <param name="Template">For a create, a template to start from (<see cref="ITemplatedEntityAdapter"/>).</param>
+public sealed record EntityEditTarget(string EntityType, Guid EntityKey, bool Creates, string? Subtype = null, Guid? Template = null);
 
 public sealed record EntityEditContext(IEntityAdapter Adapter, EntitySchema Schema, ItemTypes ItemTypes);
 

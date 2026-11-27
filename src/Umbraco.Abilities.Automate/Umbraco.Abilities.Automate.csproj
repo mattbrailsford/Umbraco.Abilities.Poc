@@ -12,6 +12,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Umbraco.Abilities/Umbraco.Abilities.csproj" />
+    <!-- The entity picker, which the form gives a key to an entity of a type with no picker of its own. -->
+    <ProjectReference Include="../Umbraco.Abilities.UI/Umbraco.Abilities.UI.csproj" />
     <PackageReference Include="Umbraco.Automate.Core" />
   </ItemGroup>
 </Project>

@@ -8,7 +8,8 @@ It has:
 - the abilities and their Management API endpoints (`builder.AddAbilities()`)
 - **Umbraco Commerce** 18.1.11 on SQLite, with no license (fine for local use). On start it makes a store ("Demo
   store", GBP), a Shop page under Home with three products (Sun hat, Beach towel, Sunglasses), and lets Editors and
-  Administrators use the store. Discounts are made through the real Commerce adapter (`AddCommerceAbilities()`)
+  Administrators use the store. It also makes a "Welcome 10%" code discount (code `WELCOME10`), for an automation to
+  give out codes from. Discounts are made through the real Commerce adapter (`AddCommerceAbilities()`)
 - **Umbraco Automate** 18.6.0, in Umbraco's own database (`Umbraco:Automate:UseNamedConnectionString`). Every whole
   ability is an action, and each page type has a Create and an Update action (`AddAbilityActions()` in `Program.cs`).
   To try one, add a workspace under Automation > Settings, with an API user (such as MCP) as its service account

@@ -264,7 +264,7 @@ schemas, output schemas and results (a result can hold a schema).
 | --- | --- | --- |
 | `x-editor` | Forms | The editor a form shows |
 | `x-meta` | Forms | Hints for UIs |
-| `x-references`, `x-references-item-in` | Both | A model uses it to find keys; a form uses it to show a picker |
+| `x-references`, `x-references-item-in`, `x-references-within` | Both | A model uses it to find keys (within another entity, such as a store); a form uses it to show a picker, limited to the chosen one |
 | `x-edit`, `x-item-types`, `x-variations`, `x-bindings` | Both | Rules a caller acts on |
 | `x-hints` | One audience each | Read and removed by `apply-hints` (section 9) |
 
@@ -375,7 +375,9 @@ Later, a layer below the admin: one Automate workspace or one AI agent profile n
 only narrow, never widen.
 
 A central backoffice screen would edit the site layer: one table per consumer, each row an ability, kept or dropped,
-and the notes. That screen belongs in core and would go through Umbraco's RFC process. The PoC stops at config.
+and the notes. It ships in the Abilities package, under Settings, until core accepts the RFC; then it moves to core.
+It saves through `IAbilityOverrides`, in place of config. The PoC stops at config, plus a clickable mockup of the
+screen.
 
 ### 12. The tool provider
 

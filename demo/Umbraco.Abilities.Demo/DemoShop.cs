@@ -14,7 +14,8 @@ namespace Umbraco.Abilities.Demo;
 /// <summary>
 /// Adds a small shop to the Clean starter kit with real Umbraco Commerce: a store (Commerce fills in its currency,
 /// country, tax class, statuses and methods), its store picker on the home page, a Shop page and three products with
-/// prices. Each part is made only if missing, so it is safe on every start.
+/// prices, and a "Welcome" code discount to give out codes from (an Automate step's "Add a discount code"). Each part is
+/// made only if missing, so it is safe on every start.
 /// </summary>
 public sealed class DemoShop(
     IUmbracoCommerceApi commerce,
@@ -42,6 +43,7 @@ public sealed class DemoShop(
     {
         var store = await EnsureStoreAsync(cancellationToken);
         await EnsureEditorsCanUseStoreAsync(store, cancellationToken);
+        await EnsureWelcomeDiscountAsync(store, cancellationToken);
         var storePicker = await EnsureDataTypeAsync("Umbraco Commerce: Store Picker", "Umbraco.Commerce.StorePicker", "Uc.PropertyEditorUi.StorePicker", ValueStorageType.Nvarchar);
         var price = await EnsureDataTypeAsync("Umbraco Commerce: Price", "Umbraco.Commerce.Price", "Uc.PropertyEditorUi.Price", ValueStorageType.Ntext);
         var textbox = await dataTypes.GetAsync(Constants.DataTypes.Guids.TextstringGuid);
@@ -109,6 +111,33 @@ public sealed class DemoShop(
         }, cancellationToken);
         logger.LogInformation("Demo shop: created the store '{Alias}'.", StoreAlias);
         return (await commerce.GetStoreAsync(store.Id))!;
+    }
+
+    // 10% off the order with a code. Set up once, as a person would; an automation then gives out codes for it.
+    private async Task EnsureWelcomeDiscountAsync(StoreReadOnly store, CancellationToken cancellationToken)
+    {
+        if ((await commerce.GetDiscountsAsync(store.Id)).Any(d => d.Alias == "welcome"))
+        {
+            return;
+        }
+
+        await commerce.Uow.ExecuteAsync(async (uow, ct) =>
+        {
+            var discount = await Discount.CreateAsync(uow, Guid.NewGuid(), store.Id, "welcome", "Welcome 10%");
+            await discount.SetTypeAsync(DiscountType.Code);
+            await discount.AddCodesAsync([new DiscountCode("WELCOME10", null, true)]);
+            await discount.SetRulesAsync(new DiscountRuleConfig("groupDiscountRule", [KeyValuePair.Create("matchType", "All")], []), false, false);
+            await discount.SetRewardsAsync([new DiscountRewardConfig("orderAmountDiscountReward", new Dictionary<string, string>
+            {
+                ["priceType"] = "SubtotalPrice",
+                ["adjustmentType"] = "Percentage",
+                ["percentage"] = "10",
+            })]);
+            await discount.SetActiveAsync(true);
+            await commerce.SaveDiscountAsync(discount, ct);
+            uow.Complete();
+        }, cancellationToken);
+        logger.LogInformation("Demo shop: added the Welcome 10% code discount.");
     }
 
     // Editors (the MCP API user's group) and administrators get the Commerce section and the store, so discounts

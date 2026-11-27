@@ -31,8 +31,9 @@ public sealed partial class CmsDocumentAdapter(
     IUserService users,
     IContentPermissionService permissions,
     CmsScopeUnitOfWorkProvider unitOfWork,
-    CmsActingUser actingUser)
-    : ContentTypeEntityAdapterBase<IContentType>(schemas), IDraftingEntityAdapter, IDeletableEntityAdapter, ITreeEntityAdapter
+    CmsActingUser actingUser,
+    IContentBlueprintEditingService blueprints)
+    : ContentTypeEntityAdapterBase<IContentType>(schemas), IDraftingEntityAdapter, IDeletableEntityAdapter, ITreeEntityAdapter, ITemplatedEntityAdapter
 {
     public const string Type = Constants.UdiEntityType.Document;
 

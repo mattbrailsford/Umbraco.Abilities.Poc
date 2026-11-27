@@ -106,6 +106,12 @@ public abstract class EntityAdapterBase<TModel> : IAuthorizingEntityAdapter
             .ToList());
 
     /// <summary>
+    /// The entity a model belongs to, for a product whose entities are kept apart, such as a discount's store. Optional:
+    /// found entities are then listed under it, ones with the same name can be told apart, and finding can keep to one.
+    /// </summary>
+    protected virtual Task<EntityGroup?> GetGroupAsync(TModel model, CancellationToken cancellationToken) => Task.FromResult<EntityGroup?>(null);
+
+    /// <summary>
     /// Domain rules the attributes can't express, e.g. dates in order or unique codes. Optional. Add each problem on
     /// the property it's about: <c>problems.At(d => d.EndDate, "Must be on or after startDate.")</c>.
     /// </summary>
@@ -171,7 +177,15 @@ public abstract class EntityAdapterBase<TModel> : IAuthorizingEntityAdapter
     }
 
     public async Task<IReadOnlyList<EntitySummary>> FindAsync(string query, CancellationToken cancellationToken = default)
-        => (await FindModelsAsync(query, cancellationToken)).Select(m => ToSummary(ToEntity(m))).ToList();
+    {
+        var found = new List<EntitySummary>();
+        foreach (var model in await FindModelsAsync(query, cancellationToken))
+        {
+            found.Add(ToSummary(ToEntity(model)) with { Group = await GetGroupAsync(model, cancellationToken) });
+        }
+
+        return found;
+    }
 
     public EntitySummary ToSummary(Entity entity)
     {
@@ -276,10 +290,22 @@ public sealed class ModelProblems<TModel> : IEnumerable<Problem>
 /// <summary>
 /// A product ability that changes one entity, written against its model: <see cref="Edit"/> changes the model. Run
 /// directly, it loads, edits and saves the entity; inside a change set it is recorded as a change to the entity, shown
-/// in its working state and saved with the entity's product.
+/// in its working state and saved with the entity's product. It returns the entity's summary; to return something else,
+/// such as a code it made, use <see cref="ModelEditAbilityBase{TInput, TModel, TOutput}"/>.
 /// </summary>
 public abstract class ModelEditAbilityBase<TInput, TModel>(EntityAdapterBase<TModel> adapter)
-    : AbilityBase<TInput, EntitySummary>, IEntityEditAbility
+    : ModelEditAbilityBase<TInput, TModel, EntitySummary>(adapter)
+    where TModel : class
+{
+    protected sealed override EntitySummary Result(TModel model, TInput input, EntitySummary entity) => entity;
+}
+
+/// <summary>
+/// A product ability that changes one entity and returns its own result, such as a code it made, so a later step can
+/// use it. Like <see cref="ModelEditAbilityBase{TInput, TModel}"/>, it runs directly or is recorded in a change set.
+/// </summary>
+public abstract class ModelEditAbilityBase<TInput, TModel, TOutput>(EntityAdapterBase<TModel> adapter)
+    : AbilityBase<TInput, TOutput>, IEntityEditAbility
     where TModel : class
 {
     private static readonly ConcurrentDictionary<string, PropertyInfo?> KeyProperties = new();
@@ -311,19 +337,38 @@ public abstract class ModelEditAbilityBase<TInput, TModel>(EntityAdapterBase<TMo
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// The input with anything chosen at random filled in, such as a code to make when none is given. It runs once,
+    /// before the call is recorded, so replaying the change set gives the same result. By default, the input as given.
+    /// </summary>
+    protected virtual TInput Fill(TInput input) => input;
+
+    /// <summary>What the ability returns, from the edited model. <paramref name="entity"/> is the entity's summary.</summary>
+    protected abstract TOutput Result(TModel model, TInput input, EntitySummary entity);
+
     public EntityEditTarget Prepare(JsonObject input)
-        => new(adapter.EntityType, KeyOf(Read(input)), Creates: false);
+    {
+        var filled = Fill(Read(input));
+        foreach (var (name, value) in System.Text.Json.JsonSerializer.SerializeToNode(filled, AbilityJson.Options)!.AsObject())
+        {
+            input[name] = value?.DeepClone();
+        }
+
+        return new(adapter.EntityType, KeyOf(filled), Creates: false);
+    }
 
     public async Task<object?> ApplyAsync(Entity entity, JsonObject input, EntityEditContext context, CancellationToken cancellationToken = default)
     {
         var model = adapter.ToModel(entity);
-        await EditAsync(model, Read(input), cancellationToken);
+        var typed = Read(input);
+        await EditAsync(model, typed, cancellationToken);
         entity.Fields = adapter.ToEntity(model).Fields;
-        return adapter.ToSummary(entity);
+        return Result(model, typed, adapter.ToSummary(entity));
     }
 
     protected override async Task<AbilityResult> ExecuteAsync(TInput input, AbilityContext context, CancellationToken cancellationToken)
     {
+        input = Fill(input);
         var key = KeyOf(input);
         var model = await adapter.LoadModelAsync(key, cancellationToken)
             ?? throw new AbilityInputException($"No {adapter.EntityType} with key {key}.", [new Problem(EntityJson.Key, "Not found.")]);
@@ -338,7 +383,7 @@ public abstract class ModelEditAbilityBase<TInput, TModel>(EntityAdapterBase<TMo
         }
 
         await adapter.SaveModelAsync(adapter.ToModel(before), model, cancellationToken);
-        return Success(adapter.ToSummary(adapter.ToEntity(model)));
+        return Success(Result(model, input, adapter.ToSummary(adapter.ToEntity(model))));
     }
 
     private static TInput Read(JsonObject input)

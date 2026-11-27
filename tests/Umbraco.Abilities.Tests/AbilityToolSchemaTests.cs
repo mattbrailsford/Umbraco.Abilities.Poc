@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.AI;
 
 using Umbraco.Abilities.Samples;
+using Umbraco.Abilities.Samples.Commerce;
 
 namespace Umbraco.Abilities.Tests;
 
@@ -13,6 +14,14 @@ namespace Umbraco.Abilities.Tests;
 /// </summary>
 public class AbilityToolSchemaTests
 {
+    [Fact]
+    public void A_key_marked_EntityKey_names_the_entity_type_it_points_at_so_a_model_finds_it_and_a_form_picks_it()
+    {
+        var schema = AbilitySchemas.InputSchema(typeof(ActivateDiscountInput));
+
+        Assert.Equal("umbraco-commerce-discount", schema.GetProperty("properties").GetProperty("discount").GetProperty("x-references").GetString());
+    }
+
     [Fact]
     public void Every_abilitys_input_schema_is_the_one_MEAI_would_make()
     {
@@ -30,8 +39,8 @@ public class AbilityToolSchemaTests
         Assert.True(differences.Count == 0, string.Join("\n", differences));
     }
 
-    // The one thing the framework adds on purpose: a format from [ValueFormat], which M.E.AI doesn't read. It is removed
-    // where M.E.AI's schema has none, so everything else must still match.
+    // The things the framework adds on purpose, which M.E.AI doesn't read: a format from [ValueFormat], removed where
+    // M.E.AI's schema has none, and the entity type an [EntityKey] points at. Everything else must still match.
     private static JsonNode? WithoutAddedFormats(JsonNode? framework, JsonNode? meai)
     {
         if (framework is JsonObject ours && meai is JsonObject theirs)
@@ -40,6 +49,9 @@ public class AbilityToolSchemaTests
             {
                 ours.Remove("format");
             }
+
+            ours.Remove(Umbraco.Abilities.Entities.SchemaKeywords.References);
+            ours.Remove(Umbraco.Abilities.Entities.SchemaKeywords.ReferencesWithin);
 
             foreach (var (name, child) in ours.ToList())
             {

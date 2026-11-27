@@ -19,6 +19,7 @@ using Umbraco.Cms.Core;
 using Umbraco.Cms.Core.DependencyInjection;
 using Umbraco.Cms.Core.Events;
 using Umbraco.Cms.Core.Models;
+using Umbraco.Cms.Core.Models.ContentEditing;
 using Umbraco.Cms.Core.Models.Membership;
 using Umbraco.Cms.Core.Notifications;
 using Umbraco.Cms.Core.PropertyEditors;
@@ -268,6 +269,47 @@ public sealed class AbilityActionTests : UmbracoIntegrationTest
     }
 
     [Test]
+    public void A_key_to_an_entity_type_with_no_Umbraco_picker_gets_the_shared_entity_picker()
+    {
+        var discount = JsonDocument.Parse("""{ "type": "string", "format": "uuid", "x-references": "umbraco-commerce-discount" }""").RootElement;
+        var page = JsonDocument.Parse("""{ "type": "string", "format": "uuid", "x-references": "document" }""").RootElement;
+
+        var (editor, config) = AbilitySettingsForm.EditorFor(discount, new Dictionary<string, string>());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(editor, Is.EqualTo(AbilitySettingsForm.EntityPickerEditor));
+            Assert.That(config!["entityType"]!.GetValue<string>(), Is.EqualTo("umbraco-commerce-discount"));
+            Assert.That(config["consumer"]!.GetValue<string>(), Is.EqualTo("automate"));
+            Assert.That(AbilitySettingsForm.EditorFor(page, new Dictionary<string, string>()).Editor, Is.EqualTo("Umb.PropertyEditorUi.DocumentPicker"), "Umbraco's own picker where there is one");
+        });
+    }
+
+    [Test]
+    public void A_picker_within_another_field_follows_it_and_that_field_is_chosen_not_bound()
+    {
+        var schema = JsonDocument.Parse("""
+            {
+              "type": "object",
+              "properties": {
+                "store": { "type": "string", "format": "uuid", "x-references": "umbraco-commerce-store" },
+                "discount": { "type": "string", "format": "uuid", "x-references": "umbraco-commerce-discount", "x-references-within": "store" },
+                "code": { "type": "string" }
+              }
+            }
+            """).RootElement;
+
+        var form = AbilitySettingsForm.Build(schema, new Dictionary<string, string>()).Fields.ToDictionary(f => f.Key);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(JsonNode.Parse(form["discount"].EditorConfig!)!.AsArray().Single(c => (string?)c!["alias"] == "withinField")!["value"]!.GetValue<string>(), Is.EqualTo("store"));
+            Assert.That(form["store"].SupportsBindings, Is.False, "the store shapes the form, so it is chosen while the step is built");
+            Assert.That(form["code"].SupportsBindings, Is.True);
+        });
+    }
+
+    [Test]
     public void A_Create_action_returns_a_typed_summary_a_later_step_can_bind_to()
     {
         var output = JsonSerializer.SerializeToElement(Actions.GetByAlias("abilities.entity.create.document")!.GetOutputSchema());
@@ -395,6 +437,117 @@ public sealed class AbilityActionTests : UmbracoIntegrationTest
         Assert.That(run.Status, Is.EqualTo(AutomationRunStatus.Failed), Describe(run));
         Assert.That(Describe(run), Does.Contain("title"));
         Assert.That(ContentService.GetRootContent().Where(c => c.Name == "No title"), Is.Empty);
+    }
+
+    [Test]
+    public async Task A_Create_form_offers_each_page_types_blueprints_to_start_from()
+    {
+        var (testimonial, blueprint) = await CreateTestimonialBlueprintAsync();
+
+        var all = Actions.GetByAlias("abilities.entity.create.document")!.GetSettingsSchema()!.Fields.Single(f => f.Key == "template").EditorConfig;
+        var schema = (await Tools.ResolveInputSchemaAsync("automate", "entity.create:document", new JsonObject { ["subtype"] = testimonial.Alias }))!.Value;
+        var forType = schema.GetProperty("properties").GetProperty("template").GetProperty("oneOf").EnumerateArray().ToList();
+        var forArticle = (await Tools.ResolveInputSchemaAsync("automate", "entity.create:document", new JsonObject { ["subtype"] = "article" }))!.Value;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(all, Does.Contain(blueprint.ToString()).And.Contain("Thank-you testimonial (Testimonial)"), "before a page type is chosen, each is named with its type");
+            Assert.That(forType.Select(o => o.GetProperty("title").GetString()), Is.EqualTo(new[] { "Thank-you testimonial" }));
+            Assert.That(forArticle.GetProperty("properties").TryGetProperty("template", out _), Is.False, "a type with no blueprints has no choice");
+        });
+    }
+
+    [Test]
+    public async Task An_automation_starts_a_page_from_a_blueprint_and_sets_only_the_fields_mapped_from_the_trigger()
+    {
+        var (_, blueprint) = await CreateTestimonialBlueprintAsync();
+        var workspace = await CreateWorkspaceAsync();
+
+        // The step names the blueprint, and maps two fields from what the trigger gave. The intro isn't mapped: it
+        // comes from the blueprint.
+        var step = new StepConfiguration
+        {
+            Id = Guid.NewGuid(),
+            Alias = "create",
+            Name = "Create the testimonial",
+            ActionAlias = "abilities.entity.create.document",
+            Settings = Settings($$"""{ "template": ["{{blueprint}}"], "fields": { "name": "${ trigger.author }", "quote": "${ trigger.quote }" } }"""),
+            MaxRetries = 0,
+        };
+        var automations = GetRequiredService<IAutomationService>();
+        var automation = await automations.CreateAutomationAsync(new Automation
+        {
+            Alias = "testimonial",
+            Name = "Testimonial from a form",
+            WorkspaceId = workspace.Id,
+            Trigger = new TriggerConfiguration { TriggerAlias = "umbracoAutomate.manual" },
+            Steps = [step],
+            Connections = [new StepConnection { SourceStepId = Guid.Empty, TargetStepId = step.Id }],
+        });
+        automation = await automations.PublishAutomationAsync(automation.Id);
+
+        var trigger = new Dictionary<string, object> { ["author"] = "Jo Smith", ["quote"] = "Lovely shop." };
+        var run = await WaitForRunAsync(await GetRequiredService<IAutomationExecutor>().ExecuteAsync(automation, "User", null, trigger, CancellationToken.None));
+
+        Assert.That(run.Status, Is.EqualTo(AutomationRunStatus.Completed), Describe(run));
+        var page = ContentService.GetRootContent().Single(c => c.Name == "Jo Smith");
+        Assert.Multiple(() =>
+        {
+            Assert.That(page.GetValue<string>("quote"), Is.EqualTo("Lovely shop."), "mapped from the trigger");
+            Assert.That(page.GetValue<string>("intro"), Is.EqualTo("Thank you for your kind words."), "from the blueprint");
+            Assert.That(page.ContentType.Alias, Is.EqualTo("testimonial"), "the blueprint gives the page type");
+        });
+    }
+
+    // A testimonial page type (a mandatory quote, and an intro), and one blueprint for it whose intro is filled in.
+    private async Task<(IContentType Type, Guid Blueprint)> CreateTestimonialBlueprintAsync()
+    {
+        var testimonial = new ContentTypeBuilder()
+            .WithAlias("testimonial").WithName("Testimonial").WithContentVariation(ContentVariation.Nothing)
+            .AddPropertyType()
+                .WithAlias("quote").WithName("Quote")
+                .WithDataTypeId(Constants.DataTypes.Textbox).WithPropertyEditorAlias(Constants.PropertyEditors.Aliases.TextBox)
+                .WithValueStorageType(ValueStorageType.Nvarchar).WithVariations(ContentVariation.Nothing).WithMandatory(true)
+                .Done()
+            .AddPropertyType()
+                .WithAlias("intro").WithName("Intro")
+                .WithDataTypeId(Constants.DataTypes.Textbox).WithPropertyEditorAlias(Constants.PropertyEditors.Aliases.TextBox)
+                .WithValueStorageType(ValueStorageType.Nvarchar).WithVariations(ContentVariation.Nothing)
+                .Done()
+            .Build();
+        testimonial.AllowedAsRoot = true;
+        await GetRequiredService<IContentTypeService>().CreateAsync(testimonial, Constants.Security.SuperUserKey);
+
+        var created = await GetRequiredService<IContentBlueprintEditingService>().CreateAsync(
+            new ContentBlueprintCreateModel
+            {
+                ContentTypeKey = testimonial.Key,
+                Variants = [new VariantModel { Name = "Thank-you testimonial" }],
+                Properties = [new PropertyValueModel { Alias = "intro", Value = "Thank you for your kind words." }],
+            },
+            Constants.Security.SuperUserKey);
+        Assert.That(created.Success, Is.True, created.Status.ToString());
+        return (testimonial, created.Result.Content!.Key);
+    }
+
+    // A workspace that runs as its service account: an API user in the admin group.
+    private async Task<Workspace> CreateWorkspaceAsync()
+    {
+        var created = await GetRequiredService<IUserService>().CreateAsync(Constants.Security.SuperUserKey, new UserCreateModel
+        {
+            Email = "automate@example.com",
+            UserName = "automate@example.com",
+            Name = "Automate",
+            Kind = UserKind.Api,
+            UserGroupKeys = new HashSet<Guid> { Constants.Security.AdminGroupKey },
+        }, approveUser: true);
+        Assert.That(created.Success, Is.True, created.Status.ToString());
+        return await GetRequiredService<IWorkspaceService>().CreateWorkspaceAsync(new Workspace
+        {
+            Alias = "abilities",
+            Name = "Abilities",
+            ServiceAccountKey = created.Result.CreatedUser!.Key,
+        });
     }
 
     // The run's error and each step's, for a failure message.

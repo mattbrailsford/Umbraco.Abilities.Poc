@@ -105,5 +105,9 @@ public sealed partial class CommerceDiscountAdapter(
         return found;
     }
 
+    // Discounts belong to a store: several stores can each have a "Welcome 10%".
+    protected override async Task<EntityGroup?> GetGroupAsync(DiscountModel model, CancellationToken cancellationToken)
+        => model.Store is { } key && await commerce.GetStoreAsync(key) is { } store ? new EntityGroup(CommerceStoreAdapter.Type, store.Id, store.Name) : null;
+
     protected override string? GetEditUrl(Guid key) => $"/umbraco/section/commerce/workspace/uc:discount/edit/{key}";
 }

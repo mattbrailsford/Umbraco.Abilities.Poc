@@ -43,7 +43,8 @@ public abstract class EntityEditAbilityBase<TInput, TOutput> : AbilityBase<TInpu
         }
 
         var key = typed.Key ?? throw new AbilityInputException("key is required.", [new Problem(EntityJson.Key, "Required.")]);
-        return new EntityEditTarget(typed.EntityType, key, Creates, (typed as CreateEntityInput)?.Subtype);
+        var create = typed as CreateEntityInput;
+        return new EntityEditTarget(typed.EntityType, key, Creates, create?.Subtype, create?.Template);
     }
 
     public Task<object?> ApplyAsync(Entity entity, JsonObject input, EntityEditContext context, CancellationToken cancellationToken = default)
@@ -162,7 +163,8 @@ public sealed class GetEntitySchemaAbility(EntityAdapterRegistry adapters, ItemT
 public sealed record FindEntityInput(
     [property: Description("Entity type to search, e.g. 'umbraco-commerce-collection'.")] string EntityType,
     [property: Description("Words in the entity's name. Leave it empty to list them all, for example every one of a subtype.")] string Query = "",
-    [property: Description("Only entities of this subtype, e.g. a document's content type alias.")] string? Subtype = null);
+    [property: Description("Only entities of this subtype, e.g. a document's content type alias.")] string? Subtype = null,
+    [property: Description("Only entities within this one, such as discounts in a store: the key of the group each result has.")] Guid? Within = null);
 
 [Ability("entity.find", "Find entities", Kind = AbilityKind.Read,
     Description = "Finds entities by name, live and in the active change set.")]
@@ -202,6 +204,11 @@ public sealed class FindEntityAbility(EntityAdapterRegistry adapters, ChangeSetS
         if (input.Subtype is { Length: > 0 } subtype)
         {
             found.RemoveAll(r => !string.Equals(r.Subtype, subtype, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (input.Within is { } within)
+        {
+            found.RemoveAll(r => r.Group?.Key != within);
         }
 
         // Only what the user may read. (What the set itself touches was checked when it was recorded.)
@@ -254,6 +261,7 @@ public sealed class GetEntityAbility(EntityAdapterRegistry adapters, ChangeSetSe
 public sealed record CreateEntityInput(
     [property: Description("Entity type to create.")] string EntityType,
     [property: Description("The subtype to create, for entity types that have them, e.g. a document's content type alias.")] string? Subtype = null,
+    [property: Description("A template to start from, such as a document blueprint: the new entity starts with its values, and the fields given are set over them. It also gives the subtype.")] Guid? Template = null,
     [property: Description("Field values, keyed by field alias.")] JsonObject? Fields = null,
     [property: Description("The variant to edit, by dimension, e.g. { \"culture\": \"en-US\" }.")]
     [property: Hint(AbilityAudiences.Model, "Needed for values that vary (x-variations); values that don't vary ignore it. Leave out an open dimension, such as a segment, for its default.")] Dictionary<string, string>? Variant = null,
@@ -263,7 +271,7 @@ public sealed record CreateEntityInput(
 
 [Ability("entity.create", "Create entity", Kind = AbilityKind.Write, Reversible = true,
     Description = "Creates an entity in the active change set. Nothing goes live until the set is applied. Returns the new key.",
-    SplitBy = EntityJson.EntityType, SplitTitle = "Create {0}", DependentInput = EntityJson.Fields, DependsOn = [EntityJson.EntityType, EntityJson.Subtype])]
+    SplitBy = EntityJson.EntityType, SplitTitle = "Create {0}", DependentInput = EntityJson.Fields, DependsOn = [EntityJson.EntityType, EntityJson.Subtype, EntityJson.Template])]
 [Hint(AbilityAudiences.Model, "Add items to items fields afterwards with entity.addItem.")]
 public sealed class CreateEntityAbility(EntityAdapterRegistry adapters) : EntityEditAbilityBase<CreateEntityInput, EntitySummary>, IDynamicInputAbility
 {
@@ -382,7 +390,8 @@ internal static class EntityInputs
         }
 
         var subtypes = await ChoicesAsync(adapters, EntityJson.Subtype, chosen, creating, cancellationToken);
-        var subtype = Text(chosen, EntityJson.Subtype);
+        await TemplatesAsync(properties, adapter, Text(chosen, EntityJson.Subtype), subtypes, cancellationToken);
+        var subtype = await SubtypeAsync(adapter, chosen, cancellationToken);
         if (subtypes.Count > 0)
         {
             OneOf(properties, EntityJson.Subtype, subtypes);
@@ -451,7 +460,7 @@ internal static class EntityInputs
             return values;
         }
 
-        var subtype = Text(chosen, EntityJson.Subtype);
+        var subtype = await SubtypeAsync(editors, chosen, cancellationToken);
         var schema = await editors.GetSchemaAsync(subtype, cancellationToken);
         var read = new JsonObject();
         var problems = new List<Problem>();
@@ -474,6 +483,41 @@ internal static class EntityInputs
         }
 
         return problems.Count > 0 ? throw new AbilityInputException("Some values could not be read.", problems) : read;
+    }
+
+    // A create's templates, as a labelled list: the chosen subtype's, or every subtype's named with it. No templates, no
+    // choice.
+    private static async Task TemplatesAsync(JsonObject properties, IEntityAdapter adapter, string? subtype, IReadOnlyList<AbilityChoice> subtypes, CancellationToken cancellationToken)
+    {
+        if (properties[EntityJson.Template] is not JsonObject)
+        {
+            return;
+        }
+
+        var templates = adapter is ITemplatedEntityAdapter templated ? await templated.GetTemplatesAsync(subtype, cancellationToken) : [];
+        if (templates.Count == 0)
+        {
+            properties.Remove(EntityJson.Template);
+            return;
+        }
+
+        var names = subtypes.ToDictionary(s => s.Value, s => s.Name, StringComparer.Ordinal);
+        OneOf(properties, EntityJson.Template, templates
+            .Select(t => new AbilityChoice(t.Key.ToString(), subtype is null && t.Subtype is { } of ? $"{t.Name} ({names.GetValueOrDefault(of, of)})" : t.Name))
+            .ToList());
+    }
+
+    // The chosen subtype, or the chosen template's: a template gives the subtype it was made for.
+    private static async Task<string?> SubtypeAsync(IEntityAdapter adapter, JsonObject chosen, CancellationToken cancellationToken)
+    {
+        if (Text(chosen, EntityJson.Subtype) is { } subtype)
+        {
+            return subtype;
+        }
+
+        return Text(chosen, EntityJson.Template) is { } text && Guid.TryParse(text, out var key) && adapter is ITemplatedEntityAdapter templated
+            ? (await templated.GetTemplatesAsync(null, cancellationToken)).FirstOrDefault(t => t.Key == key)?.Subtype
+            : null;
     }
 
     private static string? Text(JsonObject chosen, string name)

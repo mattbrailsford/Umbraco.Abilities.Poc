@@ -94,6 +94,13 @@ public sealed class EntityKeyAttribute(params string[] entityTypes) : Attribute
     public IReadOnlyList<string> EntityTypes { get; } = entityTypes;
 
     public string EntityType => EntityTypes[0];
+
+    /// <summary>
+    /// Another input property, by name, whose entity this one must be within, such as a discount within the chosen
+    /// store (the found entity's <see cref="EntitySummary.Group"/>). A form limits its picker to it; a model passes it as
+    /// <c>within</c> to <c>entity.find</c>. The property it names shapes the form, so it is chosen, not bound.
+    /// </summary>
+    public string? Within { get; set; }
 }
 
 /// <summary>
@@ -244,9 +251,14 @@ public sealed record AbilityResult(AbilityOperationStatus Status, object? Result
 
 /// <summary>
 /// The standard way an ability points at an entity it created, changed or found. <c>Subtype</c> is its subtype, such as
-/// a document's content type alias, for entity types that have them.
+/// a document's content type alias, for entity types that have them. <c>Group</c> is the entity it belongs to, for entity
+/// types whose entities are kept apart, such as a discount's store: entities with the same name can be told apart, a
+/// picker lists them under it, and finding can keep to one (<c>within</c>). Only finding fills it in.
 /// </summary>
-public sealed record EntitySummary(string EntityType, Guid Key, string Name, string? EditUrl = null, string? Subtype = null);
+public sealed record EntitySummary(string EntityType, Guid Key, string Name, string? EditUrl = null, string? Subtype = null, EntityGroup? Group = null);
+
+/// <summary>The entity another one belongs to, such as a discount's store: its type, key and name.</summary>
+public sealed record EntityGroup(string EntityType, Guid Key, string Name);
 
 public interface IAbility
 {

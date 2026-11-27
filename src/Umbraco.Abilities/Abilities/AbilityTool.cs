@@ -303,7 +303,15 @@ public static class AbilitySchemas
 
         // A format on the property, or on its type: a type with one is written as a string, which its converter reads.
         var format = (context.PropertyInfo is null ? null : ValueFormats.OfMember(attributes)) ?? ValueFormats.Of(context.TypeInfo.Type);
-        if (description is null && editor is null && meta is null && hints is null && format is null)
+
+        // A key marked [EntityKey] names the entity type it points at, as an entity schema's reference field does, so a
+        // model knows to find it and a form can show a picker.
+        var entityKey = context.PropertyInfo is null
+            ? null
+            : attributes.Select(provider => provider?.GetCustomAttributes(typeof(EntityKeyAttribute), inherit: true).OfType<EntityKeyAttribute>().FirstOrDefault())
+                .FirstOrDefault(attribute => attribute is not null);
+        var references = entityKey?.EntityTypes;
+        if (description is null && editor is null && meta is null && hints is null && format is null && references is null)
         {
             return schema;
         }
@@ -323,6 +331,19 @@ public static class AbilitySchemas
             }
 
             node["format"] = format;
+        }
+
+        if (references is { Count: > 0 })
+        {
+            node[Entities.SchemaKeywords.References] = references.Count == 1
+                ? references[0]
+                : new JsonArray(references.Select(r => (JsonNode?)r).ToArray());
+        }
+
+        // The property named is the input's, so it is written as the schema names it.
+        if (entityKey?.Within is { } within)
+        {
+            node[Entities.SchemaKeywords.ReferencesWithin] = SchemaOptions.PropertyNamingPolicy?.ConvertName(within) ?? within;
         }
 
         UiHints.WriteTo(node, editor, meta, hints);

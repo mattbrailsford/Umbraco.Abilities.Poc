@@ -103,6 +103,27 @@ public interface IEditorValueEntityAdapter : IEntityAdapter
     Task<System.Text.Json.Nodes.JsonNode?> FromEditorValueAsync(string? subtype, string field, System.Text.Json.Nodes.JsonNode editorValue, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// An adapter whose product keeps templates: saved starting points for new entities, such as CMS document blueprints.
+/// <c>entity.create</c> then takes a template. The new entity starts with the template's values, and the fields given
+/// are set over them. A form can then set a few fields from a run's data and leave the rest, blocks included, to the
+/// template.
+/// </summary>
+public interface ITemplatedEntityAdapter : IEntityAdapter
+{
+    /// <summary>The templates for a subtype, or for every subtype when <paramref name="subtype"/> is null.</summary>
+    Task<IReadOnlyList<EntityTemplate>> GetTemplatesAsync(string? subtype, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// A new entity with <paramref name="key"/>, holding the template's values and its subtype, as
+    /// <see cref="IEntityAdapter.NewAsync"/> gives one without. Null when there is no such template.
+    /// </summary>
+    Task<Entity?> NewFromTemplateAsync(Guid key, Guid template, CancellationToken cancellationToken = default);
+}
+
+/// <summary>A saved starting point for new entities of one subtype, such as a CMS document blueprint.</summary>
+public sealed record EntityTemplate(Guid Key, string Name, string? Subtype);
+
 /// <summary>A subtype of an entity type, such as a document type.</summary>
 /// <param name="Creatable">
 /// False for a subtype only used inside others, such as a composition document type, allowed neither at the root nor

@@ -100,6 +100,13 @@ object field of the block (`blocks/{key}/settings/theme`), and so is a grid bloc
 Three smaller notes help a model, and change nothing the framework does: `x-edit` (how a handled value is edited),
 `x-bindings` (a value can be a binding) and `x-references-item-in` (the items field a reference points into).
 
+An ability's input key can also say what its entity must be within: `x-references-within` names another input
+property, such as the store a discount must be in (`[EntityKey(..., Within = "Store")]`). Found entities carry the
+entity they belong to (`EntitySummary.Group`), and `entity.find` keeps to one with `within`. A form limits the key's
+picker to the chosen one, and a property another one is within shapes the form, so it is **chosen while the form is
+built, never bound** at run time. If it had to vary per run, the keys within it could only be bound too, and checked
+when the call runs; the ability checks them then anyway.
+
 Two notes are for UIs, not models. The framework carries them and acts on neither, and the AI tools and MCP strip them:
 
 | Note | Says | Set by |
@@ -697,6 +704,7 @@ entity type whose adapter has the interface.
 | Delete (built) | `IDeletableEntityAdapter.DeleteAsync(key)`. The product decides whether that means a recycle bin, and says so with `CanRestore`. A drafting adapter stages it instead (`StageAsync` gets the entity marked deleted) | `entity.delete` marks the working copy deleted (`Entity.Deleted`), as EF Core's `Remove` does. The entity reads as gone in the set, and is deleted on apply after the product's saves. References to it from other entities in the set become problems |
 | Move (built) | `ITreeEntityAdapter.ParentField`: the root reference field holding the parent. The adapter saves a changed parent as a move | A move sets that field, so it is a value edit: reads, rebasing and conflicts work unchanged |
 | Editor values (built) | `IEditorValueEntityAdapter.FromEditorValueAsync(subtype, field, value)`: a value as the field's own editor (`x-editor`) gave it, as the field's value. The CMS adapter asks the property's handler, as when it loads a stored value | Not a change set capability: it's for forms that show the product's editors, such as an Automate step's. The value is converted before it's recorded |
+| Templates (built) | `ITemplatedEntityAdapter`: `GetTemplatesAsync(subtype)` lists saved starting points, and `NewFromTemplateAsync(key, template)` makes a new entity from one, with its subtype. The CMS adapter uses document blueprints | `entity.create` takes a `template`. The working copy starts from it instead of `NewAsync`, and the recorded call keeps the template so a replay starts from it too |
 | Sort | Not designed yet: a sort order changes the entity's siblings too | |
 | Copy | Nothing. An optional hook clears values that must be unique, such as an alias or a code | The framework loads the entity, gives it and its items new keys at record time, and creates it |
 | Publish, unpublish, schedule | `IPublishableEntityAdapter.PublishAsync(key, variants, date?)` | Recorded as a request, and run after that entity saves, in the same product transaction. Run live, it can't be undone, so it needs approval |

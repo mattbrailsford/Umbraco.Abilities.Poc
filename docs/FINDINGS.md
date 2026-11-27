@@ -612,6 +612,68 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
       classes, which would then need excluding. One `.Add<...>()` line per item is cheap and easy to read, so the
       type loader stays an option for later.
 
+39. **An automation step maps a few fields; a template gives the rest.** An automation is useful because each run
+    gets different data, and that data only reaches a step through bindings (`${ trigger.x }`), which Automate
+    resolves as text. A form of every field on the page type is mostly values that are the same on every run, and the
+    blocks most pages are made of can't be bound at all. So the step became a mapping, and a create can start from a
+    template:
+    - **The fields editor is a mapping.** It lists the required fields, and the author adds only the fields the run's
+      data fills. A text field takes text or a binding in one box; any other field takes a binding, or a fixed value
+      in its own editor.
+    - **Templates are an adapter capability.** `ITemplatedEntityAdapter` lists a subtype's templates and makes a new
+      entity from one. `entity.create` takes a `template`: the entity starts with its values, the given fields are set
+      over them, and it gives the subtype. A change set records it, so a replay starts from it too.
+    - **CMS documents use blueprints.** Umbraco's scaffold of a blueprint is the starting point, as the backoffice's
+      "Create from blueprint" uses. Media and members have no blueprints in Umbraco, so they offer no templates. The
+      helper that turns any content item into a new entity (`NewFromAsync`) is in the base for all three.
+    - **Shown:** a testimonial page made from a blueprint, with its name and quote bound to what the trigger gave and
+      its intro from the blueprint (`AbilityActionTests`).
+    - **Not yet:** a model can pass a template, but nothing lists templates to it (`entity.getSchema` doesn't). A
+      blueprint's blocks are copied as Umbraco's scaffold makes them; a page type whose blueprints hold blocks isn't
+      tried in a test. Tried in the demo's backoffice, the form works but is rough: it needs real design work. A field
+      the template already fills is still required, and where the page goes (its parent) is hidden under "Add a field".
+40. **A product whose value is in its items offers tasks, not a form.** A discount is its rules and rewards. The form
+    leaves items out, so "Create Discount" in Automate is a name and some dates: not useful. What an automation does
+    with a discount is narrower: give out a code, switch it on or off. So Commerce declares those as abilities of its
+    own, and Automate offers them as steps, with no change to the loader:
+    - **Task abilities sit on the typed layer.** `commerce.discount.addCode` and `commerce.discount.setActive` are each
+      one `Edit(model, input)` on `ModelEditAbilityBase`, so they run directly or are recorded in a change set, with
+      the same access checks as any edit. A person sets the rules and rewards up once; the task leaves them as they are.
+    - **A task can return its own result.** `ModelEditAbilityBase<TInput, TModel, TOutput>` returns what `Result`
+      gives, such as the code added, so a later step (an email) can bind to it. The two-type version returns the
+      summary.
+    - **A random value is chosen before recording.** `Fill` fills the input once, before the call is recorded, as
+      `Prepare` already did for new keys. Replay then saves the code the step returned, not a new one.
+    - **Commerce drops a code it is handed again.** Replacing all of a discount's codes with a list that holds an
+      existing one removed it: Commerce removes the old code after adding the new one with the same text. The adapter
+      now adds and removes only the codes that changed.
+    - **A key needs a picker, and one picker serves every type.** A task names the discount by key, and a text box
+      for a key isn't usable. Commerce's own store entity picker needs a store from its config or from the screen
+      it's on, and an Automate step has neither. So an ability's `[EntityKey]` input now says what it points at
+      (`x-references`, as entity schemas already did), and Automate gives such a field a shared entity picker
+      (`Umbraco.Abilities.UI`), which lists the type's entities through `entity.find` as the signed-in user.
+      Documents and media keep Umbraco's own pickers.
+    - **Found entities can carry a group.** A person may use several stores, and each can have a "Welcome 10%".
+      `EntitySummary` has an optional `Group` (the entity it belongs to: type, key and name), which an adapter fills
+      from `GetGroupAsync`: Commerce gives a discount's or a currency's store. The picker's dialog lists entities
+      under their group (Umbraco's item picker has no groups, so the shared UI has its own), and shows the group under
+      the picked one. A model reading `entity.find` sees it too. Finding only lists what the user may read, so a store
+      they can't use never shows.
+    - **A key can be within another input, and that input is chosen, not bound.** Some editors need context: a
+      discount picker the store, a rule builder the store, a block editor its element types. The context is another
+      value in the same form, and a binding has no value until the step runs. So an input key says what it is within
+      (`[EntityKey(..., Within = "Store")]`, `x-references-within`); `entity.find` takes `within`; the Commerce tasks
+      take an optional store, which narrows the picker and is checked when the task runs. The field another is within
+      shapes the form, so Automate's form offers no binding for it.
+    - **What is ours and what is the form host's.** Ours: the filter, the keyword, the check, and the editor
+      settings the server can work out. The form host's (Automate here): giving an editor settings that follow another
+      field, re-worked out when it changes, and turning off bindings for a field others depend on. Automate's form
+      builds each editor once with fixed settings, so the picker reads the store from its form itself (a FUDGE, as the
+      fields editor's is). See fudge 7 in [What the loader fudges](#what-the-loader-fudges).
+    - **Shown:** a code made in a change set is the code saved on apply; a discount switched off directly keeps its
+      rules and rewards; a code for a discount that applies automatically is refused with the reason
+      (`CommerceDiscountAdapterTests`). In the demo, the step picks the seeded "Welcome 10%" discount.
+
 ## Developer experience of adapters
 
 Making things easy for a model is one side. The other is what a package developer writes. Reading the samples as
@@ -1178,7 +1240,7 @@ models. Proven by tests against real Umbraco and Automate (`AbilityActionTests`)
 | A value from Umbraco's own editor (the tree picker) is read as the field's value | Yes, for the tree picker. Other editors whose value differs (media picker, rich text) aren't tried |
 | A missing mandatory value fails the step with the field's path, and nothing is saved | Yes |
 | Umbraco's property editors work inside Automate's settings form | **Yes, for the simple ones.** On the demo site (Clean starter kit, 18-11-2026), "Create Article" showed the text box, text area, date picker, content picker (limited to the Authors page by its data type), media picker, tags and toggles, each with its data type's settings and defaults. Picking an author worked. Rich text and block editors aren't in a form yet |
-| A useful page can be built from a form | **Not yet.** Fields that hold items (blocks, a discount's rules and rewards) are left out of the form. On the Clean starter kit most of a page is blocks, and a discount without rules is little use |
+| A useful page can be built from a form | **Partly.** Fields that hold items (blocks, a discount's rules and rewards) are left out of the form. A create can now start from a template, such as a document blueprint, which holds the blocks, and the step maps only the fields the run's data fills (finding 39). Discounts have no templates. The form proves the idea but is rough: it needs real design work before anyone uses it |
 | Descriptions read well to a person | **Mostly.** Text only a model needs is now a model hint, which a form never shows: moving with entity.move, finding stores with entity.find, an editor's own format, bindings, price amounts by currency key, rich text markup. Ability descriptions still say "in the active change set", which reads oddly where each call is applied at once |
 | One broken action leaves the rest usable | **No.** Automate reads every action's output schema as an object. One "any value" schema (Delete and Move entity had one) made its action list fail, so the editor showed no actions at all. Fixed: only object schemas are given, with a test |
 | Our actions don't overlap Automate's own | No. Automate already has Create, Find, Get, Move and Publish Content. "Create Article" sits beside "Create Content". Which one an author should pick, and whether Automate's should be built from the abilities instead, is open |
@@ -1205,9 +1267,11 @@ marked `FUDGE` in the code. None needs a change to Automate's data or its editor
 | 4 | The action resolves `${ … }` bindings itself, with Automate's public `BindingEvaluator`, keeping a whole binding's type | Automate's resolver is internal, and only resolves string properties marked `SupportsBindings` on a C# settings class | Resolve bindings in dictionary or JSON settings, and keep a value's type when the setting is one whole binding |
 | 5 | The form says its type is `AbilitySettings` and each field's property type is `JsonNode` | `EditableModelSchema` and its fields describe C# properties; the form came from JSON Schema, so there are none | Let a form be built from data alone, or from JSON Schema directly |
 | 6 | A Create or Update step's `fields` are drawn by a custom editor, `Umb.Abilities.PropertyEditorUi.DependentInput`, that watches the page type in the same form, asks the Management API for that type's fields, and draws each with its editor | Automate has dynamic output schemas and outcomes, but not dynamic settings, and those fields change with the page type picked | Dynamic settings forms (`GetSettingsSchemaAsync(settings)`), as output schemas already are |
+| 7 | The entity picker reads the field it is within (`withinField`, such as the store) from its own form, and lists again when it changes; the form turns off bindings for that field | An editor's settings are fixed when the form is built, so a picker can't be limited by another field's value | Editor settings that depend on other settings, worked out again when they change (from `x-references-within`), and no binding for a setting another depends on |
 
-With 1 to 5 changed, the loader is one class for every ability and a registration line, with no workaround. 6 is what an
-editor gains: a form that changes with the entity type, as Run AI Agent's output changes with its agent.
+With 1 to 5 changed, the loader is one class for every ability and a registration line, with no workaround. 6 and 7 are
+what an editor gains: a form that changes with the entity type, as Run AI Agent's output changes with its agent, and
+pickers that follow the choices made above them.
 
 ## Checked against the existing MCP servers
 

@@ -55,7 +55,13 @@ public sealed partial class CommerceDiscountAdapter
         await discount.SetNameAsync(model.Name!, alias);
         await discount.SetTypeAsync(model.Type == DiscountKind.Code ? DiscountType.Code : DiscountType.Automatic);
         await discount.SetDateRangeAsync(ToUtc(model.StartDate), ToUtc(model.EndDate));
-        await discount.SetCodesAsync(model.Codes.Distinct().Select(c => new DiscountCode(c, null, true)), SetBehavior.Replace);
+
+        // Only the codes that changed: replacing them all drops a code that stays, as Commerce removes the old one after
+        // adding the new one with the same text.
+        var codes = model.Codes.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var current = discount.Codes.Select(c => c.Code).ToList();
+        await discount.RemoveCodesAsync(discount.Codes.Where(c => !codes.Contains(c.Code, StringComparer.OrdinalIgnoreCase)).ToList());
+        await discount.AddCodesAsync(codes.Where(c => !current.Contains(c, StringComparer.OrdinalIgnoreCase)).Select(c => new DiscountCode(c, null, true)).ToList());
         await discount.SetRulesAsync(rules, model.BlockFurtherDiscounts ?? false, model.BlockIfPreviousDiscounts ?? false);
         await discount.SetRewardsAsync(model.Rewards.Select(r => new DiscountRewardConfig(r.Type, PluginSettings.ToSettings(r, RewardPlugin(r.Type)))).ToList());
         await discount.SetActiveAsync(model.Active ?? false);

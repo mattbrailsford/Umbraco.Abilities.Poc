@@ -152,22 +152,26 @@ public sealed class ChangeSetService(
                     throw new AbilityInputException($"{target.EntityType} {target.EntityKey} already exists.", [new Problem(EntityJson.Key, "Already exists.")]);
                 }
 
+                // A template gives the subtype, and the values the new entity starts with.
+                var fromTemplate = target.Template is { } template ? await NewFromTemplateAsync(adapter, target, template, cancellationToken) : null;
+                var subtype = fromTemplate?.Subtype ?? target.Subtype;
+
                 var subtypes = await adapter.GetSubtypesAsync(cancellationToken);
-                if (subtypes.Count > 0 && !subtypes.Any(s => s.Alias == target.Subtype))
+                if (subtypes.Count > 0 && !subtypes.Any(s => s.Alias == subtype))
                 {
                     throw new AbilityInputException(
                         $"{target.EntityType} needs a subtype. Subtypes: {string.Join(", ", subtypes.Select(s => s.Alias))}.",
                         [new Problem(EntityJson.Subtype, "Required, and must be one of the listed subtypes.")]);
                 }
 
-                if (subtypes.FirstOrDefault(s => s.Alias == target.Subtype) is { Creatable: false } part)
+                if (subtypes.FirstOrDefault(s => s.Alias == subtype) is { Creatable: false } part)
                 {
                     throw new AbilityInputException(
                         $"{part.Name} is only used inside other types, so it can't be created. Subtypes that can: {string.Join(", ", subtypes.Where(s => s.Creatable).Select(s => s.Alias))}.",
                         [new Problem(EntityJson.Subtype, "Not creatable.")]);
                 }
 
-                working = await adapter.NewAsync(target.EntityKey, target.Subtype, cancellationToken);
+                working = fromTemplate ?? await adapter.NewAsync(target.EntityKey, subtype, cancellationToken);
             }
             else if (working is null)
             {
@@ -220,7 +224,7 @@ public sealed class ChangeSetService(
                 await drafting.StageAsync(draftId, target.Creates ? null : before, working, cancellationToken);
             }
 
-            set.Changes.Add(new RecordedCall(ability.Descriptor.Id, recorded, target.EntityType, target.EntityKey, target.Creates, working.Subtype));
+            set.Changes.Add(new RecordedCall(ability.Descriptor.Id, recorded, target.EntityType, target.EntityKey, target.Creates, working.Subtype, target.Creates ? target.Template : null));
             store.Save(set);
             return AbilityResult.Ok(output);
         }
@@ -311,7 +315,10 @@ public sealed class ChangeSetService(
         }
         if (calls.FirstOrDefault() is { Creates: true } create)
         {
-            return State(await ReplayAsync(adapter, await adapter.NewAsync(key, create.Subtype, cancellationToken), calls, skipUnder: [], cancellationToken));
+            var fromTemplate = create.Template is { } template && adapter is ITemplatedEntityAdapter templated
+                ? await templated.NewFromTemplateAsync(key, template, cancellationToken)
+                : null;
+            return State(await ReplayAsync(adapter, fromTemplate ?? await adapter.NewAsync(key, create.Subtype, cancellationToken), calls, skipUnder: [], cancellationToken));
         }
 
         if (calls.Count == 0)
@@ -775,6 +782,26 @@ public sealed class ChangeSetService(
                 await events.PublishAsync(new ChangeSetSideEffectCompletedNotification(set, ability.Descriptor.Id, result, attempts), cancellationToken);
             }
         });
+    }
+
+    // A new entity from a template, checked against the subtype the call names, if it names one.
+    private static async Task<Entity> NewFromTemplateAsync(IEntityAdapter adapter, EntityEditTarget target, Guid template, CancellationToken cancellationToken)
+    {
+        if (adapter is not ITemplatedEntityAdapter templated)
+        {
+            throw new AbilityInputException($"{adapter.DisplayName} has no templates.", [new Problem(EntityJson.Template, "Not supported for this entity type.")]);
+        }
+
+        var entity = await templated.NewFromTemplateAsync(target.EntityKey, template, cancellationToken)
+            ?? throw new AbilityInputException($"No {adapter.DisplayName} template with key {template}.", [new Problem(EntityJson.Template, "Not found.")]);
+        if (target.Subtype is { } subtype && !string.Equals(subtype, entity.Subtype, StringComparison.Ordinal))
+        {
+            throw new AbilityInputException(
+                $"The template is for {entity.Subtype}, not {subtype}.",
+                [new Problem(EntityJson.Template, $"A template for {entity.Subtype}.")]);
+        }
+
+        return entity;
     }
 
     private async Task<Guid> EnsureDraftAsync(ChangeSet set, IDraftingEntityAdapter drafting, CancellationToken cancellationToken)
