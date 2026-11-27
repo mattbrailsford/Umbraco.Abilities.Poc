@@ -146,6 +146,9 @@ What the package no longer writes:
 | Item type groups and registering each item class | The list's element type, or the classes named in `[Items(...)]` |
 | An item type source and a settings mapper per plugin seam | `PluginItemTypeSource` and `PluginSettings`: the product only describes one plugin |
 | An ability that edits an entity, both directly and inside a change set | `ModelEditAbilityBase<TInput, TModel>`: one `Edit(model, input)` method, or `EditAsync` when it has to look something up. The key is the input's `[EntityKey]` property |
+| Telling apart entities with the same name, such as discounts in different stores | `GetGroupAsync(model)`: the entity the model belongs to (`EntityGroup`: type, key, name). Found entities carry it as `group`, the entity picker lists them under it, and `entity.find` keeps to one with `within` |
+| An ability input key that must be within another input, such as a discount in the chosen store | `[EntityKey(type, Within = "Store")]`. A form limits the picker to the chosen store, and doesn't let the store be a binding. Check it in `Edit` too: a step can be given any key |
+| An edit that returns something of its own, or chooses a value at random | `ModelEditAbilityBase<TInput, TModel, TOutput>`: `Result` gives the output, such as a code it added. `Fill` fills the input once, before the call is recorded, so a replay saves the same value |
 
 `[Required]` and `[AllowedValues]` become part of the schema, so the generic validator checks them per culture.
 A new entity or item starts with each property's default when it isn't given a value: `[DefaultValue]`, or the

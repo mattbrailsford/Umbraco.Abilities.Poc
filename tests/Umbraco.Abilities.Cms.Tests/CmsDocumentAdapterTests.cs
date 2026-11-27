@@ -220,7 +220,8 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
             GetRequiredService<IUserService>(),
             GetRequiredService<IContentPermissionService>(),
             scope,
-            new CmsActingUser(() => Constants.Security.SuperUserKey));
+            new CmsActingUser(() => Constants.Security.SuperUserKey),
+            GetRequiredService<IContentBlueprintEditingService>());
         _media = new CmsMediaAdapter(
             contentSchemas,
             GetRequiredService<IMediaTypeService>(),

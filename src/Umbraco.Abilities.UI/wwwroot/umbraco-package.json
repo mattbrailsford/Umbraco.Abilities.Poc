@@ -1,0 +1,24 @@
+{
+  "name": "Umbraco.Abilities.UI",
+  "version": "0.1.0",
+  "extensions": [
+    {
+      "type": "propertyEditorUi",
+      "alias": "Umb.Abilities.PropertyEditorUi.EntityPicker",
+      "name": "Abilities: entity picker",
+      "element": "/App_Plugins/UmbracoAbilitiesUI/entity-picker.js",
+      "meta": {
+        "label": "Entity picker",
+        "icon": "icon-link",
+        "group": "pickers",
+        "propertyEditorSchemaAlias": "Umbraco.Plain.String"
+      }
+    },
+    {
+      "type": "modal",
+      "alias": "Umb.Abilities.Modal.EntityPicker",
+      "name": "Abilities: entity picker dialog",
+      "element": "/App_Plugins/UmbracoAbilitiesUI/entity-picker-modal.js"
+    }
+  ]
+}

@@ -7,6 +7,7 @@
     <Project Path="src/Umbraco.Abilities.Commerce/Umbraco.Abilities.Commerce.csproj" />
     <Project Path="src/Umbraco.Abilities.Automate/Umbraco.Abilities.Automate.csproj" />
     <Project Path="src/Umbraco.Abilities.ManagementApi/Umbraco.Abilities.ManagementApi.csproj" />
+    <Project Path="src/Umbraco.Abilities.UI/Umbraco.Abilities.UI.csproj" />
     <Project Path="src/Umbraco.Cms.DraftSets/Umbraco.Cms.DraftSets.csproj" />
   </Folder>
   <Folder Name="/tests/">

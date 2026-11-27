@@ -354,6 +354,131 @@ public sealed class CommerceDiscountAdapterTests : UmbracoIntegrationTest
 
     // Builds "Summer hats" the way a model would: find the store and its currency, then create the discount with a
     // rule and a reward. Returns the currency's key.
+    [Test]
+    public async Task A_code_made_for_a_discount_in_a_change_set_is_the_code_saved_when_the_set_is_applied()
+    {
+        var key = await CreateAppliedSummerHatsAsync();
+
+        _agent = NewAgent();
+        await _agent.StartChangeSetAsync("Welcome Jo");
+        var added = await _agent.OkAsync("commerce_discount_addCode", $$"""{ "discount": "{{key}}", "changeSetId": "{{_agent.ChangeSetId}}" }""");
+        var code = added.GetProperty("code").GetString();
+        Assert.That(code, Has.Length.EqualTo(10), added.ToString());
+        Assert.That((await Commerce.GetDiscountAsync(key))!.Codes.Select(c => c.Code), Is.EqualTo(new[] { "SUMMER10" }), "nothing is saved before apply");
+
+        // Applying replays the recorded call: the code was fixed when it was recorded, so it isn't made again.
+        await _agent.OkAsync("changeSet_apply", SetJson());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(added.GetProperty("discountName").GetString(), Is.EqualTo("Summer hats"));
+            Assert.That(Commerce.GetDiscountAsync(key).GetAwaiter().GetResult()!.Codes.Select(c => c.Code), Is.EquivalentTo(new[] { "SUMMER10", code }));
+        });
+    }
+
+    [Test]
+    public async Task A_discount_is_switched_off_directly_by_a_task_ability_with_its_rules_and_rewards_kept()
+    {
+        var key = await CreateAppliedSummerHatsAsync();
+
+        _agent = NewAgent();
+        await _agent.OkAsync("commerce_discount_setActive", $$"""{ "discount": "{{key}}", "active": false }""");
+
+        var saved = (await Commerce.GetDiscountAsync(key))!;
+        Assert.Multiple(() =>
+        {
+            Assert.That(saved.IsActive, Is.False);
+            Assert.That(saved.Rules.Children.Single().RuleProviderAlias, Is.EqualTo("orderAmountDiscountRule"));
+            Assert.That(saved.Rewards.Single().RewardProviderAlias, Is.EqualTo("orderAmountDiscountReward"));
+        });
+    }
+
+    [Test]
+    public async Task A_code_given_for_a_discount_that_applies_automatically_is_refused_with_the_reason()
+    {
+        var key = await CreateAppliedSummerHatsAsync(automatic: true);
+
+        _agent = NewAgent();
+        var refused = await _agent.FailAsync("commerce_discount_addCode", $$"""{ "discount": "{{key}}", "code": "JO10" }""");
+
+        Assert.That(refused.ToString(), Does.Contain("applies automatically"));
+        Assert.That((await Commerce.GetDiscountAsync(key))!.Codes, Is.Empty);
+    }
+
+    [Test]
+    public async Task Discounts_with_the_same_name_in_two_stores_are_found_under_their_stores()
+    {
+        await CreateAppliedSummerHatsAsync();
+        await CreateOutletSummerHatsAsync();
+
+        _agent = NewAgent();
+        var found = await _agent.OkAsync("entity_find", $$"""{ "entityType": "{{Discount}}", "query": "Summer hats" }""");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(found.EnumerateArray().Select(d => d.GetProperty("group").GetProperty("name").GetString()), Is.EquivalentTo(new[] { "Shop", "Outlet" }));
+            Assert.That(found.EnumerateArray().Select(d => d.GetProperty("group").GetProperty("entityType").GetString()).Distinct(), Is.EqualTo(new[] { CommerceStoreAdapter.Type }));
+        });
+    }
+
+    [Test]
+    public async Task Finding_within_a_store_lists_only_that_stores_discounts()
+    {
+        await CreateAppliedSummerHatsAsync();
+        var outlet = await CreateOutletSummerHatsAsync();
+
+        _agent = NewAgent();
+        var found = await _agent.OkAsync("entity_find", $$"""{ "entityType": "{{Discount}}", "query": "", "within": "{{outlet}}" }""");
+
+        Assert.That(found.EnumerateArray().Select(d => d.GetProperty("group").GetProperty("key").GetGuid()), Is.EqualTo(new[] { outlet }));
+    }
+
+    [Test]
+    public async Task A_task_built_for_one_store_refuses_a_discount_from_another()
+    {
+        var key = await CreateAppliedSummerHatsAsync();
+        var outlet = await CreateOutletSummerHatsAsync();
+
+        _agent = NewAgent();
+        var refused = await _agent.FailAsync("commerce_discount_setActive", $$"""{ "discount": "{{key}}", "active": false, "store": "{{outlet}}" }""");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(refused.GetProperty("message").GetString(), Does.Contain("isn't in the chosen store"));
+            Assert.That(Commerce.GetDiscountAsync(key).GetAwaiter().GetResult()!.IsActive, Is.True, "nothing changed");
+        });
+    }
+
+    // A second store, with its own "Summer hats".
+    private async Task<Guid> CreateOutletSummerHatsAsync()
+        => await Commerce.Uow.ExecuteAsync(async (uow, ct) =>
+        {
+            var outlet = await Store.CreateAsync(uow, "outlet", "Outlet");
+            await outlet.AllowUserRoleAsync(Constants.Security.AdminGroupKey.ToString());
+            await Commerce.SaveStoreAsync(outlet, ct);
+            var discount = await CommerceDiscount.CreateAsync(uow, Guid.NewGuid(), outlet.Id, "summerHats", "Summer hats");
+            await Commerce.SaveDiscountAsync(discount, ct);
+            uow.Complete();
+            return outlet.Id;
+        });
+
+    private async Task<Guid> CreateAppliedSummerHatsAsync(bool automatic = false)
+    {
+        var key = Guid.NewGuid();
+        await _agent.StartChangeSetAsync("Summer");
+        await CreateSummerHatsAsync(key);
+        if (automatic)
+        {
+            await _agent.OkAsync("entity_setValue", $$"""{ "entityType": "{{Discount}}", "key": "{{key}}", "path": "type", "value": "automatic" }""");
+            await _agent.OkAsync("entity_setValue", $$"""{ "entityType": "{{Discount}}", "key": "{{key}}", "path": "codes", "value": [] }""");
+        }
+
+        await _agent.OkAsync("changeSet_apply", SetJson());
+        return key;
+    }
+
+    private Agent NewAgent() => new(GetRequiredService<AbilityRegistry>(), GetRequiredService<AbilityInvoker>());
+
     private async Task<Guid> CreateSummerHatsAsync(Guid key)
     {
         var store = (await _agent.OkAsync("entity_find", $$"""{ "entityType": "{{CommerceStoreAdapter.Type}}", "query": "shop" }"""))[0].GetProperty("key").GetGuid();

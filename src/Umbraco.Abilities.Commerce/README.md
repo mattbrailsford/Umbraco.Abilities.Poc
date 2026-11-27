@@ -1,7 +1,9 @@
 # Umbraco.Abilities.Commerce
 
 Real Umbraco Commerce, as entity types: discounts to create and edit, and stores and currencies to point at. This is
-what Commerce would ship. It adds no abilities of its own: the generic entity tools work on discounts as they are.
+what Commerce would ship. The generic entity tools work on discounts as they are. Commerce also adds two task
+abilities, for surfaces such as Automate where a form of the whole discount isn't useful: add a code to a discount,
+and switch one on or off.
 
 ## Read it in this order
 
@@ -9,7 +11,10 @@ what Commerce would ship. It adds no abilities of its own: the generic entity to
 2. `Adapters/CommerceDiscountAdapter.cs`: load, save, validate, find and who may edit. One method each.
 3. `Adapters/CommerceDiscountAdapter.Mapping.cs`: how the contract maps to Commerce's own discount, and how its rule
    and reward providers become item types.
-4. `CommerceAbilitiesBuilderExtensions.cs`: the one call a site makes.
+4. `Abilities/AddDiscountCodeAbility.cs`: a task ability. One `Edit`, a `Result` the next step can use, and a `Fill`
+   that makes the code before the call is recorded.
+5. `Abilities/SetDiscountActiveAbility.cs`: the smallest task ability.
+6. `CommerceAbilitiesBuilderExtensions.cs`: the one call a site makes.
 
 ## Folders
 
@@ -17,4 +22,5 @@ what Commerce would ship. It adds no abilities of its own: the generic entity to
 | --- | --- |
 | `Models/` | The editing contracts: a discount, and read-only stores and currencies |
 | `Adapters/` | One adapter per entity type, mapping Commerce's own model to and from its contract |
+| `Abilities/` | Commerce's own task abilities on discounts |
 | `Infrastructure/` | Commerce's transaction for a change set, and who may use a store |

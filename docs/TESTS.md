@@ -200,6 +200,8 @@ Called over HTTP on Umbraco's test server, as the Umbraco CMS MCP Dev server wou
 
 - The framework's tool schemas, from .NET's own exporter, are the ones M.E.AI would make, for every sample ability
   - `AbilityToolSchemaTests.Every_abilitys_input_schema_is_the_one_MEAI_would_make`
+- An ability's input key marked `[EntityKey]` names the entity type it points at (`x-references`), as an entity schema's reference does
+  - `AbilityToolSchemaTests.A_key_marked_EntityKey_names_the_entity_type_it_points_at_so_a_model_finds_it_and_a_form_picks_it`
 - A call that can't be undone runs only with the approval made for it, decided per call: recorded in a change set it needs no consent
   - `AbilityToolConsentTests.A_call_that_cannot_be_undone_runs_only_with_the_approval_made_for_it`
   - `AbilityToolConsentTests.A_call_that_can_be_undone_needs_no_consent`
@@ -415,9 +417,25 @@ See [CONSUMERS.md](CONSUMERS.md).
   - `CommerceDiscountAdapterTests.A_code_another_discount_already_uses_is_a_problem_from_Commerce_before_the_set_is_applied`
 - A user without the Commerce section can't make a discount
   - `CommerceDiscountAdapterTests.A_user_without_the_Commerce_section_cannot_make_a_discount`
+- A task ability's random value is fixed when the call is recorded: the code returned in a change set is the code saved on apply, and the discount's existing code is kept
+  - `CommerceDiscountAdapterTests.A_code_made_for_a_discount_in_a_change_set_is_the_code_saved_when_the_set_is_applied`
+- A task ability run directly saves at once, and leaves the rest of the entity as it was
+  - `CommerceDiscountAdapterTests.A_discount_is_switched_off_directly_by_a_task_ability_with_its_rules_and_rewards_kept`
+- Discounts with the same name in two stores are found under their stores' names (`group`), so they can be told apart
+  - `CommerceDiscountAdapterTests.Discounts_with_the_same_name_in_two_stores_are_found_under_their_stores`
+- Finding within a store lists only that store's discounts
+  - `CommerceDiscountAdapterTests.Finding_within_a_store_lists_only_that_stores_discounts`
+- A task built for one store refuses a discount from another, and changes nothing
+  - `CommerceDiscountAdapterTests.A_task_built_for_one_store_refuses_a_discount_from_another`
+- A task ability refuses an edit that doesn't fit the entity, with the reason
+  - `CommerceDiscountAdapterTests.A_code_given_for_a_discount_that_applies_automatically_is_refused_with_the_reason`
 
 ## Against real Umbraco Automate
 
+- A key to an entity type with no Umbraco picker, such as a Commerce discount, gets the shared entity picker; documents and media keep Umbraco's own
+  - `AbilityActionTests.A_key_to_an_entity_type_with_no_Umbraco_picker_gets_the_shared_entity_picker`
+- A picker within another field follows it (`withinField`), and that field is chosen, not bound
+  - `AbilityActionTests.A_picker_within_another_field_follows_it_and_that_field_is_chosen_not_bound`
 - Every whole ability is an Automate action beside Automate's own. The change set abilities and the building blocks a model chains (`entity.setValue`, `entity.addItem`, ...) are not
   - `AbilityActionTests.Every_whole_ability_is_an_Automate_action_beside_Automates_own_and_building_blocks_are_not`
 - Every action's output schema is an object, or none, as Automate's action list reads it: one that isn't breaks the list in its editor
@@ -438,3 +456,7 @@ See [CONSUMERS.md](CONSUMERS.md).
   - `AbilityActionTests.An_automation_creates_a_page_from_Umbracos_editor_values_then_updates_it_as_the_service_account`
 - A value the page type refuses fails the step with the field's path, and nothing is saved
   - `AbilityActionTests.A_value_the_page_type_refuses_fails_the_step_with_the_fields_path_and_saves_nothing`
+- A Create form offers each page type's blueprints to start from, named with their type until a type is chosen
+  - `AbilityActionTests.A_Create_form_offers_each_page_types_blueprints_to_start_from`
+- An automation starts a page from a blueprint, and sets only the fields mapped from the trigger's data
+  - `AbilityActionTests.An_automation_starts_a_page_from_a_blueprint_and_sets_only_the_fields_mapped_from_the_trigger`

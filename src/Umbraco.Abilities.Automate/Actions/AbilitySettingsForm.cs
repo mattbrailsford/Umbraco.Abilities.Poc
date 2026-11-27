@@ -9,7 +9,8 @@ namespace Umbraco.Abilities.Automate;
 /// <summary>
 /// Builds an Automate settings form from an ability's input JSON Schema, not from a C# type. One description then serves
 /// AI tools, MCP and Automate alike. Each field's editor is picked in this order: the field's own <c>x-editor</c>; the
-/// editor mapped to its <c>format</c>; a default from its shape, as Automate infers one from a C# type.
+/// entity picker for a key to an entity (<c>x-references</c>); the editor mapped to its <c>format</c>; a default from its
+/// shape, as Automate infers one from a C# type.
 /// </summary>
 public static class AbilitySettingsForm
 {
@@ -22,10 +23,17 @@ public static class AbilitySettingsForm
         var fields = new List<EditableModelFieldDescriptor>();
         if (inputSchema.TryGetProperty("properties", out var properties))
         {
+            // A field another field's picker is within, such as the store a discount must be in, shapes the form: its
+            // value has to be known while the step is built, so it is chosen, never bound.
+            var shaping = properties.EnumerateObject()
+                .Where(p => p.Value.ValueKind == JsonValueKind.Object && p.Value.TryGetProperty(SchemaKeywords.ReferencesWithin, out _))
+                .Select(p => p.Value.GetProperty(SchemaKeywords.ReferencesWithin).GetString())
+                .ToHashSet();
+
             var order = 0;
             foreach (var property in properties.EnumerateObject())
             {
-                fields.Add(Field(property.Name, property.Value, required.Contains(property.Name), order++, formatEditors));
+                fields.Add(Field(property.Name, property.Value, required.Contains(property.Name), order++, formatEditors, bindable: !shaping.Contains(property.Name)));
             }
         }
 
@@ -34,7 +42,7 @@ public static class AbilitySettingsForm
         return new EditableModelSchema { Type = typeof(AbilitySettings), Fields = fields };
     }
 
-    private static EditableModelFieldDescriptor Field(string key, JsonElement schema, bool required, int order, IReadOnlyDictionary<string, string> formatEditors)
+    private static EditableModelFieldDescriptor Field(string key, JsonElement schema, bool required, int order, IReadOnlyDictionary<string, string> formatEditors, bool bindable)
     {
         var (editor, settings) = EditorFor(schema, formatEditors);
         var config = settings is null ? null : Config(settings.Select(p => (p.Key, p.Value?.DeepClone())));
@@ -55,13 +63,32 @@ public static class AbilitySettingsForm
             IsRequired = required,
             SortOrder = order,
 
-            // Every value can be a binding to the trigger's or an earlier step's output. The action resolves them
-            // itself (see AbilityAction), so typed values keep their type.
-            SupportsBindings = true,
+            // A value can be a binding to the trigger's or an earlier step's output, unless it shapes the form. The
+            // action resolves them itself (see AbilityAction), so typed values keep their type.
+            SupportsBindings = bindable,
 
             // FUDGE (PropertyType): Automate's field describes a C# property. There is none; the value is JSON.
             PropertyType = typeof(JsonNode),
         };
+    }
+
+    /// <summary>
+    /// The editor for a key to an entity: a picker of the entity type's entities, found through <c>entity.find</c> as
+    /// the person running the form, so it works for any entity type with an adapter.
+    /// </summary>
+    public const string EntityPickerEditor = "Umb.Abilities.PropertyEditorUi.EntityPicker";
+
+    // The entity picker's settings. A key within another field's entity names that field: FUDGE (dependent config)
+    // the picker reads it from the form itself, as Automate can't give an editor settings that follow another field.
+    private static JsonObject EntityPickerConfig(JsonElement schema, string entityType)
+    {
+        var config = new JsonObject { ["entityType"] = entityType, ["consumer"] = AutomateConsumer.ConsumerAlias };
+        if (schema.TryGetProperty(SchemaKeywords.ReferencesWithin, out var within))
+        {
+            config["withinField"] = within.GetString();
+        }
+
+        return config;
     }
 
     /// <summary>The editor for a field, and its configuration by alias, as <c>x-editor</c> holds them.</summary>
@@ -83,13 +110,26 @@ public static class AbilitySettingsForm
             return (alias.GetString()!, config);
         }
 
-        // 2. The value's kind maps to an editor, for every field of that kind.
+        // 2. A key to an entity gets a picker: Umbraco's own for documents and media, and for any other entity type the
+        // entity picker, which lists that type's entities through entity.find.
+        if (schema.TryGetProperty(SchemaKeywords.References, out var references))
+        {
+            var first = references.ValueKind == JsonValueKind.Array ? references[0].GetString() : references.GetString();
+            return first switch
+            {
+                Umbraco.Cms.Core.Constants.UdiEntityType.Media => ("Umb.PropertyEditorUi.MediaEntityPicker", null),
+                Umbraco.Cms.Core.Constants.UdiEntityType.Document => ("Umb.PropertyEditorUi.DocumentPicker", null),
+                _ => (EntityPickerEditor, EntityPickerConfig(schema, first!)),
+            };
+        }
+
+        // 3. The value's kind maps to an editor, for every field of that kind.
         if (schema.TryGetProperty("format", out var format) && formatEditors.TryGetValue(format.GetString()!, out var byFormat))
         {
             return (byFormat, null);
         }
 
-        // 3. The plain shape, with Automate's own editors for each. A labelled list (oneOf of const and title) shows
+        // 4. The plain shape, with Automate's own editors for each. A labelled list (oneOf of const and title) shows
         // each value's name, such as a page type's.
         if (schema.TryGetProperty("oneOf", out var labelled) && labelled.EnumerateArray().All(o => o.ValueKind == JsonValueKind.Object && o.TryGetProperty("const", out _)))
         {
@@ -110,12 +150,6 @@ public static class AbilitySettingsForm
                 .Select(v => (JsonNode?)new JsonObject { ["name"] = v.ToString(), ["value"] = v.ToString() })
                 .ToArray());
             return ("Umb.PropertyEditorUi.Dropdown", new JsonObject { ["items"] = items });
-        }
-
-        if (schema.TryGetProperty(SchemaKeywords.References, out var references))
-        {
-            var first = references.ValueKind == JsonValueKind.Array ? references[0].GetString() : references.GetString();
-            return (first == Umbraco.Cms.Core.Constants.UdiEntityType.Media ? "Umb.PropertyEditorUi.MediaEntityPicker" : "Umb.PropertyEditorUi.DocumentPicker", null);
         }
 
         return TypeOf(schema) switch

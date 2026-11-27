@@ -46,6 +46,7 @@ dotnet test
 | `src/Umbraco.Abilities.Cms` | The real entity adapter for CMS documents, on `IContentEditingService`, plus the draft set adapter |
 | `src/Umbraco.Abilities.Commerce` | The real entity adapters for Umbraco Commerce: discounts, and read-only stores and currencies |
 | `src/Umbraco.Abilities.Automate` | Loads the Automate consumer's tools as Umbraco Automate actions, with forms from their schemas, one Create and Update per entity type, and a fields editor (`wwwroot/App_Plugins`). Workarounds are marked `FUDGE` |
+| `src/Umbraco.Abilities.UI` | Shared backoffice UI any surface can use, such as the entity picker. Static assets only (`App_Plugins/UmbracoAbilitiesUI`), laid out as Umbraco.AI's shared UI package |
 | `src/Umbraco.Abilities.ManagementApi` | Management API endpoints: list a consumer's tools, call one, and resolve one's input once a choice is made. For HTTP callers such as MCP Dev |
 | `src/Umbraco.Cms.DraftSets` | A stand-in for a Draft Sets feature in CMS core |
 | `tests/Umbraco.Abilities.Tests` | A scripted model (`ScriptedAgent`) calling the AI tools with JSON |

@@ -18,6 +18,6 @@ decide which abilities it offers and in what shape. One action class serves ever
 | --- | --- |
 | `Consumer/` | The Automate consumer, and its own filter that names each field's editor |
 | `Actions/` | The action, its loader, its settings form, and the step that calls the ability |
-| `wwwroot/` | The fields editor: a page type's fields, drawn once the page type is picked |
+| `wwwroot/` | The fields editor: a mapping of the fields a step sets, once the page type or template is picked. Each is a binding or a fixed value; the rest come from the template. A key to an entity uses the shared entity picker from `Umbraco.Abilities.UI` |
 
 Workarounds for things Automate can't do yet are marked `FUDGE`.

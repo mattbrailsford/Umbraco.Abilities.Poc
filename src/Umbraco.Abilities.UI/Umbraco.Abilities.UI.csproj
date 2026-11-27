@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+  <!--
+    Shared backoffice UI for abilities: editors any surface can use, such as the entity picker, which lists an entity
+    type's entities through the Management API. Static assets only, no C#, laid out as Umbraco.AI's shared UI package
+    (Umbraco.AI.Agent.UI) is. Plain JavaScript with no build step, as the rest of this proof of concept's UI is.
+  -->
+  <PropertyGroup>
+    <StaticWebAssetBasePath>App_Plugins/UmbracoAbilitiesUI</StaticWebAssetBasePath>
+    <AddRazorSupportForMvc>false</AddRazorSupportForMvc>
+  </PropertyGroup>
+</Project>

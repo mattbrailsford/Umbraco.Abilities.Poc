@@ -15,6 +15,9 @@ public static class EntityJson
     /// <summary>The subtype, such as a page type's alias.</summary>
     public const string Subtype = "subtype";
 
+    /// <summary>A create's template, the key of a saved starting point such as a document blueprint.</summary>
+    public const string Template = "template";
+
     /// <summary>The version the entity was read at.</summary>
     public const string Version = "version";
 
@@ -42,6 +45,9 @@ public static class SchemaKeywords
 
     /// <summary>The entity type, or types, a key points at.</summary>
     public const string References = "x-references";
+
+    /// <summary>The input property whose entity a key's entity must be within, such as a discount's store.</summary>
+    public const string ReferencesWithin = "x-references-within";
 
     /// <summary>The field whose items a key points at.</summary>
     public const string ReferencesItemIn = "x-references-item-in";

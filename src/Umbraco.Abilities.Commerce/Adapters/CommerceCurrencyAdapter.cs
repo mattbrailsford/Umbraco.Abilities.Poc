@@ -38,6 +38,10 @@ public sealed class CommerceCurrencyAdapter(IUmbracoCommerceApi commerce, Commer
         return found;
     }
 
+    // Currencies belong to a store, as discounts do.
+    protected override async Task<EntityGroup?> GetGroupAsync(CurrencyModel model, CancellationToken cancellationToken)
+        => model.Store is { } key && await commerce.GetStoreAsync(key) is { } store ? new EntityGroup(CommerceStoreAdapter.Type, store.Id, store.Name) : null;
+
     protected override string? GetEditUrl(Guid key) => null;
 
     private static CurrencyModel ToModel(CurrencyReadOnly currency)
