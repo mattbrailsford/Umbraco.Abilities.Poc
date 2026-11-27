@@ -27,7 +27,7 @@ public sealed partial class CmsDocumentAdapter(
     IContentTypeService contentTypes,
     IContentEditingService editing,
     IEntityService entities,
-    DraftSetService draftSets,
+    IDraftSetService draftSets,
     IUserService users,
     IContentPermissionService permissions,
     CmsScopeUnitOfWorkProvider unitOfWork,
@@ -37,7 +37,7 @@ public sealed partial class CmsDocumentAdapter(
 {
     public const string Type = Constants.UdiEntityType.Document;
 
-    private readonly DraftSetService _draftSets = draftSets;
+    private readonly IDraftSetService _draftSets = draftSets;
     private readonly IUserService _users = users;
     private readonly IContentPermissionService _permissions = permissions;
     private readonly CmsActingUser _actingUser = actingUser;

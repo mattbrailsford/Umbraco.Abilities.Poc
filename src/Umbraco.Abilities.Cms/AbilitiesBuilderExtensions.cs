@@ -35,6 +35,12 @@ public static class AbilitiesBuilderExtensions
         services.AddSingleton<ItemTypeRegistry>();
         services.AddSingleton<IChangeSetAccessor, ChangeSetAccessor>();
         services.AddSingleton<DraftSetService>();
+        services.AddSingleton<IDraftSetService>(sp => sp.GetRequiredService<DraftSetService>());
+
+        // The same draft sets on named draft branches (a stand-in for CMS PR #24784). Register it as IDraftSetService
+        // instead to try change sets on branches.
+        services.AddSingleton<ContentDraftBranchService>();
+        services.AddSingleton<BranchDraftSetService>();
         services.AddSingleton<CmsScopeUnitOfWorkProvider>();
         services.AddSingleton<CmsContentSchemas>();
         services.AddSingleton(sp => new CmsActingUser(sp.GetRequiredService<IBackOfficeSecurityAccessor>()));

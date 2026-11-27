@@ -120,6 +120,50 @@ internal sealed class DraftEntry
 
     /// <summary>For existing content: the draft set deletes it (to the recycle bin). It then reads as gone.</summary>
     public bool Deleted { get; set; }
+
+    /// <summary>For existing content in <see cref="BranchDraftSetService"/>: the branch holding the set's edits.</summary>
+    public Guid? BranchKey { get; set; }
+}
+
+/// <summary>
+/// A draft set: content changes grouped into a named set held apart from the live site. Read through it, check it,
+/// then apply it all at once or discard it. <see cref="DraftSetService"/> records changed values itself;
+/// <see cref="BranchDraftSetService"/> keeps them in named draft branches, one per document.
+/// </summary>
+public interface IDraftSetService
+{
+    DraftSet Create(string name);
+
+    DraftSet? Get(Guid id);
+
+    void Discard(Guid id);
+
+    /// <summary>Stages new content, whole. The caller chooses its key, so other changes can refer to it before it exists.</summary>
+    void StageNew(Guid id, DraftContent content);
+
+    /// <summary>Stages changes to existing content: only the values given. A value set back to what it was is no longer a change.</summary>
+    Task StageChangesAsync(Guid id, GuidUdi entity, IEnumerable<DraftValue> values);
+
+    /// <summary>Stages a delete. Existing content reads as gone, and goes to the recycle bin when the set is applied.</summary>
+    Task StageDeleteAsync(Guid id, GuidUdi entity);
+
+    /// <summary>The live content in editor format, as the backoffice loads it.</summary>
+    Task<DraftContent?> GetLiveAsync(GuidUdi entity);
+
+    /// <summary>The content as the draft set would leave it.</summary>
+    Task<DraftContent?> GetAsync(Guid id, GuidUdi entity);
+
+    /// <summary>Documents someone else changed since the set started editing them, what they changed, and where that conflicts.</summary>
+    Task<IReadOnlyList<DraftRebase>> GetRebaseAsync(Guid id);
+
+    /// <summary>Keeps the draft set's value or the live one for a conflict.</summary>
+    Task ResolveAsync(Guid id, GuidUdi entity, string alias, string? culture, string? segment, DraftKeep keep);
+
+    /// <summary>Umbraco's own validation of every document in the set, as it would be saved.</summary>
+    Task<IReadOnlyDictionary<GuidUdi, IReadOnlyList<PropertyValidationError>>> ValidateAsync(Guid id, Guid userKey);
+
+    /// <summary>Saves every document in the set in one scope: all or nothing.</summary>
+    Task ApplyAsync(Guid id, Guid userKey);
 }
 
 /// <summary>
@@ -135,7 +179,7 @@ public sealed class DraftSetService(
     ICoreScopeProvider scopes,
     IEventAggregator events,
     IAuditService audit,
-    IIdKeyMap idKeys)
+    IIdKeyMap idKeys) : IDraftSetService
 {
     /// <summary>The alias a name has in <see cref="DraftValue"/>s and conflicts.</summary>
     public const string NameAlias = "#name";
@@ -147,7 +191,7 @@ public sealed class DraftSetService(
     /// </summary>
     public const string ParentAlias = "#parent";
 
-    private static readonly JsonSerializerOptions ModelValueOptions = new() { Converters = { new JsonObjectConverter() } };
+    private readonly EditorContent _content = new(editing, editors, json, idKeys);
 
     private readonly ConcurrentDictionary<Guid, DraftSet> _sets = new();
 
@@ -241,34 +285,7 @@ public sealed class DraftSetService(
     // ── Reading ─────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>The live content in editor format, as the backoffice loads it.</summary>
-    public async Task<DraftContent?> GetLiveAsync(GuidUdi entity)
-    {
-        var key = DocumentKey(entity);
-        var content = await editing.GetAsync(key);
-        if (content is null || content.Trashed)
-        {
-            return null; // Content in the recycle bin is deleted, as far as editing it goes.
-        }
-
-        var names = content.ContentType.VariesByCulture()
-            ? content.AvailableCultures.ToDictionary(c => c, c => content.GetCultureName(c) ?? string.Empty)
-            : new Dictionary<string, string> { [string.Empty] = content.Name ?? string.Empty };
-
-        var values = new List<DraftValue>();
-        foreach (var property in content.Properties)
-        {
-            foreach (var value in property.Values)
-            {
-                if (ReadEditorValue(property, value.Culture, value.Segment) is { } node)
-                {
-                    values.Add(new DraftValue(property.Alias, value.Culture, value.Segment, node));
-                }
-            }
-        }
-
-        var parent = content.ParentId == Constants.System.Root ? (Guid?)null : idKeys.GetKeyForId(content.ParentId, UmbracoObjectTypes.Document).Result;
-        return new DraftContent { Key = key, ContentTypeKey = content.ContentType.Key, ParentKey = parent, Names = names, Values = values, Version = content.UpdateDate.Ticks };
-    }
+    public Task<DraftContent?> GetLiveAsync(GuidUdi entity) => _content.GetLiveAsync(entity);
 
     /// <summary>The content as the draft set would leave it: live with the set's changes over it, or the set's new content.</summary>
     public async Task<DraftContent?> GetAsync(Guid id, GuidUdi entity)
@@ -372,12 +389,7 @@ public sealed class DraftSetService(
         var result = new Dictionary<GuidUdi, IReadOnlyList<PropertyValidationError>>();
         foreach (var entity in Open(id).Entries.Where(e => !e.Value.Deleted).Select(e => e.Key))
         {
-            var content = (await GetAsync(id, entity))!;
-            var key = content.Key;
-            var attempt = content.IsNew
-                ? await editing.ValidateCreateAsync(ToCreateModel(content), userKey)
-                : await editing.ValidateUpdateAsync(key, new ValidateContentUpdateModel { Variants = Variants(content), Properties = Properties(content), Cultures = Cultures(content) }, userKey);
-            result[entity] = attempt.Result.ValidationErrors.ToList();
+            result[entity] = await _content.ValidateAsync((await GetAsync(id, entity))!, userKey);
         }
 
         return result;
@@ -403,7 +415,6 @@ public sealed class DraftSetService(
         foreach (var (entity, entry) in set.Entries.Where(e => !e.Value.Deleted))
         {
             var content = (await GetAsync(id, entity))!;
-            var key = content.Key;
             if (!content.IsNew && entry.Changes.ContainsKey(new DraftValue(ParentAlias, null, null, null).Id))
             {
                 moves.Add(content);
@@ -414,28 +425,7 @@ public sealed class DraftSetService(
                 continue; // Only moved: nothing to save.
             }
 
-            ContentEditingOperationStatus status;
-            ContentValidationResult validation;
-            IContent? saved;
-            if (content.IsNew)
-            {
-                var created = await editing.CreateAsync(ToCreateModel(content), userKey);
-                (status, validation, saved) = (created.Status, created.Result.ValidationResult, created.Result.Content);
-            }
-            else
-            {
-                var updated = await editing.UpdateAsync(key, new ContentUpdateModel { Variants = Variants(content), Properties = Properties(content) }, userKey);
-                (status, validation, saved) = (updated.Status, updated.Result.ValidationResult, updated.Result.Content);
-            }
-
-            // Umbraco reports problems in every culture; only those in cultures the document has (or invariant) fail it.
-            var cultures = Cultures(content);
-            var errors = validation.ValidationErrors.Where(e => e.Culture is null || cultures is null || cultures.Contains(e.Culture)).ToList();
-            if (status is not (ContentEditingOperationStatus.Success or ContentEditingOperationStatus.PropertyValidationError) || errors.Count > 0)
-            {
-                var details = string.Join("; ", errors.Select(e => $"{e.Alias}{(e.Culture is null ? string.Empty : $" ({e.Culture})")}: {string.Join(" ", e.ErrorMessages)}"));
-                throw new InvalidOperationException($"Umbraco did not save {content.Names.Values.FirstOrDefault() ?? key.ToString()}: {status}. {details}".Trim());
-            }
+            var saved = await _content.SaveAsync(content, userKey);
 
             // In the scope, so the entry rolls back with the documents.
             if (saved is not null)
@@ -485,99 +475,15 @@ public sealed class DraftSetService(
 
     // ── Helpers ─────────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>This stand-in handles documents; the UDI address leaves room for media and other types.</summary>
-    private static Guid DocumentKey(GuidUdi entity)
-        => entity.EntityType == Constants.UdiEntityType.Document
-            ? entity.Guid
-            : throw new NotSupportedException($"This draft set handles documents, not {entity.EntityType}.");
-
     private DraftSet Open(Guid id)
     {
         var set = _sets.GetValueOrDefault(id) ?? throw new InvalidOperationException($"No draft set {id}.");
         return set.Applied ? throw new InvalidOperationException($"Draft set {id} is already applied.") : set;
     }
 
-    /// <summary>The value in editor format, as the backoffice loads it: through the property editor's ToEditor.</summary>
-    private JsonNode? ReadEditorValue(IProperty property, string? culture, string? segment)
-    {
-        var value = editors.TryGet(property.PropertyType.PropertyEditorAlias, out var editor)
-            ? editor.GetValueEditor().ToEditor(property, culture, segment)
-            : property.GetValue(culture, segment);
-        return value switch
-        {
-            null => null,
-            JsonNode node => node.DeepClone(),
-            _ => JsonNode.Parse(json.Serialize(value)),
-        };
-    }
+    private static IEnumerable<DraftValue> AllValues(DraftContent content) => EditorContent.AllValues(content);
 
-    private static IEnumerable<DraftValue> AllValues(DraftContent content)
-        => content.Names.Select(n => new DraftValue(NameAlias, n.Key.Length == 0 ? null : n.Key, null, n.Value))
-            .Append(new DraftValue(ParentAlias, null, null, ParentValue(content)))
-            .Concat(content.Values);
+    private static JsonNode? ValueIn(DraftContent content, DraftValue value) => EditorContent.ValueIn(content, value);
 
-    private static JsonNode? ValueIn(DraftContent content, DraftValue value)
-        => value.Alias switch
-        {
-            NameAlias => content.Names.TryGetValue(value.Culture ?? string.Empty, out var name) ? JsonValue.Create(name) : null,
-            ParentAlias => ParentValue(content),
-            _ => content.Values.FirstOrDefault(v => v.Id == value.Id)?.Value,
-        };
-
-    private static JsonNode? ParentValue(DraftContent content) => content.ParentKey is { } parent ? JsonValue.Create(parent.ToString()) : null;
-
-    private static void Overlay(DraftContent content, DraftValue change)
-    {
-        if (change.Alias == ParentAlias)
-        {
-            content.ParentKey = change.Value is null ? null : Guid.Parse(change.Value.GetValue<string>());
-            return;
-        }
-
-        if (change.Alias == NameAlias)
-        {
-            if (change.Value is null)
-            {
-                content.Names.Remove(change.Culture ?? string.Empty);
-            }
-            else
-            {
-                content.Names[change.Culture ?? string.Empty] = change.Value.GetValue<string>();
-            }
-
-            return;
-        }
-
-        content.Values.RemoveAll(v => v.Id == change.Id);
-        if (change.Value is not null)
-        {
-            content.Values.Add(change with { Value = change.Value.DeepClone() });
-        }
-    }
-
-    private static ContentCreateModel ToCreateModel(DraftContent content) => new()
-    {
-        Key = content.Key,
-        ContentTypeKey = content.ContentTypeKey,
-        ParentKey = content.ParentKey,
-        Variants = Variants(content),
-        Properties = Properties(content),
-    };
-
-    /// <summary>The cultures the document has, so validation doesn't fail cultures it doesn't exist in; null when invariant.</summary>
-    private static HashSet<string>? Cultures(DraftContent content)
-        => content.Names.Keys.Any(c => c.Length > 0) ? content.Names.Keys.Where(c => c.Length > 0).ToHashSet() : null;
-
-    private static List<VariantModel> Variants(DraftContent content)
-        => content.Names.Select(n => new VariantModel { Culture = n.Key.Length == 0 ? null : n.Key, Name = n.Value }).ToList();
-
-    // Templates aren't carried yet: a real implementation re-sends the current template key, because a null TemplateKey clears it.
-    private static List<PropertyValueModel> Properties(DraftContent content)
-        => content.Values.Select(v => new PropertyValueModel
-        {
-            Alias = v.Alias,
-            Culture = v.Culture,
-            Segment = v.Segment,
-            Value = v.Value is null ? null : JsonSerializer.Deserialize<object?>(v.Value.ToJsonString(), ModelValueOptions),
-        }).ToList();
+    private static void Overlay(DraftContent content, DraftValue change) => EditorContent.Overlay(content, change);
 }
