@@ -100,6 +100,12 @@ would. The CMS tests (`Umbraco.Abilities.Cms.Tests`) do the same against a real 
   - `CmsDocumentAdapterTests.A_draft_set_works_on_its_own_with_no_abilities`
 - A draft set applied in a scope that then rolls back isn't applied and raises no applied notification
   - `CmsDocumentAdapterTests.A_draft_set_applied_inside_a_scope_that_rolls_back_is_not_applied_and_raises_nothing`
+- Every CMS change set test passes on draft branches too: the fixture runs once per draft set (`DraftSetKind.Values`, `DraftSetKind.Branches`)
+  - `CmsDocumentAdapterTests`
+- The branch stand-in meets the requirements of CMS PR #24806: a branch save changes nothing on the node and keeps its base, promote merges, and a promote in a scope that rolls back keeps the branch
+  - `ContentDraftBranchServiceTests.Saving_a_branch_changes_nothing_on_the_node_and_keeps_its_base`
+  - `ContentDraftBranchServiceTests.Promoting_keeps_changes_made_to_other_values_on_the_default_draft`
+  - `ContentDraftBranchServiceTests.A_promote_in_an_outer_scope_that_rolls_back_saves_nothing_and_keeps_the_branch`
 
 ## Identity, permissions and retries
 

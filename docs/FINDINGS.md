@@ -673,6 +673,21 @@ These feed back into the design in [ARCHITECTURE.md](ARCHITECTURE.md).
     - **Shown:** a code made in a change set is the code saved on apply; a discount switched off directly keeps its
       rules and rewards; a code for a discount that applies automatically is refused with the reason
       (`CommerceDiscountAdapterTests`). In the demo, the step picks the seeded "Welcome 10%" discount.
+41. **Change sets work on the CMS team's draft branches, if those branches meet our requirements.** CMS PR #24784
+    adds named draft branches: one document, a whole copy, promoted over its default draft. We wrote the requirements
+    as failing tests (CMS PR #24806). To see whether the PoC would work once they pass, we faked a branch service that
+    passes them (`ContentDraftBranchService`), and a draft set on top of it (`BranchDraftSetService`):
+    - **One branch per document a set edits**, named after the set. New pages, moves and deletes stay in the set and run
+      on apply: a branch doesn't move or delete.
+    - **Rebase and conflicts compare the branch's base, the branch and the default draft.** This needs the branch to
+      keep its base, and promote to merge: a plain copy over the default draft would undo others' changes.
+    - **Apply promotes every branch in one outer scope**, so a failed promote rolls back the ones before it and keeps
+      their branches.
+    - **Shown:** every change set test in `CmsDocumentAdapterTests` passes on both draft sets, unchanged.
+      `ContentDraftBranchServiceTests` checks the fake meets the requirements it stands in for.
+    - **Not shown:** the fake keeps branches in memory and in editor format. The PR stores them in the database and
+      hands out `IContent`. Preview across a set and a promote that keeps a set's chosen side of a conflict without the
+      set's help are not tried.
 
 ## Developer experience of adapters
 

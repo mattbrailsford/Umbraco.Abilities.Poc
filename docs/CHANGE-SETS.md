@@ -125,6 +125,11 @@ What the adapter (`CmsDocumentAdapter`) does:
 Because the draft set records per-property changes over live content, rebasing is automatic: someone else's change to
 another property is simply kept.
 
+The draft set comes in two versions behind `IDraftSetService`. `DraftSetService` records the changed values itself.
+`BranchDraftSetService` keeps them in named draft branches, one per document, on a stand-in for the CMS team's branches
+(PR #24784) that behaves as our requirement tests (PR #24806) ask. The adapter and every CMS test work on both. See
+finding 41 in [FINDINGS.md](FINDINGS.md).
+
 **Found while building it**
 
 1. **A one-language document failed validation and save** on a mandatory property in the other language.

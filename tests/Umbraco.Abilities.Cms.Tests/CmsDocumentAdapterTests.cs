@@ -40,17 +40,28 @@ namespace Umbraco.Abilities.Cms.Tests;
 /// (blocks with culture-variant values and a settings element) and a Block Grid (placement and areas), built
 /// through the AI tools in a change set, validated by Umbraco, and saved through IContentEditingService.
 /// </summary>
-[TestFixture]
+/// <remarks>
+/// Runs twice: on the draft set stand-in that records changed values itself, and on the one built on named draft
+/// branches (a stand-in for CMS PR #24784, as if the requirement tests of PR #24806 pass). Both must pass every test.
+/// </remarks>
+[TestFixture(DraftSetKind.Values)]
+[TestFixture(DraftSetKind.Branches)]
 [UmbracoTest(Database = UmbracoTestOptions.Database.NewSchemaPerTest, WithApplication = true)]
-public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
+public sealed class CmsDocumentAdapterTests(CmsDocumentAdapterTests.DraftSetKind draftSetKind) : UmbracoIntegrationTest
 {
+    public enum DraftSetKind
+    {
+        Values,
+        Branches,
+    }
+
     private IContentType _page = null!;
     private Agent _agent = null!;
     private CmsDocumentAdapter _documents = null!;
     private CmsMediaAdapter _media = null!;
     private ChangeSetService _changeSets = null!;
     private ChangeSetAccessor _accessor = null!;
-    private DraftSetService _draftSets = null!;
+    private IDraftSetService _draftSets = null!;
     private IDataType _pageBlocks = null!;
     private Guid _ann;
 
@@ -189,14 +200,30 @@ public sealed class CmsDocumentAdapterTests : UmbracoIntegrationTest
         VetoHandler.SideEffects.Clear();
         _accessor = ChangeSetAccessor.Ambient();
         _changeSets = new ChangeSetService(new InMemoryChangeSetStore(), abilities, adapters, itemTypes, _accessor, GetRequiredService<IEventAggregator>(), GetRequiredService<IBackgroundTaskQueue>(), TimeSpan.Zero);
-        _draftSets = new DraftSetService(
-            ContentEditingService,
-            GetRequiredService<PropertyEditorCollection>(),
-            GetRequiredService<IJsonSerializer>(),
-            GetRequiredService<ICoreScopeProvider>(),
-            GetRequiredService<IEventAggregator>(),
-            GetRequiredService<IAuditService>(),
-            GetRequiredService<IIdKeyMap>());
+        _draftSets = draftSetKind == DraftSetKind.Values
+            ? new DraftSetService(
+                ContentEditingService,
+                GetRequiredService<PropertyEditorCollection>(),
+                GetRequiredService<IJsonSerializer>(),
+                GetRequiredService<ICoreScopeProvider>(),
+                GetRequiredService<IEventAggregator>(),
+                GetRequiredService<IAuditService>(),
+                GetRequiredService<IIdKeyMap>())
+            : new BranchDraftSetService(
+                new ContentDraftBranchService(
+                    ContentEditingService,
+                    GetRequiredService<PropertyEditorCollection>(),
+                    GetRequiredService<IJsonSerializer>(),
+                    GetRequiredService<ICoreScopeProvider>(),
+                    GetRequiredService<IEventAggregator>(),
+                    GetRequiredService<IIdKeyMap>()),
+                ContentEditingService,
+                GetRequiredService<PropertyEditorCollection>(),
+                GetRequiredService<IJsonSerializer>(),
+                GetRequiredService<ICoreScopeProvider>(),
+                GetRequiredService<IEventAggregator>(),
+                GetRequiredService<IAuditService>(),
+                GetRequiredService<IIdKeyMap>());
         // What documents and media share: the property editor handlers and the schema they build.
         var contentSchemas = new CmsContentSchemas(
             ContentTypeService,
